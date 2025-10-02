@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: ledger-svc
+  datasource:
+    url: jdbc:postgresql://localhost:5432/safepocket
+    driver-class-name: org.postgresql.Driver
+    username: safepocket
+    password: safepocket
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+  jackson:
+    serialization:
+      indent_output: true
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+safepocket:
+  cognito:
+    issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example
+    audience: 111111example
+    enabled: ${SAFEPOCKET_USE_COGNITO:false}
+  plaid:
+    client-id: ${PLAID_CLIENT_ID:demo-client}
+    client-secret: ${PLAID_CLIENT_SECRET:demo-secret}
+    redirect-uri: https://app.safepocket.local/plaid/callback
+  ai:
+    model: gpt-4.1-mini
+    endpoint: https://api.openai.com/v1/responses
+  security:
+    dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}

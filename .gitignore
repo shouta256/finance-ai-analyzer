@@ -1,0 +1,13 @@
+/node_modules
+/.pnpm-store
+/.idea
+/.vscode
+.DS_Store
+apps/web/.next
+apps/web/out
+apps/web/node_modules
+apps/web/coverage
+apps/ledger-svc/.gradle
+apps/ledger-svc/build
+apps/ledger-svc/gradle-app.setting
+apps/ledger-svc/*.log

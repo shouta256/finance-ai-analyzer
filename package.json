@@ -1,0 +1,5 @@
+{
+  "name": "safepocket-monorepo",
+  "private": true,
+  "packageManager": "pnpm@8.15.4"
+}

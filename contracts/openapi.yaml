@@ -1,0 +1,489 @@
+openapi: 3.1.0
+info:
+  title: Safepocket API
+  version: 0.1.0
+  description: >-
+    Contract for Safepocket Phase 1 MVP covering Plaid integration, transaction
+    synchronization, analytics, anomaly detection, and AI highlights.
+servers:
+  - url: https://api.safepocket.local
+    description: Local development
+  - url: https://api.safepocket.app
+    description: Production
+security:
+  - bearerAuth: []
+paths:
+  /plaid/link-token:
+    post:
+      summary: Create Plaid link token
+      operationId: createPlaidLinkToken
+      tags:
+        - Plaid
+      responses:
+        '200':
+          description: Link token created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaidLinkTokenResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /plaid/exchange:
+    post:
+      summary: Exchange Plaid public token for access token
+      operationId: exchangePlaidPublicToken
+      tags:
+        - Plaid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaidExchangeRequest'
+      responses:
+        '200':
+          description: Exchange recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaidExchangeResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /transactions/sync:
+    post:
+      summary: Trigger Plaid transaction sync
+      operationId: triggerTransactionSync
+      tags:
+        - Transactions
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionsSyncRequest'
+      responses:
+        '202':
+          description: Sync started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionsSyncResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /transactions:
+    get:
+      summary: List transactions for a user and month
+      operationId: listTransactions
+      tags:
+        - Transactions
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: string
+            pattern: '^\\d{4}-\\d{2}$'
+          description: Month to filter transactions by (YYYY-MM)
+        - in: query
+          name: accountId
+          schema:
+            type: string
+          description: Filter by account identifier
+      responses:
+        '200':
+          description: Transactions retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionsListResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /transactions/{transactionId}:
+    patch:
+      summary: Update selected properties of a transaction
+      operationId: updateTransaction
+      tags:
+        - Transactions
+      parameters:
+        - in: path
+          name: transactionId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionUpdateRequest'
+      responses:
+        '200':
+          description: Transaction updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /analytics/summary:
+    get:
+      summary: Retrieve monthly analytics summary
+      operationId: getAnalyticsSummary
+      tags:
+        - Analytics
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: string
+            pattern: '^\\d{4}-\\d{2}$'
+          description: Month to generate analytics for (YYYY-MM)
+      responses:
+        '200':
+          description: Analytics summary retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSummaryResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    ErrorResponse:
+      description: Error response wrapper
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    PlaidLinkTokenResponse:
+      type: object
+      required:
+        - linkToken
+        - expiration
+        - requestId
+      properties:
+        linkToken:
+          type: string
+          description: Plaid Link token
+        expiration:
+          type: string
+          format: date-time
+          description: Expiration timestamp for the link token
+        requestId:
+          type: string
+          description: Plaid request identifier
+    PlaidExchangeRequest:
+      type: object
+      required:
+        - publicToken
+      properties:
+        publicToken:
+          type: string
+          description: Plaid public token obtained from Link
+    PlaidExchangeResponse:
+      type: object
+      required:
+        - itemId
+        - status
+        - requestId
+      properties:
+        itemId:
+          type: string
+          description: Plaid item identifier associated with the user
+        status:
+          type: string
+          description: Status of exchange request
+          enum:
+            - SUCCESS
+        requestId:
+          type: string
+          description: Plaid request identifier
+    TransactionsSyncRequest:
+      type: object
+      properties:
+        cursor:
+          type: string
+          description: Cursor from last sync to request incremental updates
+        forceFullSync:
+          type: boolean
+          default: false
+          description: Force a full backfill of transactions
+    TransactionsSyncResponse:
+      type: object
+      required:
+        - status
+        - syncedCount
+        - pendingCount
+        - traceId
+      properties:
+        status:
+          type: string
+          enum:
+            - STARTED
+            - COMPLETED
+        syncedCount:
+          type: integer
+          format: int32
+          description: Number of transactions queued for processing
+        pendingCount:
+          type: integer
+          format: int32
+          description: Number of transactions remaining in backlog
+        traceId:
+          type: string
+          description: Identifier for correlating async sync operations
+    TransactionsListResponse:
+      type: object
+      required:
+        - month
+        - transactions
+        - traceId
+      properties:
+        month:
+          type: string
+          description: Requested month window (YYYY-MM)
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        traceId:
+          type: string
+          description: Request trace identifier for auditing
+    Transaction:
+      type: object
+      required:
+        - id
+        - userId
+        - accountId
+        - merchantName
+        - amount
+        - currency
+        - occurredAt
+        - pending
+        - category
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        merchantName:
+          type: string
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        occurredAt:
+          type: string
+          format: date-time
+        authorizedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pending:
+          type: boolean
+        category:
+          type: string
+        description:
+          type: string
+          nullable: true
+        anomalyScore:
+          $ref: '#/components/schemas/AnomalyScore'
+    TransactionUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+          description: New category name to assign
+        notes:
+          type: string
+          description: Analyst notes for the transaction
+      minProperties: 1
+    AnalyticsSummaryResponse:
+      type: object
+      required:
+        - month
+        - totals
+        - byCategory
+        - topMerchants
+        - anomalies
+        - aiHighlight
+        - traceId
+      properties:
+        month:
+          type: string
+          description: Month covered by the analytics (YYYY-MM)
+        totals:
+          $ref: '#/components/schemas/AnalyticsTotals'
+        byCategory:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryBreakdown'
+        topMerchants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MerchantBreakdown'
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnomalyInsight'
+        aiHighlight:
+          $ref: '#/components/schemas/AiHighlight'
+        traceId:
+          type: string
+          description: Identifier for correlating AI computations
+    AnalyticsTotals:
+      type: object
+      required:
+        - income
+        - expense
+        - net
+      properties:
+        income:
+          type: number
+          format: double
+        expense:
+          type: number
+          format: double
+        net:
+          type: number
+          format: double
+    CategoryBreakdown:
+      type: object
+      required:
+        - category
+        - amount
+        - percentage
+      properties:
+        category:
+          type: string
+        amount:
+          type: number
+          format: double
+        percentage:
+          type: number
+          format: double
+          description: Portion of expense represented by the category
+    MerchantBreakdown:
+      type: object
+      required:
+        - merchant
+        - amount
+        - transactionCount
+      properties:
+        merchant:
+          type: string
+        amount:
+          type: number
+          format: double
+        transactionCount:
+          type: integer
+          format: int32
+    AnomalyScore:
+      type: object
+      required:
+        - method
+        - zScore
+        - iqrScore
+      properties:
+        method:
+          type: string
+          enum:
+            - Z_SCORE
+            - IQR
+        zScore:
+          type: number
+          format: double
+        iqrScore:
+          type: number
+          format: double
+    AnomalyInsight:
+      type: object
+      required:
+        - transactionId
+        - method
+        - score
+        - amount
+        - occurredAt
+        - merchantName
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        method:
+          type: string
+          enum:
+            - Z_SCORE
+            - IQR
+        score:
+          type: number
+          format: double
+        amount:
+          type: number
+          format: double
+        occurredAt:
+          type: string
+          format: date-time
+        merchantName:
+          type: string
+        commentary:
+          type: string
+          nullable: true
+    AiHighlight:
+      type: object
+      required:
+        - title
+        - summary
+        - sentiment
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        sentiment:
+          type: string
+          enum:
+            - POSITIVE
+            - NEUTRAL
+            - NEGATIVE
+        recommendations:
+          type: array
+          items:
+            type: string
+          description: Optional next-best-actions surfaced by AI
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - traceId
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: {}
+        traceId:
+          type: string

@@ -1,0 +1,43 @@
+package com.safepocket.ledger.model;
+
+import java.math.BigDecimal;
+import java.time.YearMonth;
+import java.util.List;
+
+public record AnalyticsSummary(
+        YearMonth month,
+        Totals totals,
+        List<CategoryBreakdown> categories,
+        List<MerchantBreakdown> merchants,
+        List<AnomalyInsight> anomalies,
+        AiHighlight aiHighlight,
+        String traceId
+) {
+    public record Totals(BigDecimal income, BigDecimal expense, BigDecimal net) {
+    }
+
+    public record CategoryBreakdown(String category, BigDecimal amount, BigDecimal percentage) {
+    }
+
+    public record MerchantBreakdown(String merchant, BigDecimal amount, int transactionCount) {
+    }
+
+    public record AnomalyInsight(
+            String transactionId,
+            AnomalyScore.Method method,
+            BigDecimal score,
+            BigDecimal amount,
+            String merchantName,
+            java.time.Instant occurredAt,
+            String commentary
+    ) {
+    }
+
+    public record AiHighlight(String title, String summary, Sentiment sentiment, List<String> recommendations) {
+        public enum Sentiment {
+            POSITIVE,
+            NEUTRAL,
+            NEGATIVE
+        }
+    }
+}

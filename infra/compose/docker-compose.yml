@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: safepocket
+      POSTGRES_USER: safepocket
+      POSTGRES_PASSWORD: safepocket
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../scripts/sql:/docker-entrypoint-initdb.d/seed:ro
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  postgres-data:
+  redis-data:

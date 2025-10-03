@@ -5,6 +5,8 @@ WORKDIR /app
 COPY package*.json pnpm-lock.yaml* yarn.lock* .npmrc* ./
 RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN pnpm install --frozen-lockfile
+# Ensure optional public directory exists to avoid COPY failure in final stage
+RUN mkdir -p public
 COPY . .
 RUN pnpm build
 

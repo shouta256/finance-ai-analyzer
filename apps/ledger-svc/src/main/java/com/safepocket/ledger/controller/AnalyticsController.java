@@ -20,10 +20,13 @@ public class AnalyticsController {
         this.analyticsService = analyticsService;
     }
 
-    @GetMapping("/summary")
-    public ResponseEntity<AnalyticsSummaryResponseDto> getSummary(@RequestParam("month") String month) {
+        @GetMapping("/summary")
+        public ResponseEntity<AnalyticsSummaryResponseDto> getSummary(
+                        @RequestParam("month") String month,
+                        @RequestParam(value = "generateAi", required = false, defaultValue = "false") boolean generateAi
+        ) {
         YearMonth yearMonth = YearMonth.parse(month);
-        AnalyticsSummary summary = analyticsService.getSummary(yearMonth);
+                AnalyticsSummary summary = analyticsService.getSummary(yearMonth, generateAi);
         AnalyticsSummaryResponseDto response = map(summary);
         return ResponseEntity.ok(response);
     }

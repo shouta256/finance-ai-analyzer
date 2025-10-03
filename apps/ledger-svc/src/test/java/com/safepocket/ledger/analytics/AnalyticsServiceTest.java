@@ -57,8 +57,8 @@ class AnalyticsServiceTest {
         );
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
         when(transactionRepository.findByUserIdAndMonth(userId, month)).thenReturn(transactions);
-        when(anomalyDetectionService.detectAnomalies(transactions)).thenReturn(List.of());
-        when(aiHighlightService.generateHighlight(transactions, List.of()))
+    when(anomalyDetectionService.detectAnomalies(transactions)).thenReturn(List.of());
+    when(aiHighlightService.generateHighlight(transactions, List.of(), false))
                 .thenReturn(new AnalyticsSummary.AiHighlight("title", "summary", AnalyticsSummary.AiHighlight.Sentiment.NEUTRAL, List.of()));
 
         AnalyticsSummary summary = analyticsService.getSummary(month);

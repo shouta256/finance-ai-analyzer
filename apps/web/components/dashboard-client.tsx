@@ -20,8 +20,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [state, setState] = useState<FetchState>({ summary: initialSummary, transactions: initialTransactions });
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [aiReady, setAiReady] = useState<boolean>(false);
 
   const anomalies = state.summary.anomalies;
+  const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
+  const sentimentTone = useMemo(() => state.summary.aiHighlight.sentiment, [state.summary.aiHighlight.sentiment]);
 
   async function handleSync() {
     startTransition(async () => {
@@ -70,8 +73,27 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     setState({ summary, transactions });
   }
 
+  async function handleGenerateAi() {
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/analytics/summary?month=${month}&generateAi=true`, { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to generate AI summary");
+        const json = await res.json();
+        const summary = analyticsSummarySchema.parse(json);
+        setState((prev) => ({ ...prev, summary }));
+        setAiReady(true);
+        setMessage("AI summary generated");
+      } catch (err) {
+        console.error(err);
+        setMessage((err as Error).message ?? "AI summary failed");
+      }
+    });
+  }
+
   const expenseCategories = useMemo(() => state.summary.byCategory, [state.summary.byCategory]);
   const topMerchants = useMemo(() => state.summary.topMerchants, [state.summary.topMerchants]);
+  const topCategory = expenseCategories[0];
+  const topMerchant = topMerchants[0];
 
   return (
     <div className="flex flex-col gap-6">
@@ -89,6 +111,13 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           disabled={isPending}
         >
           Sync Transactions
+        </button>
+        <button
+          onClick={handleGenerateAi}
+          className="rounded-md border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+          disabled={isPending}
+        >
+          Generate AI Summary
         </button>
         {message ? <span className="text-sm text-slate-600">{message}</span> : null}
       </div>
@@ -134,18 +163,37 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">AI Monthly Highlight</h2>
-        <p className="text-sm text-slate-500">{state.summary.aiHighlight.title}</p>
-        <p className="mt-3 text-sm text-slate-700">{state.summary.aiHighlight.summary}</p>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-          {state.summary.aiHighlight.recommendations.map((recommendation) => (
-            <span
-              key={recommendation}
-              className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600"
-            >
-              {recommendation}
-            </span>
-          ))}
-        </div>
+        {!aiReady ? (
+          <p className="mt-2 text-sm text-slate-500">Click &quot;Generate AI Summary&quot; to create an AI highlight for {month}.</p>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-slate-500">{state.summary.aiHighlight.title}</p>
+              <SentimentBadge sentiment={sentimentTone} />
+            </div>
+            <p className="mt-3 text-sm text-slate-700">{state.summary.aiHighlight.summary}</p>
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2 text-xs text-slate-600">
+              <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">Net this month: <span className="font-medium">{formatCurrency(net)}</span></li>
+              <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">Anomaly alerts: <span className="font-medium">{anomalies.length}</span></li>
+              {topCategory ? (
+                <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">Top category: <span className="font-medium">{topCategory.category}</span> · {formatCurrency(topCategory.amount)}</li>
+              ) : null}
+              {topMerchant ? (
+                <li className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">Top merchant: <span className="font-medium">{topMerchant.merchant}</span> · {formatCurrency(topMerchant.amount)}</li>
+              ) : null}
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+              {state.summary.aiHighlight.recommendations.map((recommendation) => (
+                <span
+                  key={recommendation}
+                  className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600"
+                >
+                  {recommendation}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -241,5 +289,18 @@ function SummaryCard({ title, value, tone }: SummaryCardProps) {
       <p className="text-sm font-medium uppercase tracking-wide text-slate-500">{title}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
     </div>
+  );
+}
+
+function SentimentBadge({ sentiment }: { sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" }) {
+  const styles: Record<typeof sentiment, string> = {
+    POSITIVE: "bg-green-100 text-green-700 border-green-200",
+    NEUTRAL: "bg-slate-100 text-slate-700 border-slate-200",
+    NEGATIVE: "bg-rose-100 text-rose-700 border-rose-200",
+  } as const;
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${styles[sentiment]}`}>
+      {sentiment}
+    </span>
   );
 }

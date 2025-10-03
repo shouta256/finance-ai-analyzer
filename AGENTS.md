@@ -38,6 +38,16 @@
 - **Dashboard**: `GET /analytics/summary?month=YYYY-MM`
 - **Edit category**: `PATCH /transactions/{id}`
 
+### AI Summary (OpenAI)
+- Backend reads `safepocket.ai.*` from `application.yml`.
+- To enable OpenAI-powered summary, set environment variable `OPENAI_API_KEY` before starting the backend. When not set, a deterministic fallback summary is used (no network calls).
+- Defaults:
+  - model: `gpt-4.1-mini`
+  - endpoint: `https://api.openai.com/v1/responses`
+- Local run example (zsh):
+  - export OPENAI_API_KEY="sk-..."
+  - make up
+
 ## 5) Code style (strict)
 - **TypeScript**: strict mode. Zod for input/output. No `any`.
 - **Java**: Spring Boot 3, immutable DTOs, constructor injection only.

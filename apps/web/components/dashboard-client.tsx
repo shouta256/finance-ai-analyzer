@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { formatCurrency, formatDateTime } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
-import { analyticsSummarySchema, transactionsListSchema } from "@/src/lib/schemas";
+import { getAnalyticsSummary, listTransactions, triggerTransactionSync, createPlaidLinkToken } from "@/src/lib/client-api";
 
 interface DashboardClientProps {
   month: string;
@@ -29,12 +29,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   async function handleSync() {
     startTransition(async () => {
       try {
-        const syncResponse = await fetch("/api/transactions/sync", {
-          method: "POST",
-        });
-        if (!syncResponse.ok) {
-          throw new Error("Failed to trigger sync");
-        }
+        await triggerTransactionSync();
         await refreshData();
         setMessage("Sync triggered successfully");
       } catch (error) {
@@ -47,11 +42,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   async function handleLink() {
     startTransition(async () => {
       try {
-        const linkResponse = await fetch("/api/plaid/link-token", { method: "POST" });
-        if (!linkResponse.ok) {
-          throw new Error("Failed to create link token");
-        }
-        const token = await linkResponse.json();
+        const token = await createPlaidLinkToken();
         setMessage(`Sandbox link token generated: ${token.linkToken}`);
       } catch (error) {
         setMessage((error as Error).message ?? "Unable to create link token");
@@ -60,26 +51,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   async function refreshData() {
-    const [summaryResponse, transactionsResponse] = await Promise.all([
-      fetch(`/api/analytics/summary?month=${month}`),
-      fetch(`/api/transactions?month=${month}`),
+    const [summary, transactions] = await Promise.all([
+      getAnalyticsSummary(month),
+      listTransactions(month),
     ]);
-    if (!summaryResponse.ok || !transactionsResponse.ok) {
-      throw new Error("Refresh failed");
-    }
-    const [summaryJson, transactionsJson] = await Promise.all([summaryResponse.json(), transactionsResponse.json()]);
-    const summary = analyticsSummarySchema.parse(summaryJson);
-    const transactions = transactionsListSchema.parse(transactionsJson);
     setState({ summary, transactions });
   }
 
   async function handleGenerateAi() {
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/analytics/summary?month=${month}&generateAi=true`, { cache: "no-store" });
-        if (!res.ok) throw new Error("Failed to generate AI summary");
-        const json = await res.json();
-        const summary = analyticsSummarySchema.parse(json);
+        const summary = await getAnalyticsSummary(month, { generateAi: true });
         setState((prev) => ({ ...prev, summary }));
         setAiReady(true);
         setMessage("AI summary generated");

@@ -2,8 +2,8 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 # Copy only workspace manifests and web app manifests for faster caching
-COPY package.json pnpm-lock.yaml .npmrc ./
-COPY apps/web/package.json apps/web/pnpm-lock.yaml apps/web/.npmrc apps/web/
+COPY package*.json pnpm-lock.yaml* yarn.lock* .npmrc* ./
+COPY apps/web/package*.json apps/web/pnpm-lock.yaml* apps/web/.npmrc* apps/web/
 # Enable pnpm and install deps (workspace aware)
 RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN pnpm install --frozen-lockfile

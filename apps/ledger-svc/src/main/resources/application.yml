@@ -37,7 +37,8 @@ safepocket:
     client-secret: ${PLAID_CLIENT_SECRET:demo-secret}
     redirect-uri: https://app.safepocket.local/plaid/callback
   ai:
-    model: gpt-4.1-mini
+    model: gpt-5-nano
     endpoint: https://api.openai.com/v1/responses
+    api-key: ${OPENAI_API_KEY:}
   security:
     dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}

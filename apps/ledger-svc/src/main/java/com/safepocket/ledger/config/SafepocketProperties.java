@@ -54,7 +54,7 @@ public record SafepocketProperties(
         }
     }
 
-    public record Ai(String model, String endpoint) {
+    public record Ai(String model, String endpoint, String apiKey) {
         public Ai {
             if (model == null || model.isBlank()) {
                 throw new IllegalArgumentException("model must be provided");
@@ -62,6 +62,7 @@ public record SafepocketProperties(
             if (endpoint == null || endpoint.isBlank()) {
                 throw new IllegalArgumentException("endpoint must be provided");
             }
+            // apiKey may be null/blank; when absent the app will use a deterministic fallback (no external calls)
         }
     }
 

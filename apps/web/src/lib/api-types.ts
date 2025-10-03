@@ -310,6 +310,8 @@ export interface operations {
       query: {
         /** @description Month to generate analytics for (YYYY-MM) */
         month: string;
+        /** @description When true, request backend to generate AI summary via OpenAI. When false, backend returns lightweight/fallback summary. */
+        generateAi?: boolean;
       };
     };
     responses: {

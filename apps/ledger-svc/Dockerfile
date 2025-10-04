@@ -1,5 +1,6 @@
-# --- build stage ---
-FROM eclipse-temurin:21-jdk-alpine AS builder
+## --- build stage ---
+## Use a glibc-based image (debian slim) to avoid native file watcher segfaults seen on alpine with Gradle
+FROM eclipse-temurin:21-jdk AS builder
 WORKDIR /workspace
 
 # Copy Gradle wrapper and build scripts first for better caching
@@ -8,11 +9,13 @@ COPY gradle gradle
 COPY build.gradle.kts settings.gradle.kts ./
 COPY src src
 
+ENV GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.vfs.watch=false -Dorg.gradle.jvmargs='-Xmx768m'"
 RUN chmod +x ./gradlew \
+	&& ./gradlew -version \
 	&& ./gradlew --no-daemon -q help
 
-# Build only the bootable jar and skip tests for faster CI
-RUN ./gradlew --no-daemon -x test bootJar
+# Build only the bootable jar and skip tests for faster CI (explicitly disable daemon, file watching)
+RUN ./gradlew --no-daemon -Dorg.gradle.vfs.watch=false -x test bootJar
 
 # --- runtime stage ---
 FROM eclipse-temurin:21-jre-alpine

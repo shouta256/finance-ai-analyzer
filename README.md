@@ -3,12 +3,12 @@
 ## ヘルスチェック / Health Checks
 
 ### Backend (ledger-svc)
-- Liveness: `GET /actuator/health/liveness`  
-  - DB 接続が確立していなくても `UP` を返すように起動継続 (Hikari 初期失敗で停止しない設定: `initializationFailTimeout=0`).  
-  - ALB / ECS Target Group のヘルスチェック推奨。
+- Primary (ALB Target Group): `GET /actuator/health`  
+  - Spring Boot aggregate health. DB ダウン時は `DOWN` / 503 を返し ALB から外れる想定。
+- Liveness (container internal / debug): `GET /actuator/health/liveness`  
+  - DB 未接続でも `UP`。プロセス稼働確認用。
 - Readiness: `GET /actuator/health/readiness`  
-  - DB など依存コンポーネントを含む総合判定。正常起動後に `UP`。
-- 全体: `GET /actuator/health` (Spring Boot 標準)  
+  - 依存リソース込み判定。
 
 ### Frontend (web)
 - Simple Health: `GET /api/healthz`  
@@ -20,9 +20,9 @@
 - Backend: 8081 (0.0.0.0 bind)
 
 ## Docker HEALTHCHECK
-`apps/ledger-svc/Dockerfile` にて liveness を利用:
+`apps/ledger-svc/Dockerfile` は ALB と合わせ `/actuator/health` を利用:
 ```
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost:8081/actuator/health/liveness || exit 1
+HEALTHCHECK --start-period=45s --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost:8081/actuator/health || exit 1
 ```
 
 ## 環境変数 (DB Credentials / Connection)

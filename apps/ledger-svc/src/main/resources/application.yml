@@ -1,11 +1,20 @@
+server:
+  port: 8081
+
 spring:
   application:
     name: ledger-svc
   datasource:
-    url: jdbc:postgresql://localhost:5432/safepocket
+    # 環境変数で上書き可能 (ECS Secrets / local .env)
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/app}
     driver-class-name: org.postgresql.Driver
-    username: safepocket
-    password: safepocket
+    username: ${SPRING_DATASOURCE_USERNAME:app}
+    password: ${SPRING_DATASOURCE_PASSWORD:app}
+    hikari:
+      # DB が起動前でもアプリ自体は STARTUP させ、readiness で判定するため失敗で落とさない
+      initializationFailTimeout: 0
+      connectionTimeout: 30000
+      maximumPoolSize: 10
   jpa:
     hibernate:
       ddl-auto: none
@@ -14,18 +23,23 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
     open-in-view: false
+  sql:
+    init:
+      mode: never
   jackson:
     serialization:
       indent_output: true
-
-server:
-  port: 8081
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: "health,info"
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: "never"
 
 safepocket:
   cognito:

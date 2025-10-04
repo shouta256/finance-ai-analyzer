@@ -26,5 +26,11 @@ COPY --from=builder /workspace/build/libs /app/libs
 
 EXPOSE 8081
 
+# Install curl for container healthcheck
+RUN apk add --no-cache curl
+
+## Startup currently takes ~34s; provide a start-period buffer so container isn't marked unhealthy prematurely
+HEALTHCHECK --start-period=45s --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost:8081/actuator/health/liveness || exit 1
+
 # Use sh to resolve the boot jar name dynamically and run it
 ENTRYPOINT ["sh","-c","exec java -jar $(ls /app/libs/*.jar | grep -v plain | head -n 1)"]

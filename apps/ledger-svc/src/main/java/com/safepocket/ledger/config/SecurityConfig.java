@@ -39,7 +39,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(registry -> registry
-            .requestMatchers(HttpMethod.POST, "/webhook/plaid").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/webhook/plaid").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/login").permitAll()
             // Public lightweight health endpoint (unauthenticated external check)
             .requestMatchers("/healthz").permitAll()
             // Keep actuator mostly internal; only expose liveness probe if needed

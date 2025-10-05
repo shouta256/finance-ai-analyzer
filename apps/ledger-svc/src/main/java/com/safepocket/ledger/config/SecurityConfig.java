@@ -38,19 +38,14 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(registry -> registry
-                        .requestMatchers(HttpMethod.POST, "/webhook/plaid").permitAll()
-            // Actuator health/info endpoints (liveness/readiness will be under /actuator/health/**)
-        // Expose actuator root + health/info (ALB health check hits /actuator/health)
-        .requestMatchers(
-            "/actuator/health/**",
-            "/actuator/health",
-            "/actuator/info",
-            "/actuator",
-            "/actuator/**"
-        ).permitAll()
-                        .anyRequest().authenticated()
-                )
+        .authorizeHttpRequests(registry -> registry
+            .requestMatchers(HttpMethod.POST, "/webhook/plaid").permitAll()
+            // Public lightweight health endpoint (unauthenticated external check)
+            .requestMatchers("/healthz").permitAll()
+            // Keep actuator mostly internal; only expose liveness probe if needed
+            .requestMatchers("/actuator/health/liveness").permitAll()
+            .anyRequest().authenticated()
+        )
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
 
         http.addFilterBefore(traceIdFilter, UsernamePasswordAuthenticationFilter.class);

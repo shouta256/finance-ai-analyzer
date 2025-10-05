@@ -35,16 +35,19 @@ public class SecurityConfig {
             JwtAuthenticationConverter jwtAuthenticationConverter,
             AuthenticatedUserFilter authenticatedUserFilter
     ) throws Exception {
-        http
-                .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+    http
+        .csrf(csrf -> csrf.disable())
+        .cors(cors -> {})
+        .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(registry -> registry
-                        .requestMatchers(HttpMethod.POST, "/webhook/plaid").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/login").permitAll()
-            // Public lightweight health endpoint (unauthenticated external check)
+            // Allow all CORS preflight requests
+            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+            // Public / webhook endpoints
+            .requestMatchers(HttpMethod.POST, "/webhook/plaid/**").permitAll()
+            .requestMatchers(HttpMethod.POST, "/login").permitAll()
             .requestMatchers("/healthz").permitAll()
-            // Keep actuator mostly internal; only expose liveness probe if needed
             .requestMatchers("/actuator/health/liveness").permitAll()
+            // All other endpoints require authentication
             .anyRequest().authenticated()
         )
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));

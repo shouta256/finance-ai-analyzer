@@ -1,99 +1,50 @@
-import { type NextRequest, NextResponse } from "next/server";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+// middleware.ts (updated)
+import { NextRequest, NextResponse } from 'next/server';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-type RateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
-
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 60;
-const rateLimitStore = new Map<string, RateLimitEntry>();
-
-const jwksUri = process.env.COGNITO_JWKS_URL;
-const issuer = process.env.COGNITO_ISSUER;
-const audience = process.env.COGNITO_AUDIENCE;
-// Fallback to backend's default dev secret so local setup works out-of-the-box
-const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? "dev-secret-key-for-local-development-only";
-
-let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
-
-function isPublicPath(pathname: string): boolean {
+// --- 公開パス定義（ここは完全素通し） ---
+function isPublicPath(pathname: string) {
   return (
-    pathname === "/" ||
-    pathname === "/login" ||
-    pathname.startsWith("/_next/") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/robots.txt" ||
-    pathname === "/api/healthz" ||
-    pathname === "/api/actuator/health/liveness" // proxy / future
+    pathname === '/' ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/_next/') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/robots.txt' ||
+    pathname === '/api/healthz' ||
+    pathname === '/api/actuator/health/liveness'
   );
 }
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  if (process.env.NODE_ENV === "development" && pathname.startsWith("/api/dev/login")) {
-    return NextResponse.next();
-  }
-
-  if (!rateLimit(request)) {
-    return NextResponse.json({ error: { code: "RATE_LIMIT", message: "Too many requests" } }, { status: 429 });
-  }
-
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
-  const token = extractToken(request);
-  if (!token) {
-    // API vs Page handling
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing bearer token" } }, { status: 401 });
-    }
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname || "/dashboard");
-    return NextResponse.redirect(loginUrl);
-  }
-
-  try {
-    const { sub } = await verifyJwt(token);
-    if (!sub) throw new Error("Missing subject claim");
-
-    // Avoid redirect loop: if authenticated user hits /login redirect to dashboard
-    if (pathname === "/login") {
-      const url = new URL("/dashboard", request.url);
-      return NextResponse.redirect(url);
-    }
-    const forwardedHeaders = new Headers(request.headers);
-    forwardedHeaders.set("x-safepocket-user-id", sub);
-    if (!forwardedHeaders.has("authorization")) {
-      forwardedHeaders.set("authorization", `Bearer ${token}`);
-    }
-    return NextResponse.next({ request: { headers: forwardedHeaders } });
-  } catch (e) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: (e as Error).message } }, { status: 401 });
-    }
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
-  }
+// --- レートリミット対象にしたいものだけ true ---
+function shouldRateLimit(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  if (isPublicPath(pathname) || req.method === 'OPTIONS') return false;
+  if (pathname.startsWith('/api/')) return true; // すべての API は対象
+  return true; // その他=保護ページ想定
 }
 
-export const config = {
-  // Apply to all except explicitly ignored (handled in isPublicPath). Negative lookahead excludes healthz for perf.
-  matcher: ['/((?!api/healthz|_next/|favicon\\.ico|robots\\.txt).*)'],
-};
-
-function extractToken(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice("Bearer ".length);
+// --- 単純な固定ウィンドウ（必要ならKV等に置換） ---
+const hits = new Map<string, { count: number; resetAt: number }>();
+function takeTicket(key: string, limit = 60, windowSec = 60) {
+  const now = Date.now();
+  const rec = hits.get(key);
+  if (!rec || rec.resetAt < now) {
+    hits.set(key, { count: 1, resetAt: now + windowSec * 1000 });
+    return { ok: true };
   }
-  const cookieToken = request.cookies.get("safepocket_token");
-  return cookieToken?.value ?? null;
+  if (rec.count < limit) {
+    rec.count++;
+    return { ok: true };
+  }
+  return { ok: false, retryAfter: Math.ceil((rec.resetAt - now) / 1000) };
 }
+
+// --- JWT 検証（既存ロジックを再利用） ---
+const jwksUri = process.env.COGNITO_JWKS_URL;
+const issuer = process.env.COGNITO_ISSUER;
+const audience = process.env.COGNITO_AUDIENCE;
+const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
+let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
 async function verifyJwt(token: string): Promise<{ sub?: string }> {
   if (jwksUri && issuer && audience) {
@@ -101,27 +52,78 @@ async function verifyJwt(token: string): Promise<{ sub?: string }> {
     const verified = await jwtVerify(token, remoteJwks, { issuer, audience });
     return { sub: verified.payload.sub as string | undefined };
   }
-  if (!devSharedSecret) {
-    throw new Error("JWT verification not configured");
-  }
   const encoder = new TextEncoder();
   const verified = await jwtVerify(token, encoder.encode(devSharedSecret));
   return { sub: verified.payload.sub as string | undefined };
 }
 
-function rateLimit(request: NextRequest): boolean {
-  const now = Date.now();
-  const xfwd = request.headers.get("x-forwarded-for");
-  const ip = xfwd?.split(",")[0]?.trim() || request.ip || "anonymous";
-  const key = ip;
-  const entry = rateLimitStore.get(key);
-  if (!entry || entry.resetAt < now) {
-    rateLimitStore.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return false;
-  }
-  entry.count += 1;
-  return true;
+function extractToken(req: NextRequest): string | null {
+  const auth = req.headers.get('authorization');
+  if (auth?.startsWith('Bearer ')) return auth.slice('Bearer '.length);
+  return req.cookies.get('safepocket_token')?.value || null;
 }
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // 1) プリフライトは無条件通過
+  if (req.method === 'OPTIONS') return NextResponse.next();
+
+  // 2) 公開パスも無条件通過（ここで return！）
+  if (isPublicPath(pathname)) return NextResponse.next();
+
+  // 3) レートリミット（対象のみ）
+  if (shouldRateLimit(req)) {
+    const fwd = req.headers.get('x-forwarded-for') ?? '';
+    const clientIp = fwd.split(',')[0].trim() || (req as any).ip || 'unknown';
+    const key = `${clientIp}:${req.method}:${pathname}`;
+    const ticket = takeTicket(key, 60, 60);
+    if (!ticket.ok) {
+      const res = new Response('Too Many Requests', { status: 429 });
+      if (ticket.retryAfter) res.headers.set('Retry-After', String(ticket.retryAfter));
+      return res;
+    }
+  }
+
+  // 4) Cookie / Authorization ヘッダで判定
+  const token = extractToken(req);
+  if (!token) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'Missing token' } }, { status: 401 });
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    url.searchParams.set('redirect', pathname || '/dashboard');
+    return NextResponse.redirect(url);
+  }
+
+  try {
+    const { sub } = await verifyJwt(token);
+    if (!sub) throw new Error('Missing subject');
+    if (pathname.startsWith('/login')) {
+      const url = req.nextUrl.clone();
+      url.pathname = '/dashboard';
+      url.searchParams.delete('redirect');
+      return NextResponse.redirect(url);
+    }
+    const h = new Headers(req.headers);
+    h.set('x-safepocket-user-id', sub);
+    if (!h.has('authorization')) h.set('authorization', `Bearer ${token}`);
+    return NextResponse.next({ request: { headers: h } });
+  } catch (e) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: (e as Error).message } }, { status: 401 });
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    url.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(url);
+  }
+}
+
+// 静的は最初から matcher で外しておく（安全網）
+export const config = {
+  matcher: [
+    '/((?!_next/|favicon\\.ico|robots\\.txt|api/healthz|api/actuator/health/liveness).*)',
+  ],
+};

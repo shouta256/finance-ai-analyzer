@@ -32,6 +32,7 @@ export async function ledgerFetch<T>(
     headers.set("content-type", defaultHeaders["content-type"]);
   }
   const response = await fetch(`${env.LEDGER_SERVICE_URL}${path}`, {
+    credentials: 'include',
     ...init,
     headers,
   });

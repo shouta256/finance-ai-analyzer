@@ -18,8 +18,21 @@ const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? "dev-secret-key
 
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
+function isPublicPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname.startsWith("/_next/") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/robots.txt" ||
+    pathname === "/api/healthz" ||
+    pathname === "/api/actuator/health/liveness" // proxy / future
+  );
+}
+
 export async function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
+  const { pathname } = request.nextUrl;
+
   if (process.env.NODE_ENV === "development" && pathname.startsWith("/api/dev/login")) {
     return NextResponse.next();
   }
@@ -28,35 +41,27 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: { code: "RATE_LIMIT", message: "Too many requests" } }, { status: 429 });
   }
 
-  const isApi = pathname.startsWith("/api/");
-  const isLogin = pathname === "/login";
-  const isRoot = pathname === "/";
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
 
   const token = extractToken(request);
   if (!token) {
-    if (isApi) {
+    // API vs Page handling
+    if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing bearer token" } }, { status: 401 });
     }
-    // Allow unauthenticated access to /login
-    if (isLogin) {
-      return NextResponse.next();
-    }
-    // Redirect any other protected page (e.g., /dashboard) to /login with intent to go to dashboard post-login
     const loginUrl = new URL("/login", request.url);
-    const redirectTo = isRoot ? "/dashboard" : pathname;
-    if (!loginUrl.searchParams.has("redirect")) {
-      loginUrl.searchParams.set("redirect", redirectTo);
-    }
+    loginUrl.searchParams.set("redirect", pathname || "/dashboard");
     return NextResponse.redirect(loginUrl);
   }
 
   try {
     const { sub } = await verifyJwt(token);
-    if (!sub) {
-      throw new Error("Missing subject claim");
-    }
-    // If already authenticated and visiting /login or /, send to /dashboard
-    if (isLogin || isRoot) {
+    if (!sub) throw new Error("Missing subject claim");
+
+    // Avoid redirect loop: if authenticated user hits /login redirect to dashboard
+    if (pathname === "/login") {
       const url = new URL("/dashboard", request.url);
       return NextResponse.redirect(url);
     }
@@ -66,25 +71,19 @@ export async function middleware(request: NextRequest) {
       forwardedHeaders.set("authorization", `Bearer ${token}`);
     }
     return NextResponse.next({ request: { headers: forwardedHeaders } });
-  } catch (error) {
-    // For API routes, respond with 401 JSON; otherwise, redirect to login
-    if (isApi) {
-      return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: (error as Error).message } }, { status: 401 });
+  } catch (e) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: (e as Error).message } }, { status: 401 });
     }
     const loginUrl = new URL("/login", request.url);
-    if (!loginUrl.searchParams.has("redirect")) {
-      loginUrl.searchParams.set("redirect", pathname);
-    }
+    loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
   }
 }
 
 export const config = {
-  // Exclude /api/healthz from middleware (negative lookahead) while protecting others
-  matcher: [
-    '/((?!api/healthz).*)',
-    // Explicit root/login/dashboard patterns still covered by the broad pattern above
-  ],
+  // Apply to all except explicitly ignored (handled in isPublicPath). Negative lookahead excludes healthz for perf.
+  matcher: ['/((?!api/healthz|_next/|favicon\\.ico|robots\\.txt).*)'],
 };
 
 function extractToken(request: NextRequest): string | null {
@@ -112,7 +111,9 @@ async function verifyJwt(token: string): Promise<{ sub?: string }> {
 
 function rateLimit(request: NextRequest): boolean {
   const now = Date.now();
-  const key = request.ip ?? request.headers.get("x-forwarded-for") ?? "anonymous";
+  const xfwd = request.headers.get("x-forwarded-for");
+  const ip = xfwd?.split(",")[0]?.trim() || request.ip || "anonymous";
+  const key = ip;
   const entry = rateLimitStore.get(key);
   if (!entry || entry.resetAt < now) {
     rateLimitStore.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });

@@ -1,7 +1,5 @@
-import { NextResponse } from 'next/server';
-
-export const runtime = 'nodejs'; // ensure fast, simple route
+export const runtime = 'nodejs'; // keep minimal runtime
 
 export async function GET() {
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return new Response('ok', { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 }

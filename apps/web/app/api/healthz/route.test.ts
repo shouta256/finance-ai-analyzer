@@ -1,14 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { GET } from './route';
 
-// Minimal shim for NextResponse.json return shape used in GET
-
 describe('/api/healthz', () => {
-  it('returns 200 and ok:true', async () => {
+  it("returns 200 and body 'ok'", async () => {
     const res: any = await GET();
-    // NextResponse.json returns a NextResponse-like object; we check status and body
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ ok: true });
+    const text = await res.text();
+    expect(text).toBe('ok');
+    expect(res.headers.get('content-type')).toMatch(/text\/plain/);
   });
 });

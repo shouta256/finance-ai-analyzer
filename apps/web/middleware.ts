@@ -80,8 +80,11 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Protect dashboard and APIs; handle auth-aware routing for root and login
-  matcher: ["/", "/login", "/dashboard/:path*", "/api/:path*"],
+  // Exclude /api/healthz from middleware (negative lookahead) while protecting others
+  matcher: [
+    '/((?!api/healthz).*)',
+    // Explicit root/login/dashboard patterns still covered by the broad pattern above
+  ],
 };
 
 function extractToken(request: NextRequest): string | null {

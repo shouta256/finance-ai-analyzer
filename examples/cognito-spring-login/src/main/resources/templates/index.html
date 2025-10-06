@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cognito Login Demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Cognito Login Demo</h1>
+    <p th:if="${principal == null}">Not authenticated.</p>
+    <p th:if="${principal != null}">Logged in as <strong th:text="${principal.name}"></strong>.</p>
+
+    <div th:if="${principal == null}">
+      <a href="/oauth2/authorization/cognito" role="button">Login with Cognito</a>
+    </div>
+    <div th:if="${principal != null}">
+      <a href="/me" role="button">View Claims</a>
+      <form th:action="@{/logout}" method="post" style="display:inline">
+        <button type="submit">Logout</button>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

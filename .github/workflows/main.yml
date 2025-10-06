@@ -75,6 +75,16 @@ jobs:
       SERVICE:         safepocket-next-web-service-68os670g
       CONTAINER_NAME:  next-web
       IMAGE:           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/next-web:${{ github.sha }}
+      # ==== Web (Next.js) runtime & build cognito related env (set these in GitHub Secrets) ====
+      NEXT_PUBLIC_COGNITO_DOMAIN: ${{ secrets.NEXT_PUBLIC_COGNITO_DOMAIN }}
+      NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
+      NEXT_PUBLIC_COGNITO_SCOPE: ${{ secrets.NEXT_PUBLIC_COGNITO_SCOPE }}
+      NEXT_PUBLIC_COGNITO_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_COGNITO_REDIRECT_URI }}
+      COGNITO_CLIENT_SECRET: ${{ secrets.COGNITO_CLIENT_SECRET }}
+      COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
+      COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+      COGNITO_REDIRECT_URI: ${{ secrets.COGNITO_REDIRECT_URI }}
+      SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -96,7 +106,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Render new task definition (image swap)
+      - name: Render new task definition (image swap + env overrides)
         id: render
         shell: bash
         run: |
@@ -109,10 +119,37 @@ jobs:
           # strip read-only fields
           jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td.json > td.base.json
 
-          # swap container image
-          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" '
-            .containerDefinitions = (.containerDefinitions
-              | map(if .name==$name then .image=$img else . end))' td.base.json > td.new.json
+          # build env override JSON only for non-empty vars to avoid clobbering with null
+          make_env_entry() { # name value
+            if [ -n "$2" ]; then
+              printf '{"name":"%s","value":"%s"}' "$1" "$2"
+            fi
+          }
+          ENV_OVERRIDES=$(jq -n '[]')
+          for VAR in \
+            NEXT_PUBLIC_COGNITO_DOMAIN \
+            NEXT_PUBLIC_COGNITO_CLIENT_ID \
+            NEXT_PUBLIC_COGNITO_SCOPE \
+            NEXT_PUBLIC_COGNITO_REDIRECT_URI \
+            COGNITO_CLIENT_SECRET \
+            COGNITO_DOMAIN \
+            COGNITO_CLIENT_ID \
+            COGNITO_REDIRECT_URI \
+            SAFEPOCKET_USE_COGNITO; do
+            VAL="${!VAR:-}"
+            if [ -n "$VAL" ]; then
+              ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')
+            fi
+          done
+
+          # swap container image & merge env (remove duplicates by name)
+          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" --argjson overrides "$ENV_OVERRIDES" '
+            .containerDefinitions = (.containerDefinitions | map(
+              if .name==$name then
+                .image=$img |
+                (.environment) as $orig |
+                (.environment = ((($orig // []) | map(select([.name] | inside([ $overrides[].name ]) | not))) + $overrides))
+              else . end))' td.base.json > td.new.json
 
           NEW_TD_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
             --cli-input-json file://td.new.json \
@@ -135,6 +172,10 @@ jobs:
       SERVICE:         safepocket-ledger-svc-service-2f0u2cu0
       CONTAINER_NAME:  ledger-svc
       IMAGE:           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/ledger-svc:${{ github.sha }}
+      # ==== Backend (Spring) Cognito runtime vars ====
+      COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
+      COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
+      SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -156,7 +197,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Render new task definition (image swap)
+      - name: Render new task definition (image swap + env overrides)
         id: render
         shell: bash
         run: |
@@ -168,9 +209,24 @@ jobs:
 
           jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td.json > td.base.json
 
-          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" '
-            .containerDefinitions = (.containerDefinitions
-              | map(if .name==$name then .image=$img else . end))' td.base.json > td.new.json
+          ENV_OVERRIDES=$(jq -n '[]')
+          for VAR in \
+            COGNITO_ISSUER \
+            COGNITO_AUDIENCE \
+            SAFEPOCKET_USE_COGNITO; do
+            VAL="${!VAR:-}"
+            if [ -n "$VAL" ]; then
+              ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')
+            fi
+          done
+
+          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" --argjson overrides "$ENV_OVERRIDES" '
+            .containerDefinitions = (.containerDefinitions | map(
+              if .name==$name then
+                .image=$img |
+                (.environment) as $orig |
+                (.environment = ((($orig // []) | map(select([.name] | inside([ $overrides[].name ]) | not))) + $overrides))
+              else . end))' td.base.json > td.new.json
 
           NEW_TD_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
             --cli-input-json file://td.new.json \

@@ -9,7 +9,7 @@ export SAFEPOCKET_USE_COGNITO ?= false
 COMPOSE_FILE ?= infra/compose/docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
 
-.PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down logs clean
+.PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down logs clean kill-port
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -57,3 +57,9 @@ clean: ## Stop containers and remove generated artifacts
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down -v
 	rm -rf apps/ledger-svc/build
 	rm -rf apps/web/.next apps/web/node_modules apps/web/src/lib/api-types.ts
+
+kill-port: ## Kill process listening on port 8081 (macOS/Linux)
+	@PORT=8081; \
+	PID=$$(lsof -ti tcp:$$PORT || true); \
+	if [ -n "$$PID" ]; then \
+	  echo "Killing process $$PID on port $$PORT"; kill $$PID; else echo "No process on port $$PORT"; fi

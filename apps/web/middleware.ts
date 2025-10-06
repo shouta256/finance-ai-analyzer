@@ -53,23 +53,42 @@ const EXPLICIT_JWKS = process.env.COGNITO_JWKS_URL;
 const EXPLICIT_AUDIENCE = process.env.COGNITO_AUDIENCE; // 任意: クライアントIDと異なる場合のみ
 const CLIENT_ID = process.env.COGNITO_CLIENT_ID; // Cognito App Client ID
 
-const derivedIssuer = EXPLICIT_ISSUER || ((REGION && USER_POOL_ID) ? `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}` : undefined);
-const issuer = derivedIssuer;
-const jwksUri = EXPLICIT_JWKS || (issuer ? `${issuer}/.well-known/jwks.json` : undefined);
-const audience = EXPLICIT_AUDIENCE || CLIENT_ID; // 通常 audience=client_id
+let derivedIssuer = EXPLICIT_ISSUER || ((REGION && USER_POOL_ID) ? `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}` : undefined);
+let issuer = derivedIssuer;
+let jwksUri = EXPLICIT_JWKS || (issuer ? `${issuer}/.well-known/jwks.json` : undefined);
+let audience = EXPLICIT_AUDIENCE || CLIENT_ID; // 通常 audience=client_id
 
 const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
-async function verifyJwt(token: string): Promise<{ sub?: string }> {
+async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string }> {
+  // 動的フォールバック: まだ issuer/audience 未決定ならヘッダ部を decode して iss/aud 推定
+  if (!issuer || !audience) {
+    try {
+      const [, payloadB64] = token.split('.');
+      const json = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+      if (!issuer && typeof json.iss === 'string') {
+        issuer = json.iss;
+        jwksUri = `${issuer}/.well-known/jwks.json`;
+      }
+      if (!audience) {
+        if (Array.isArray(json.aud)) audience = json.aud[0];
+        else if (typeof json.aud === 'string') audience = json.aud;
+      }
+    } catch {
+      // ignore – fallback to dev secret if still not resolvable
+    }
+  }
+
   if (jwksUri && issuer && audience) {
     remoteJwks ||= createRemoteJWKSet(new URL(jwksUri));
     const verified = await jwtVerify(token, remoteJwks, { issuer, audience });
-    return { sub: verified.payload.sub as string | undefined };
+    return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any) };
   }
+  // dev fallback
   const encoder = new TextEncoder();
   const verified = await jwtVerify(token, encoder.encode(devSharedSecret));
-  return { sub: verified.payload.sub as string | undefined };
+  return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any) };
 }
 
 function extractToken(req: NextRequest): string | null {
@@ -113,7 +132,7 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    const { sub } = await verifyJwt(token);
+    const { sub, iss, aud } = await verifyJwt(token);
     if (!sub) throw new Error('Missing subject');
     if (pathname.startsWith('/login')) {
       const url = req.nextUrl.clone();
@@ -123,6 +142,8 @@ export async function middleware(req: NextRequest) {
     }
     const h = new Headers(req.headers);
     h.set('x-safepocket-user-id', sub);
+    if (iss) h.set('x-safepocket-iss', iss);
+    if (aud) h.set('x-safepocket-aud', Array.isArray(aud) ? aud[0] : aud);
     if (!h.has('authorization')) h.set('authorization', `Bearer ${token}`);
     return NextResponse.next({ request: { headers: h } });
   } catch (e) {
@@ -132,7 +153,13 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(url);
+    // デバッグ用ヘッダ (本番で機微なし) – 末尾 1回の失敗理由を可視化
+    const res = NextResponse.redirect(url);
+    res.headers.set('x-auth-error', (e as Error).message);
+    res.headers.set('x-auth-issuer', issuer || '');
+    res.headers.set('x-auth-audience', audience || '');
+    res.headers.set('x-auth-jwks', jwksUri || '');
+    return res;
   }
 }
 

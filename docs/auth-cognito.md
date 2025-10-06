@@ -1,54 +1,76 @@
 # Cognito Authentication Flow
 
-This document describes how Safepocket integrates with Amazon Cognito (Authorization Code Flow + PKCE optional). The frontend uses the Cognito Hosted UI; the backend validates JWTs (ID tokens / Access tokens) via issuer JWKS.
+This document describes how Safepocket integrates with Amazon Cognito (Authorization Code Flow). Current production configuration uses the **Option A (original) user pool**.
+
+> NOTE: PKCE + improved state validation are listed in the TODO section and not yet enabled.
 
 ## Environment Variables
 
-Backend (ledger-svc):
-- SAFEPOCKET_USE_COGNITO=true
-- SAFEPocket_DEV_JWT_SECRET (unset in production)
-- COGNITO_REGION=us-east-1
-- COGNITO_USER_POOL_ID=us-east-1_XXXXXXX
-- COGNITO_CLIENT_ID=xxxxxxxxclientid
-- (optional) COGNITO_CLIENT_SECRET=xxxx (if app client secret enabled)
-- (optional) COGNITO_ISSUER (override) defaults to https://cognito-idp.{region}.amazonaws.com/{userPoolId}
-- (optional) COGNITO_AUDIENCE (override) defaults to client id
+Backend (`apps/ledger-svc`):
+- `SAFEPOCKET_USE_COGNITO=true`
+- `SAFEPOCKET_DEV_JWT_SECRET` (omit in production)
+- `COGNITO_REGION=us-east-1`
+- `COGNITO_USER_POOL_ID=<prod pool id>` (Option A pool)
+- `COGNITO_CLIENT_ID=<prod app client id>`
+- (optional) `COGNITO_CLIENT_SECRET=<secret>` (only if app client has secret; then token exchange uses Basic Auth)
+- (optional) `COGNITO_ISSUER` override. Default: `https://cognito-idp.{region}.amazonaws.com/{userPoolId}`
+- (optional) `COGNITO_AUDIENCE` override. Default: client id
 
-Frontend (apps/web):
-- NEXT_PUBLIC_COGNITO_DOMAIN=your-domain.auth.us-east-1.amazoncognito.com
-- NEXT_PUBLIC_COGNITO_CLIENT_ID=xxxxxxxxclientid
-- NEXT_PUBLIC_COGNITO_REDIRECT_URI=https://app.example.com/auth/callback
-- NEXT_PUBLIC_COGNITO_SCOPE=openid profile email (optional)
-- NEXT_PUBLIC_ENABLE_DEV_LOGIN=true (optional; if omitted in production the dev login button is hidden and Cognito redirect auto-starts)
+Frontend (`apps/web`):
+- `NEXT_PUBLIC_COGNITO_DOMAIN=<domain>.auth.us-east-1.amazoncognito.com`
+- `NEXT_PUBLIC_COGNITO_CLIENT_ID=<prod app client id>`
+- `NEXT_PUBLIC_COGNITO_SCOPE=openid email phone` (remove `profile` unless explicitly allowed in Cognito console)
+- (optional) `NEXT_PUBLIC_COGNITO_REDIRECT_URI=https://app.shota256.me/auth/callback` (used only if host matches at runtime; otherwise code computes `${origin}/auth/callback`)
+- (optional) `NEXT_PUBLIC_ENABLE_DEV_LOGIN=true` (never set in prod unless intentionally exposing dev login)
+- (optional) `NEXT_PUBLIC_AUTH_DEBUG=true` (exposes a debug panel on `/login`)
 
 ## Flow Summary
-1. User visits `/login`. If Cognito env vars are present and NEXT_PUBLIC_ENABLE_DEV_LOGIN is not `true` in production, the page auto-redirects to the Hosted UI. Otherwise a "Cognito でサインイン" button is displayed.
-2. Browser is redirected to Hosted UI authorize endpoint:
-   `https://{domain}/oauth2/authorize?...`
-3. After authentication + consent, Cognito redirects back to `/auth/callback?code=...&state=...`.
-4. The callback route exchanges the `code` for tokens at `https://{domain}/oauth2/token`.
-5. ID token (preferred) or access token is stored as `safepocket_token` httpOnly cookie.
-6. Middleware validates JWT (issuer, audience) using JWKS. Backend also validates on protected API calls.
+1. User visits `/login`.
+2. If Cognito is enabled and dev login not explicitly allowed in production: auto-redirect to Hosted UI.
+3. Hosted UI authorize URL constructed with dynamic `redirect_uri` (ensures production host vs localhost mismatch is avoided):
+   `https://{domain}/oauth2/authorize?client_id=...&response_type=code&scope=...&redirect_uri=...&state=...`
+4. Cognito redirects to `/auth/callback?code=...&state=...`.
+5. Callback exchanges code → tokens via `POST https://{domain}/oauth2/token` (uses Basic auth when secret present else form params).
+6. ID token (or access token fallback) stored as `safepocket_token` (httpOnly, secure in HTTPS).
+7. Middleware enforces authentication; backend validates JWT again on API calls.
 
 ## Middleware Auto Configuration
-If `COGNITO_ISSUER` and `COGNITO_JWKS_URL` are not supplied, the middleware constructs them from `COGNITO_REGION` + `COGNITO_USER_POOL_ID`.
-Audience defaults to `COGNITO_CLIENT_ID` unless `COGNITO_AUDIENCE` is explicitly set.
+If `COGNITO_ISSUER` is absent it is derived from region + pool id. JWKS endpoint is standard: `${issuer}/.well-known/jwks.json`.
+Audience defaults to `COGNITO_CLIENT_ID` unless overridden.
 
 ## Dev Fallback
-If Cognito variables are absent, the login page presents only the "デモユーザーでログイン" button which calls `/api/dev/login` (available in development). Avoid enabling dev login in production by unsetting the dev secret and not deploying that endpoint publicly.
+Absent Cognito vars: only the dev login button is shown. Production best practice: omit `NEXT_PUBLIC_ENABLE_DEV_LOGIN` and ensure backend dev endpoint guarded or disabled.
 
-## Logout (Future)
-Add a `/logout` route that clears the cookie and optionally hits Cognito's logout endpoint:
-`https://{domain}/logout?client_id=...&logout_uri=...`.
+## Logout (Planned)
+Implement `/logout` to clear cookie and redirect to:
+`https://{domain}/logout?client_id=...&logout_uri=<encoded post-logout URL>`.
 
 ## Security Notes
-- Ensure HTTPS so the `secure` flag on cookies is effective.
-- Validate `state` to mitigate CSRF (current implementation reuses redirect path; future improvement: random state + session binding).
-- Consider storing only access token and re-fetching user info if ID token claims not required client-side.
+- HTTPS required so `secure` cookie flag works.
+- Current `state` uses redirect path only. Upgrade: cryptographically random + server-side nonce binding.
+- Add PKCE (code_challenge + verifier) for public clients (web SPA) to reduce interception risk.
+- Limit scopes to required: `openid email phone`.
+- Consider rotating app client secret if ever exposed in logs.
 
 ## Testing Checklist
 - Missing env vars -> dev login only.
-- With env vars -> Cognito button appears.
-- Successful code exchange sets cookie and redirects to dashboard.
-- Tampered token -> middleware 401.
-- Expired token -> middleware 401 and redirect to `/login`.
+- Env vars set (prod) -> auto redirect occurs, or button visible if dev login allowed.
+- Successful auth -> cookie set + redirected to dashboard.
+- Tampered/expired token -> 401 then redirect /login.
+- Wrong redirect URI (mismatch) -> Cognito `redirect_mismatch` error (resolved by dynamic redirect logic).
+
+## Rollout Steps (Production)
+1. In Cognito console ensure callback + sign-out URLs include `https://app.shota256.me/auth/callback`.
+2. Set backend environment: `SAFEPOCKET_USE_COGNITO=true`, region/pool/client ids, (secret if needed).
+3. Set frontend build env: `NEXT_PUBLIC_COGNITO_DOMAIN`, `NEXT_PUBLIC_COGNITO_CLIENT_ID`, (optional debug flag off), DO NOT set `NEXT_PUBLIC_ENABLE_DEV_LOGIN`.
+4. (Optional) Remove legacy/unused new pool to avoid confusion.
+5. Deploy; verify `/login` loads then immediately hits Hosted UI; complete login.
+6. Capture token in cookie; check protected API returns 200.
+
+## TODO / Future Enhancements
+- PKCE implementation (`code_challenge` S256 + verifier storage in session cookie).
+- Robust `state` (random nonce + HMAC + expiration).
+- Logout route + optional global sign-out.
+- Refresh token storage / silent renew (if adding `offline_access` scope in future).
+- Observability: structured logs for token exchange success/failure.
+- Remove alias callback routes once old references are gone.

@@ -4,14 +4,32 @@ import { Suspense, useEffect, useState, useTransition } from "react";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const cognitoConfig = {
+// Build-time static parts of config (domain/clientId/scope). Redirect URI must be dynamic to avoid
+// shipping a localhost callback into production bundles (causes redirect_mismatch in Hosted UI).
+const cognitoStatic = {
   domain: process.env.NEXT_PUBLIC_COGNITO_DOMAIN, // e.g. your-domain.auth.us-east-1.amazoncognito.com
   clientId: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
-  redirectUri: process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI || (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : ''),
   scope: process.env.NEXT_PUBLIC_COGNITO_SCOPE || 'openid profile email',
 };
 
-const cognitoEnabled = Boolean(cognitoConfig.domain && cognitoConfig.clientId);
+// Determine the redirect URI at runtime. If an env var is provided AND its host matches current
+// window.location.host we use it; otherwise we fallback to current origin. This lets you keep
+// NEXT_PUBLIC_COGNITO_REDIRECT_URI in local dev while production (different host) auto-corrects.
+function resolveRedirectUri(): string {
+  const configured = process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI;
+  if (typeof window === 'undefined') return configured || '';
+  try {
+    if (configured) {
+      const u = new URL(configured);
+      if (u.host === window.location.host) return configured; // host matches (includes port if any)
+    }
+  } catch {
+    // ignore malformed URL; we'll fallback to origin
+  }
+  return `${window.location.origin}/auth/callback`;
+}
+
+const cognitoEnabled = Boolean(cognitoStatic.domain && cognitoStatic.clientId);
 const authDebug = process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true';
 const devLoginAllowed =
   process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NODE_ENV !== 'production';
@@ -45,14 +63,15 @@ function LoginForm() {
     if (!cognitoEnabled) return;
     setMessage(null);
     // Build Hosted UI authorize URL (Authorization Code Flow)
+    const redirectUri = resolveRedirectUri();
     const params = new URLSearchParams({
-      client_id: cognitoConfig.clientId!,
+      client_id: cognitoStatic.clientId!,
       response_type: 'code',
-      scope: cognitoConfig.scope,
-      redirect_uri: cognitoConfig.redirectUri,
+      scope: cognitoStatic.scope,
+      redirect_uri: redirectUri,
       state: searchParams.get("redirect") || '/dashboard',
     });
-    const authorizeUrl = `https://${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`;
+    const authorizeUrl = `https://${cognitoStatic.domain}/oauth2/authorize?${params.toString()}`;
     window.location.href = authorizeUrl;
   };
 
@@ -92,35 +111,36 @@ function LoginForm() {
           <div className="mb-3 rounded border border-indigo-200 bg-indigo-50 p-3 text-[10px] leading-relaxed text-slate-700">
             <p className="font-semibold mb-1">[Auth Debug]</p>
             <p>cognitoEnabled: {String(cognitoEnabled)}</p>
-            <p>domain: {cognitoConfig.domain}</p>
-            <p>clientId: {cognitoConfig.clientId}</p>
-            <p>redirectUri: {cognitoConfig.redirectUri}</p>
-            <p>scope: {cognitoConfig.scope}</p>
+            <p>domain: {cognitoStatic.domain}</p>
+            <p>clientId: {cognitoStatic.clientId}</p>
+            <p>computed redirectUri: {resolveRedirectUri()}</p>
+            <p>scope: {cognitoStatic.scope}</p>
             <p className="break-all">authorizeURL (click to open):</p>
             <button
               type="button"
               onClick={() => {
                 if (!cognitoEnabled) return;
+                const redirectUri = resolveRedirectUri();
                 const params = new URLSearchParams({
-                  client_id: cognitoConfig.clientId!,
+                  client_id: cognitoStatic.clientId!,
                   response_type: 'code',
-                  scope: cognitoConfig.scope,
-                  redirect_uri: cognitoConfig.redirectUri,
+                  scope: cognitoStatic.scope,
+                  redirect_uri: redirectUri,
                   state: '/dashboard',
                 });
-                const url = `https://${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`;
+                const url = `https://${cognitoStatic.domain}/oauth2/authorize?${params.toString()}`;
                 window.open(url, '_blank');
               }}
               className="mt-1 truncate rounded bg-white px-2 py-1 text-left font-mono text-[10px] shadow-sm hover:bg-slate-100"
             >
-              https://{cognitoConfig.domain}/oauth2/authorize?... (open)
+              https://{cognitoStatic.domain}/oauth2/authorize?... (open)
             </button>
           </div>
         )}
         {!cognitoEnabled && process.env.NODE_ENV === 'production' && (
           <p className="mb-3 rounded bg-amber-50 p-3 text-xs text-amber-700">
             Cognito が無効です。以下の環境変数を設定してください:<br />
-            未設定: { !cognitoConfig.domain && 'NEXT_PUBLIC_COGNITO_DOMAIN '}{ !cognitoConfig.clientId && 'NEXT_PUBLIC_COGNITO_CLIENT_ID '}
+            未設定: { !cognitoStatic.domain && 'NEXT_PUBLIC_COGNITO_DOMAIN '}{ !cognitoStatic.clientId && 'NEXT_PUBLIC_COGNITO_CLIENT_ID '}
           </p>
         )}
         {devLoginAllowed && (

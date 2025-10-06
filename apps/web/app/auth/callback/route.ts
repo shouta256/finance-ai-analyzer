@@ -107,7 +107,8 @@ export async function GET(req: NextRequest) {
 
     const redirectTarget = safeRedirectPath(state);
 
-    const res = NextResponse.redirect(new URL(redirectTarget, req.nextUrl.origin));
+  // Use effectiveOrigin (x-forwarded-host if present) to avoid redirecting to 0.0.0.0:3000
+  const res = NextResponse.redirect(new URL(redirectTarget, effectiveOrigin));
     // Cookie scopes entire app domain; secure should be true in production with HTTPS
     res.cookies.set('safepocket_token', token, {
       httpOnly: true,

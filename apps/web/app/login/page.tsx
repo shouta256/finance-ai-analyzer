@@ -30,13 +30,16 @@ function resolveRedirectUri(): string {
 }
 
 const cognitoEnabled = Boolean(cognitoStatic.domain && cognitoStatic.clientId);
-const authDebug = process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true';
+// Enable debug either via build-time flag or a query param (?authdebug=1) for production troubleshooting
+const authDebugFlag = process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true';
 const devLoginAllowed =
   process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NODE_ENV !== 'production';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryDebug = searchParams.get('authdebug') === '1';
+  const authDebug = authDebugFlag || queryDebug;
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -107,7 +110,7 @@ function LoginForm() {
             Cognito でサインイン
           </button>
         )}
-        {authDebug && (
+  {authDebug && (
           <div className="mb-3 rounded border border-indigo-200 bg-indigo-50 p-3 text-[10px] leading-relaxed text-slate-700">
             <p className="font-semibold mb-1">[Auth Debug]</p>
             <p>cognitoEnabled: {String(cognitoEnabled)}</p>

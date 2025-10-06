@@ -82,6 +82,17 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Preflight ECS permission check
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking ecs:DescribeServices for $CLUSTER / $SERVICE" >&2
+          if ! aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text >/dev/null 2>&1; then
+            echo "::error::ecs:DescribeServices failed. Ensure the GitHubOIDCDeployRole has ecs:DescribeServices on service ARN" >&2
+            exit 1
+          fi
+          echo "Permission OK" >&2
+
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
@@ -130,6 +141,17 @@ jobs:
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Preflight ECS permission check
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking ecs:DescribeServices for $CLUSTER / $SERVICE" >&2
+          if ! aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text >/dev/null 2>&1; then
+            echo "::error::ecs:DescribeServices failed. Ensure the GitHubOIDCDeployRole has ecs:DescribeServices on service ARN" >&2
+            exit 1
+          fi
+          echo "Permission OK" >&2
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq

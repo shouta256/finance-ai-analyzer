@@ -78,7 +78,7 @@ function LoginForm() {
             <p className="mt-2 text-sm text-slate-500">デモユーザーでダッシュボードを確認できます。本番環境では Cognito を有効化してください。</p>
           )}
         </div>
-        {cognitoEnabled && devLoginAllowed && (
+        {cognitoEnabled && (
           <button
             type="button"
             onClick={handleCognito}
@@ -86,6 +86,12 @@ function LoginForm() {
           >
             Cognito でサインイン
           </button>
+        )}
+        {!cognitoEnabled && process.env.NODE_ENV === 'production' && (
+          <p className="mb-3 rounded bg-amber-50 p-3 text-xs text-amber-700">
+            Cognito が無効です。以下の環境変数を設定してください:<br />
+            未設定: { !cognitoConfig.domain && 'NEXT_PUBLIC_COGNITO_DOMAIN '}{ !cognitoConfig.clientId && 'NEXT_PUBLIC_COGNITO_CLIENT_ID '}
+          </p>
         )}
         {devLoginAllowed && (
           <>

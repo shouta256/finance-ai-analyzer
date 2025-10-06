@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useTransition } from "react";
+import { Suspense, useEffect, useState, useTransition } from "react";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -12,6 +12,8 @@ const cognitoConfig = {
 };
 
 const cognitoEnabled = Boolean(cognitoConfig.domain && cognitoConfig.clientId);
+const devLoginAllowed =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NODE_ENV !== 'production';
 
 function LoginForm() {
   const router = useRouter();
@@ -53,6 +55,14 @@ function LoginForm() {
     window.location.href = authorizeUrl;
   };
 
+  // Auto redirect to Cognito in production when enabled and dev login not explicitly allowed
+  useEffect(() => {
+    if (cognitoEnabled && process.env.NODE_ENV === 'production' && !devLoginAllowed) {
+      handleCognito();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cognitoEnabled, devLoginAllowed]);
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
@@ -60,12 +70,15 @@ function LoginForm() {
           <p className="text-xs uppercase tracking-wide text-slate-500">Safepocket</p>
           <h1 className="text-2xl font-semibold text-slate-800">ログイン</h1>
           {cognitoEnabled ? (
-            <p className="mt-2 text-sm text-slate-500">Cognito アカウントでサインインできます。開発用のデモログインも利用可能です。</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Cognito アカウントでサインインできます。
+              {devLoginAllowed ? ' 開発用のデモログインも利用可能です。' : ' 本番ではデモログインは無効化されています。'}
+            </p>
           ) : (
             <p className="mt-2 text-sm text-slate-500">デモユーザーでダッシュボードを確認できます。本番環境では Cognito を有効化してください。</p>
           )}
         </div>
-        {cognitoEnabled && (
+        {cognitoEnabled && devLoginAllowed && (
           <button
             type="button"
             onClick={handleCognito}
@@ -74,17 +87,23 @@ function LoginForm() {
             Cognito でサインイン
           </button>
         )}
-        <button
-          type="button"
-          onClick={handleDevLogin}
-          disabled={isPending}
-          className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {isPending ? "ログイン中..." : "デモユーザーでログイン"}
-        </button>
-        <p className="mt-4 text-xs text-slate-500">
-          Dev Secret を設定していない本番環境ではデモボタンを無効化するか削除してください。
-        </p>
+        {devLoginAllowed && (
+          <>
+            <button
+              type="button"
+              onClick={handleDevLogin}
+              disabled={isPending}
+              className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {isPending ? "ログイン中..." : "デモユーザーでログイン"}
+            </button>
+            <p className="mt-4 text-xs text-slate-500">
+              {process.env.NODE_ENV === 'production'
+                ? '本番環境でデモログインを表示するには NEXT_PUBLIC_ENABLE_DEV_LOGIN=true を設定してください。'
+                : '開発環境: dev secret が無い場合は /api/dev/login で 403 になります。'}
+            </p>
+          </>
+        )}
         {message ? <p className="mt-4 text-sm text-rose-600">{message}</p> : null}
       </div>
     </main>

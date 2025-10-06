@@ -19,9 +19,10 @@ Frontend (apps/web):
 - NEXT_PUBLIC_COGNITO_CLIENT_ID=xxxxxxxxclientid
 - NEXT_PUBLIC_COGNITO_REDIRECT_URI=https://app.example.com/auth/callback
 - NEXT_PUBLIC_COGNITO_SCOPE=openid profile email (optional)
+- NEXT_PUBLIC_ENABLE_DEV_LOGIN=true (optional; if omitted in production the dev login button is hidden and Cognito redirect auto-starts)
 
 ## Flow Summary
-1. User clicks "Cognito でサインイン" on `/login` (shown only when the domain & client id env vars are present).
+1. User visits `/login`. If Cognito env vars are present and NEXT_PUBLIC_ENABLE_DEV_LOGIN is not `true` in production, the page auto-redirects to the Hosted UI. Otherwise a "Cognito でサインイン" button is displayed.
 2. Browser is redirected to Hosted UI authorize endpoint:
    `https://{domain}/oauth2/authorize?...`
 3. After authentication + consent, Cognito redirects back to `/auth/callback?code=...&state=...`.

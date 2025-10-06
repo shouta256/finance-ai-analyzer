@@ -41,10 +41,20 @@ function takeTicket(key: string, limit = 60, windowSec = 60) {
   return { ok: false, retryAfter: Math.ceil((rec.resetAt - now) / 1000) };
 }
 
-// --- JWT 検証（既存ロジックを再利用） ---
-const jwksUri = process.env.COGNITO_JWKS_URL;
-const issuer = process.env.COGNITO_ISSUER;
-const audience = process.env.COGNITO_AUDIENCE;
+// --- JWT 検証（Cognito 自動組立 + 既存ロジック） ---
+// 優先順位: 明示的な COGNITO_ISSUER / _JWKS_URL / _AUDIENCE → region + user pool id から組み立て → dev secret fallback
+const REGION = process.env.COGNITO_REGION;
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID; // 例: us-east-1_abc123
+const EXPLICIT_ISSUER = process.env.COGNITO_ISSUER;
+const EXPLICIT_JWKS = process.env.COGNITO_JWKS_URL;
+const EXPLICIT_AUDIENCE = process.env.COGNITO_AUDIENCE; // 任意: クライアントIDと異なる場合のみ
+const CLIENT_ID = process.env.COGNITO_CLIENT_ID; // Cognito App Client ID
+
+const derivedIssuer = EXPLICIT_ISSUER || ((REGION && USER_POOL_ID) ? `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}` : undefined);
+const issuer = derivedIssuer;
+const jwksUri = EXPLICIT_JWKS || (issuer ? `${issuer}/.well-known/jwks.json` : undefined);
+const audience = EXPLICIT_AUDIENCE || CLIENT_ID; // 通常 audience=client_id
+
 const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 

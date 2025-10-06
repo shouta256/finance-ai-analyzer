@@ -9,9 +9,17 @@ const schema = z.object({
     .string()
     .optional()
     .transform((value) => value === "true"),
+  NEXT_PUBLIC_COGNITO_DOMAIN: z.string().optional(),
+  NEXT_PUBLIC_COGNITO_CLIENT_ID: z.string().optional(),
+  NEXT_PUBLIC_COGNITO_REDIRECT_URI: z.string().optional(),
+  NEXT_PUBLIC_COGNITO_SCOPE: z.string().optional(),
 });
 
 export const env = schema.parse({
   LEDGER_SERVICE_URL: process.env.LEDGER_SERVICE_URL,
   OPENAI_HIGHLIGHT_ENABLED: process.env.OPENAI_HIGHLIGHT_ENABLED,
+  NEXT_PUBLIC_COGNITO_DOMAIN: process.env.NEXT_PUBLIC_COGNITO_DOMAIN,
+  NEXT_PUBLIC_COGNITO_CLIENT_ID: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
+  NEXT_PUBLIC_COGNITO_REDIRECT_URI: process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI,
+  NEXT_PUBLIC_COGNITO_SCOPE: process.env.NEXT_PUBLIC_COGNITO_SCOPE,
 });

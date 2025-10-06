@@ -13,7 +13,27 @@ export async function GET(req: NextRequest) {
   const userPoolDomain = process.env.COGNITO_DOMAIN || process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
   const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
   const clientSecret = process.env.COGNITO_CLIENT_SECRET; // no public fallback for secret
-  const redirectUri = process.env.COGNITO_REDIRECT_URI || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI || `${req.nextUrl.origin}/auth/callback`;
+  const configuredRedirect = process.env.COGNITO_REDIRECT_URI || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI;
+  // Base (raw) value: configured one or current origin callback
+  const rawRedirect = configuredRedirect || `${req.nextUrl.origin}/auth/callback`;
+  // Host safeguard: if we are accessed via a non-localhost host but the configured redirect points to localhost
+  // (common when a build was produced with a local NEXT_PUBLIC_COGNITO_REDIRECT_URI), replace the host with request host.
+  let redirectUri = rawRedirect;
+  try {
+    const parsed = new URL(rawRedirect);
+    const incomingHost = req.nextUrl.host; // includes port if any
+    const isProdLikeHost = !incomingHost.startsWith('localhost') && incomingHost !== '127.0.0.1';
+    if (isProdLikeHost && parsed.host !== incomingHost) {
+      // Only override when the configured value looks like a localhost while request host is prod-like
+      const looksLocal = parsed.host.startsWith('localhost') || parsed.host.startsWith('127.0.0.1');
+      if (looksLocal) {
+        redirectUri = `${req.nextUrl.origin}/auth/callback`;
+      }
+    }
+  } catch {
+    // Fallback – ensure we always have a syntactically valid URL
+    redirectUri = `${req.nextUrl.origin}/auth/callback`;
+  }
 
   if (!code) {
     return NextResponse.json({ error: { code: 'INVALID_REQUEST', message: 'Missing authorization code' } }, { status: 400 });
@@ -60,6 +80,8 @@ export async function GET(req: NextRequest) {
               clientId: clientId?.slice(0,4) + '...' + clientId?.slice(-4),
               hasSecret: Boolean(clientSecret),
               redirectUri,
+              configuredRedirect,
+              rawRedirect,
             },
           }
         }, { status: resp.status });

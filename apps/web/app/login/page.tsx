@@ -18,13 +18,25 @@ const cognitoStatic = {
 function resolveRedirectUri(): string {
   const configured = process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI;
   if (typeof window === 'undefined') return configured || '';
-  try {
-    if (configured) {
+  const currentHost = window.location.host;
+  const prodLike = !currentHost.startsWith('localhost') && !currentHost.startsWith('127.0.0.1');
+  // 1. If configured and host matches current => use as-is
+  if (configured) {
+    try {
       const u = new URL(configured);
-      if (u.host === window.location.host) return configured; // host matches (includes port if any)
+      if (u.host === currentHost) return configured;
+      // 2. If we are on a production-like host but configured points to localhost => override
+      const looksLocal = u.host.startsWith('localhost') || u.host.startsWith('127.0.0.1');
+      if (prodLike && looksLocal) {
+        return `${window.location.origin}/auth/callback`;
+      }
+      // 3. If we are still on localhost but configured is prod (逆方向) は許容: 開発で本番 URL を使うと mismatch になるので current origin に正規化
+      if (!prodLike && !looksLocal) {
+        return `${window.location.origin}/auth/callback`;
+      }
+    } catch {
+      // ignore malformed; fallback below
     }
-  } catch {
-    // ignore malformed URL; we'll fallback to origin
   }
   return `${window.location.origin}/auth/callback`;
 }
@@ -117,6 +129,14 @@ function LoginForm() {
             <p>domain: {cognitoStatic.domain}</p>
             <p>clientId: {cognitoStatic.clientId}</p>
             <p>computed redirectUri: {resolveRedirectUri()}</p>
+            {(() => {
+              const val = resolveRedirectUri();
+              const configured = process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI;
+              if (configured && configured !== val) {
+                return <p className="text-amber-700">[guard] configured ({configured}) → using ({val})</p>;
+              }
+              return null;
+            })()}
             <p>scope: {cognitoStatic.scope}</p>
             <p className="break-all">authorizeURL (click to open):</p>
             <button

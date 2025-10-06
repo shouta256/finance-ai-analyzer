@@ -1,65 +1,81 @@
-name: Build & Push to Amazon ECR
-
-on:
-  push: { branches: ["main"] }
-  workflow_dispatch: {}
-
-permissions:
-  id-token: write   # OIDC
-  contents: read
-
-env:
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  AWS_REGION:     ${{ secrets.AWS_REGION }}
-  ECR_REGISTRY:   ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-  SHA:            ${{ github.sha }}
-
-jobs:
-  build-and-push:
+# 直前の build&push が成功した後に追加
+  deploy-be:
+    needs: build-and-push
     runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read }
+    env:
+      CLUSTER: safepocket-cluster
+      SERVICE: safepocket-ledger-svc-service-2f0u2cu0
+      CONTAINER_NAME: ledger-svc
+      IMAGE: ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ env.SHA }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
     steps:
-      - uses: actions/checkout@v4
-
-      # GitHub → AWS 認証（IAMで作成した OIDC ロール）
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ECR ログイン
-      - name: Login to ECR
+      # 現行 TaskDef をテンプレにして image だけ置換
+      - name: Dump current task definition
         run: |
-          aws ecr get-login-password --region "$AWS_REGION" \
-          | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          TD_ARN=$(aws ecs describe-services \
+            --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TD_ARN" \
+            --query 'taskDefinition' --output json > taskdef.orig.json
 
-      # buildx（M1/M2でもOK / Fargate向け amd64 でビルド）
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-
-      # ===== Web（必要なければこのステップを削除）=====
-      - name: Build & Push next-web
-        uses: docker/build-push-action@v6
+      - name: Render task definition (set new image)
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          context: ./apps/web
-          file: ./apps/web/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ env.SHA }}
-            ${{ github.ref == 'refs/heads/main' && format('{0}/safepocket/next-web:latest', env.ECR_REGISTRY) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          task-definition: taskdef.orig.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE }}
 
-      # ===== Backend（ledger-svc）=====
-      - name: Build & Push ledger-svc
-        uses: docker/build-push-action@v6
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          context: ./apps/ledger-svc
-          file: ./apps/ledger-svc/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ env.SHA }}
-            ${{ github.ref == 'refs/heads/main' && format('{0}/safepocket/ledger-svc:latest', env.ECR_REGISTRY) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.SERVICE }}
+          cluster: ${{ env.CLUSTER }}
+          wait-for-service-stability: true
+
+  deploy-web:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read }
+    env:
+      CLUSTER: safepocket-cluster
+      SERVICE: safepocket-next-web-service-68os670g
+      CONTAINER_NAME: next-web
+      IMAGE: ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ env.SHA }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Dump current task definition
+        run: |
+          TD_ARN=$(aws ecs describe-services \
+            --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TD_ARN" \
+            --query 'taskDefinition' --output json > taskdef.orig.json
+
+      - name: Render task definition (set new image)
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef.orig.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.SERVICE }}
+          cluster: ${{ env.CLUSTER }}
+          wait-for-service-stability: true

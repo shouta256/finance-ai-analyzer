@@ -9,14 +9,17 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   const state = req.nextUrl.searchParams.get('state') || '/dashboard';
 
-  const region = process.env.COGNITO_REGION;
-  const userPoolDomain = process.env.COGNITO_DOMAIN; // e.g. your-domain.auth.us-east-1.amazoncognito.com
-  const clientId = process.env.COGNITO_CLIENT_ID;
-  const clientSecret = process.env.COGNITO_CLIENT_SECRET; // optional (if app client secret enabled)
-  const redirectUri = process.env.COGNITO_REDIRECT_URI || `${req.nextUrl.origin}/auth/callback`;
+  // Prefer backend vars; fallback to public ones if not defined (production frontend-only deploy case)
+  const userPoolDomain = process.env.COGNITO_DOMAIN || process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
+  const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
+  const clientSecret = process.env.COGNITO_CLIENT_SECRET; // no public fallback for secret
+  const redirectUri = process.env.COGNITO_REDIRECT_URI || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI || `${req.nextUrl.origin}/auth/callback`;
 
-  if (!code || !userPoolDomain || !clientId || !redirectUri) {
-    return NextResponse.json({ error: { code: 'INVALID_REQUEST', message: 'Missing code or Cognito configuration' } }, { status: 400 });
+  if (!code) {
+    return NextResponse.json({ error: { code: 'INVALID_REQUEST', message: 'Missing authorization code' } }, { status: 400 });
+  }
+  if (!userPoolDomain || !clientId) {
+    return NextResponse.json({ error: { code: 'CONFIG_MISSING', message: `Missing Cognito config (domain=${!!userPoolDomain}, clientId=${!!clientId})` } }, { status: 500 });
   }
 
   try {

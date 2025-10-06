@@ -12,6 +12,7 @@ const cognitoConfig = {
 };
 
 const cognitoEnabled = Boolean(cognitoConfig.domain && cognitoConfig.clientId);
+const authDebug = process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true';
 const devLoginAllowed =
   process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NODE_ENV !== 'production';
 
@@ -86,6 +87,35 @@ function LoginForm() {
           >
             Cognito でサインイン
           </button>
+        )}
+        {authDebug && (
+          <div className="mb-3 rounded border border-indigo-200 bg-indigo-50 p-3 text-[10px] leading-relaxed text-slate-700">
+            <p className="font-semibold mb-1">[Auth Debug]</p>
+            <p>cognitoEnabled: {String(cognitoEnabled)}</p>
+            <p>domain: {cognitoConfig.domain}</p>
+            <p>clientId: {cognitoConfig.clientId}</p>
+            <p>redirectUri: {cognitoConfig.redirectUri}</p>
+            <p>scope: {cognitoConfig.scope}</p>
+            <p className="break-all">authorizeURL (click to open):</p>
+            <button
+              type="button"
+              onClick={() => {
+                if (!cognitoEnabled) return;
+                const params = new URLSearchParams({
+                  client_id: cognitoConfig.clientId!,
+                  response_type: 'code',
+                  scope: cognitoConfig.scope,
+                  redirect_uri: cognitoConfig.redirectUri,
+                  state: '/dashboard',
+                });
+                const url = `https://${cognitoConfig.domain}/oauth2/authorize?${params.toString()}`;
+                window.open(url, '_blank');
+              }}
+              className="mt-1 truncate rounded bg-white px-2 py-1 text-left font-mono text-[10px] shadow-sm hover:bg-slate-100"
+            >
+              https://{cognitoConfig.domain}/oauth2/authorize?... (open)
+            </button>
+          </div>
         )}
         {!cognitoEnabled && process.env.NODE_ENV === 'production' && (
           <p className="mb-3 rounded bg-amber-50 p-3 text-xs text-amber-700">

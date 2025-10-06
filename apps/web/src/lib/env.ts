@@ -14,6 +14,7 @@ const schema = z.object({
   NEXT_PUBLIC_COGNITO_REDIRECT_URI: z.string().optional(),
   NEXT_PUBLIC_COGNITO_SCOPE: z.string().optional(),
   NEXT_PUBLIC_ENABLE_DEV_LOGIN: z.string().optional(),
+  NEXT_PUBLIC_AUTH_DEBUG: z.string().optional(),
 });
 
 export const env = schema.parse({
@@ -24,4 +25,5 @@ export const env = schema.parse({
   NEXT_PUBLIC_COGNITO_REDIRECT_URI: process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI,
   NEXT_PUBLIC_COGNITO_SCOPE: process.env.NEXT_PUBLIC_COGNITO_SCOPE,
   NEXT_PUBLIC_ENABLE_DEV_LOGIN: process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN,
+  NEXT_PUBLIC_AUTH_DEBUG: process.env.NEXT_PUBLIC_AUTH_DEBUG,
 });

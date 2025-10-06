@@ -43,6 +43,27 @@ export async function GET(req: NextRequest) {
 
     if (!resp.ok) {
       const text = await resp.text();
+      if (text.includes('invalid_client')) {
+        return NextResponse.json({
+          error: {
+            code: 'TOKEN_EXCHANGE_FAILED',
+            message: text,
+            hints: [
+              'Check App Client ID matches exactly (no hidden whitespace).',
+              'If the App Client has a secret, ensure COGNITO_CLIENT_SECRET is set in the deployment (NEXT_PUBLIC_* cannot hold the secret).',
+              'If the App Client has NO secret, make sure it is configured as a public client (no client secret required).',
+              'Verify token endpoint allowed grant types include authorization_code.',
+              'Ensure redirect URI in App Client settings matches exactly the one used here: ' + redirectUri,
+            ],
+            configSnapshot: {
+              domain: userPoolDomain,
+              clientId: clientId?.slice(0,4) + '...' + clientId?.slice(-4),
+              hasSecret: Boolean(clientSecret),
+              redirectUri,
+            },
+          }
+        }, { status: resp.status });
+      }
       return NextResponse.json({ error: { code: 'TOKEN_EXCHANGE_FAILED', message: text } }, { status: resp.status });
     }
 

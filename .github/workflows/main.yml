@@ -1,8 +1,7 @@
-name: Build & Push to Amazon ECR
+name: Build & Deploy to ECS
 
 on:
-  push:
-    branches: ["main"]
+  push: { branches: ["main"] }
   workflow_dispatch: {}
 
 permissions:
@@ -13,11 +12,13 @@ env:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   AWS_REGION:     ${{ secrets.AWS_REGION }}
   ECR_REGISTRY:   ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-  SHA:            ${{ github.sha }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_web:   ${{ steps.out.outputs.image_web }}
+      image_be:    ${{ steps.out.outputs.image_be }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,14 +28,13 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region "$AWS_REGION" \
-          | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+        run: aws ecr get-login-password --region "$AWS_REGION" \
+             | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
-      # Web
+      # ===== Web =====
       - name: Build & Push next-web
         uses: docker/build-push-action@v6
         with:
@@ -43,12 +43,12 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ env.SHA }}
+            ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ github.sha }}
             ${{ github.ref == 'refs/heads/main' && format('{0}/safepocket/next-web:latest', env.ECR_REGISTRY) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Backend
+      # ===== Backend =====
       - name: Build & Push ledger-svc
         uses: docker/build-push-action@v6
         with:
@@ -57,85 +57,87 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ env.SHA }}
+            ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ github.sha }}
             ${{ github.ref == 'refs/heads/main' && format('{0}/safepocket/ledger-svc:latest', env.ECR_REGISTRY) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy-be:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    env:
-      CLUSTER: safepocket-cluster
-      SERVICE: safepocket-ledger-svc-service-2f0u2cu0
-      CONTAINER_NAME: ledger-svc
-      IMAGE: ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ env.SHA }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-    steps:
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Dump current task definition
+      - id: out
+        name: Set outputs
         run: |
-          TD_ARN=$(aws ecs describe-services \
-            --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --task-definition "$TD_ARN" \
-            --query 'taskDefinition' --output json > taskdef.orig.json
-
-      - name: Render task definition (set new image)
-        id: render
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: taskdef.orig.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.IMAGE }}
-
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.render.outputs.task-definition }}
-          service: ${{ env.SERVICE }}
-          cluster: ${{ env.CLUSTER }}
-          wait-for-service-stability: true
+          echo "image_web=${ECR_REGISTRY}/safepocket/next-web:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          echo "image_be=${ECR_REGISTRY}/safepocket/ledger-svc:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
   deploy-web:
     needs: build-and-push
     runs-on: ubuntu-latest
     env:
-      CLUSTER: safepocket-cluster
-      SERVICE: safepocket-next-web-service-68os670g
-      CONTAINER_NAME: next-web
-      IMAGE: ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ env.SHA }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+      CLUSTER:         safepocket-cluster
+      SERVICE:         safepocket-next-web-service-68os670g
+      CONTAINER_NAME:  next-web
+      IMAGE:           ${{ needs.build-and-push.outputs.image_web }}
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Dump current task definition
+      - name: Update ECS service (web)
+        shell: bash
         run: |
-          TD_ARN=$(aws ecs describe-services \
-            --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --task-definition "$TD_ARN" \
-            --query 'taskDefinition' --output json > taskdef.orig.json
+          TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+               --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition' >/tmp/td.json
+          python3 - <<'PY'
+          import json, os
+          p=json.load(open("/tmp/td.json"))
+          for k in ["taskDefinitionArn","revision","status","registeredAt","registeredBy","compatibilities","requiresAttributes"]:
+              p.pop(k, None)
+          for c in p["containerDefinitions"]:
+              if c.get("name")==os.environ["CONTAINER_NAME"]:
+                  c["image"]=os.environ["IMAGE"]
+          open("/tmp/td.new.json","w").write(json.dumps(p))
+          PY
+          NEW=$(aws ecs register-task-definition --cli-input-json file:///tmp/td.new.json \
+                --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+              --task-definition "$NEW" --force-new-deployment
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
 
-      - name: Render task definition (set new image)
-        id: render
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+  deploy-be:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    env:
+      CLUSTER:         safepocket-cluster
+      SERVICE:         safepocket-ledger-svc-service-2f0u2cu0
+      CONTAINER_NAME:  ledger-svc
+      IMAGE:           ${{ needs.build-and-push.outputs.image_be }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          task-definition: taskdef.orig.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.IMAGE }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.render.outputs.task-definition }}
-          service: ${{ env.SERVICE }}
-          cluster: ${{ env.CLUSTER }}
-          wait-for-service-stability: true
+      - name: Update ECS service (backend)
+        shell: bash
+        run: |
+          TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+               --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition' >/tmp/td.json
+          python3 - <<'PY'
+          import json, os
+          p=json.load(open("/tmp/td.json"))
+          for k in ["taskDefinitionArn","revision","status","registeredAt","registeredBy","compatibilities","requiresAttributes"]:
+              p.pop(k, None)
+          for c in p["containerDefinitions"]:
+              if c.get("name")==os.environ["CONTAINER_NAME"]:
+                  c["image"]=os.environ["IMAGE"]
+          open("/tmp/td.new.json","w").write(json.dumps(p))
+          PY
+          NEW=$(aws ecs register-task-definition --cli-input-json file:///tmp/td.new.json \
+                --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+              --task-definition "$NEW" --force-new-deployment
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"

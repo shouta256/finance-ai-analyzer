@@ -7,6 +7,9 @@ function isPublicPath(pathname: string) {
   return (
     pathname === '/' ||
     pathname.startsWith('/login') ||
+    pathname === '/auth/callback' ||
+    pathname === '/api/login/cognito/callback' ||
+    pathname === '/api/auth/callback/cognito' ||
     // dev-only helper login endpoint (allow in any env to avoid 401 in preview, internally guarded later)
     pathname.startsWith('/api/dev/login') ||
     pathname.startsWith('/_next/') ||

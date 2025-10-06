@@ -1,36 +1,41 @@
-name: Build & Deploy to ECS
+name: Build, Push, and Deploy (ECR → ECS)
 
 on:
-  push: { branches: ["main"] }
+  push:
+    branches: ["main"]
   workflow_dispatch: {}
 
 permissions:
-  id-token: write
+  id-token: write          # for GitHub OIDC → AWS
   contents: read
 
 env:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   AWS_REGION:     ${{ secrets.AWS_REGION }}
+  AWS_ROLE_ARN:   ${{ secrets.AWS_ROLE_ARN }}
   ECR_REGISTRY:   ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  SHA:            ${{ github.sha }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    outputs:
-      image_web:   ${{ steps.out.outputs.image_web }}
-      image_be:    ${{ steps.out.outputs.image_be }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      # GitHub → AWS (OIDC)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
-        run: aws ecr get-login-password --region "$AWS_REGION" \
-             | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      # ECR login（公式アクション推奨）
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          mask-password: 'true'
 
+      # buildx（Fargate 向け linux/amd64）
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
@@ -43,7 +48,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ env.SHA }}
             ${{ github.ref == 'refs/heads/main' && format('{0}/safepocket/next-web:latest', env.ECR_REGISTRY) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -57,16 +62,10 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ env.SHA }}
             ${{ github.ref == 'refs/heads/main' && format('{0}/safepocket/ledger-svc:latest', env.ECR_REGISTRY) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - id: out
-        name: Set outputs
-        run: |
-          echo "image_web=${ECR_REGISTRY}/safepocket/next-web:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-          echo "image_be=${ECR_REGISTRY}/safepocket/ledger-svc:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
   deploy-web:
     needs: build-and-push
@@ -75,35 +74,47 @@ jobs:
       CLUSTER:         safepocket-cluster
       SERVICE:         safepocket-next-web-service-68os670g
       CONTAINER_NAME:  next-web
-      IMAGE:           ${{ needs.build-and-push.outputs.image_web }}
+      IMAGE:           ${{ env.ECR_REGISTRY }}/safepocket/next-web:${{ env.SHA }}
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update ECS service (web)
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Render new task definition (image swap)
+        id: render
         shell: bash
         run: |
-          TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-               --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --task-definition "$TD" \
-            --query 'taskDefinition' >/tmp/td.json
-          python3 - <<'PY'
-          import json, os
-          p=json.load(open("/tmp/td.json"))
-          for k in ["taskDefinitionArn","revision","status","registeredAt","registeredBy","compatibilities","requiresAttributes"]:
-              p.pop(k, None)
-          for c in p["containerDefinitions"]:
-              if c.get("name")==os.environ["CONTAINER_NAME"]:
-                  c["image"]=os.environ["IMAGE"]
-          open("/tmp/td.new.json","w").write(json.dumps(p))
-          PY
-          NEW=$(aws ecs register-task-definition --cli-input-json file:///tmp/td.new.json \
-                --query 'taskDefinition.taskDefinitionArn' --output text)
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-              --task-definition "$NEW" --force-new-deployment
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          set -euo pipefail
+          TD_ARN=$(aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --region "$AWS_REGION" --task-definition "$TD_ARN" \
+            --query 'taskDefinition' > td.json
+
+          # strip read-only fields
+          jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td.json > td.base.json
+
+          # swap container image
+          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" '
+            .containerDefinitions = (.containerDefinitions
+              | map(if .name==$name then .image=$img else . end))' td.base.json > td.new.json
+
+          NEW_TD_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
+            --cli-input-json file://td.new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "NEW_TD_ARN=$NEW_TD_ARN" >> $GITHUB_OUTPUT
+
+      - name: Update service
+        run: |
+          aws ecs update-service --region "$AWS_REGION" \
+            --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "${{ steps.render.outputs.NEW_TD_ARN }}" \
+            --force-new-deployment >/dev/null
+          aws ecs wait services-stable --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE"
 
   deploy-be:
     needs: build-and-push
@@ -112,32 +123,42 @@ jobs:
       CLUSTER:         safepocket-cluster
       SERVICE:         safepocket-ledger-svc-service-2f0u2cu0
       CONTAINER_NAME:  ledger-svc
-      IMAGE:           ${{ needs.build-and-push.outputs.image_be }}
+      IMAGE:           ${{ env.ECR_REGISTRY }}/safepocket/ledger-svc:${{ env.SHA }}
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update ECS service (backend)
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Render new task definition (image swap)
+        id: render
         shell: bash
         run: |
-          TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-               --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --task-definition "$TD" \
-            --query 'taskDefinition' >/tmp/td.json
-          python3 - <<'PY'
-          import json, os
-          p=json.load(open("/tmp/td.json"))
-          for k in ["taskDefinitionArn","revision","status","registeredAt","registeredBy","compatibilities","requiresAttributes"]:
-              p.pop(k, None)
-          for c in p["containerDefinitions"]:
-              if c.get("name")==os.environ["CONTAINER_NAME"]:
-                  c["image"]=os.environ["IMAGE"]
-          open("/tmp/td.new.json","w").write(json.dumps(p))
-          PY
-          NEW=$(aws ecs register-task-definition --cli-input-json file:///tmp/td.new.json \
-                --query 'taskDefinition.taskDefinitionArn' --output text)
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-              --task-definition "$NEW" --force-new-deployment
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          set -euo pipefail
+          TD_ARN=$(aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --region "$AWS_REGION" --task-definition "$TD_ARN" \
+            --query 'taskDefinition' > td.json
+
+          jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td.json > td.base.json
+
+          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" '
+            .containerDefinitions = (.containerDefinitions
+              | map(if .name==$name then .image=$img else . end))' td.base.json > td.new.json
+
+          NEW_TD_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
+            --cli-input-json file://td.new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "NEW_TD_ARN=$NEW_TD_ARN" >> $GITHUB_OUTPUT
+
+      - name: Update service
+        run: |
+          aws ecs update-service --region "$AWS_REGION" \
+            --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "${{ steps.render.outputs.NEW_TD_ARN }}" \
+            --force-new-deployment >/dev/null
+          aws ecs wait services-stable --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE"

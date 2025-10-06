@@ -85,6 +85,11 @@ jobs:
       COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
       COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
       COGNITO_REDIRECT_URI: ${{ secrets.COGNITO_REDIRECT_URI }}
+      # Issuer/Audience info for middleware JWT verification
+      COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
+      COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
+      COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
+      COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
       SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
     # Ensure all above secrets exist. SAFEPOCKET_USE_COGNITO should be 'true' in production.
     steps:
@@ -137,6 +142,10 @@ jobs:
             COGNITO_DOMAIN \
             COGNITO_CLIENT_ID \
             COGNITO_REDIRECT_URI \
+            COGNITO_ISSUER \
+            COGNITO_AUDIENCE \
+            COGNITO_REGION \
+            COGNITO_USER_POOL_ID \
             SAFEPOCKET_USE_COGNITO; do
             VAL="${!VAR:-}"
             if [ -n "$VAL" ]; then

@@ -47,8 +47,8 @@ safepocket:
     # 1) 直接 issuer / audience を指定 (COGNITO_ISSUER, COGNITO_AUDIENCE)
     # 2) region + user pool id から組み立て (今後の拡張対象: 現在は issuer を必須入力)
     # 3) dev 環境では dev-jwt-secret を使い Cognito 無効化
-    issuer: ${COGNITO_ISSUER:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example}
-    audience: ${COGNITO_AUDIENCE:111111example} # 通常は Cognito App Client ID
+    issuer: ${COGNITO_ISSUER:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_mFd4O5tGY}
+    audience: ${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv} # 通常は Cognito App Client ID
     enabled: ${SAFEPOCKET_USE_COGNITO:false}
     # 参考: 将来サポート予定 -> COGNITO_REGION / COGNITO_USER_POOL_ID から issuer 派生
   plaid:

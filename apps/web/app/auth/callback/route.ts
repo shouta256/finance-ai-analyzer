@@ -9,30 +9,36 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   const state = req.nextUrl.searchParams.get('state') || '/dashboard';
 
+  // Derive an "external" origin using forwarded headers (ECS / reverse proxy) to avoid 0.0.0.0 or container-internal hosts.
+  const fwdHost = req.headers.get('x-forwarded-host');
+  const fwdProto = req.headers.get('x-forwarded-proto');
+  const effectiveOrigin = fwdHost ? `${fwdProto || 'https'}://${fwdHost}` : req.nextUrl.origin;
+
   // Prefer backend vars; fallback to public ones if not defined (production frontend-only deploy case)
   const userPoolDomain = process.env.COGNITO_DOMAIN || process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
   const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
   const clientSecret = process.env.COGNITO_CLIENT_SECRET; // no public fallback for secret
   const configuredRedirect = process.env.COGNITO_REDIRECT_URI || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI;
   // Base (raw) value: configured one or current origin callback
-  const rawRedirect = configuredRedirect || `${req.nextUrl.origin}/auth/callback`;
+  const rawRedirect = configuredRedirect || `${effectiveOrigin}/auth/callback`;
   // Host safeguard: if we are accessed via a non-localhost host but the configured redirect points to localhost
   // (common when a build was produced with a local NEXT_PUBLIC_COGNITO_REDIRECT_URI), replace the host with request host.
   let redirectUri = rawRedirect;
   try {
     const parsed = new URL(rawRedirect);
-    const incomingHost = req.nextUrl.host; // includes port if any
-    const isProdLikeHost = !incomingHost.startsWith('localhost') && incomingHost !== '127.0.0.1';
+    // Use forwarded host if present (proxy) else request host
+    const incomingHost = fwdHost || req.nextUrl.host; // includes port if any
+    const isProdLikeHost = !incomingHost.startsWith('localhost') && incomingHost !== '127.0.0.1' && !incomingHost.startsWith('0.0.0.0');
     if (isProdLikeHost && parsed.host !== incomingHost) {
       // Only override when the configured value looks like a localhost while request host is prod-like
-      const looksLocal = parsed.host.startsWith('localhost') || parsed.host.startsWith('127.0.0.1');
+      const looksLocal = parsed.host.startsWith('localhost') || parsed.host.startsWith('127.0.0.1') || parsed.host.startsWith('0.0.0.0');
       if (looksLocal) {
-        redirectUri = `${req.nextUrl.origin}/auth/callback`;
+        redirectUri = `${effectiveOrigin}/auth/callback`;
       }
     }
   } catch {
     // Fallback – ensure we always have a syntactically valid URL
-    redirectUri = `${req.nextUrl.origin}/auth/callback`;
+    redirectUri = `${effectiveOrigin}/auth/callback`;
   }
 
   if (!code) {
@@ -82,6 +88,9 @@ export async function GET(req: NextRequest) {
               redirectUri,
               configuredRedirect,
               rawRedirect,
+              fwdHost,
+              fwdProto,
+              effectiveOrigin,
             },
           }
         }, { status: resp.status });

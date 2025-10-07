@@ -35,6 +35,10 @@ export async function getAnalyticsSummary(month: string, options?: { generateAi?
   const url = new URL(`/api/analytics/summary`, window.location.origin);
   url.searchParams.set("month", month);
   if (options?.generateAi) url.searchParams.set("generateAi", "true");
+  if (process.env.NEXT_PUBLIC_DEBUG_API === 'true') {
+    // eslint-disable-next-line no-console
+    console.debug('[client-api] getAnalyticsSummary ->', url.toString());
+  }
   const res = await fetch(url.toString(), { cache: "no-store" });
   return handleJson(res, analyticsSummarySchema);
 }

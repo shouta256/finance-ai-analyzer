@@ -333,6 +333,8 @@ function SentimentBadge({ sentiment }: { sentiment: "POSITIVE" | "NEUTRAL" | "NE
 
 function friendlyTitle(code: string): string {
   switch (code) {
+    case 'DB_NOT_FOUND':
+      return 'Database not initialized';
     case 'DB_UNAVAILABLE':
       return 'Database warming up';
     case 'ANALYTICS_FETCH_FAILED':
@@ -346,6 +348,8 @@ function friendlyTitle(code: string): string {
 
 function friendlyBody(err: { code: string; traceId?: string; details?: string }): string {
   switch (err.code) {
+    case 'DB_NOT_FOUND':
+      return 'The configured database does not exist yet. An operator must create it (e.g. CREATE DATABASE safepocket). Once created, retry.';
     case 'DB_UNAVAILABLE':
       return 'The database connection was not ready. Retrying usually fixes this in a moment.';
     case 'ANALYTICS_FETCH_FAILED':

@@ -109,18 +109,27 @@ public class SecurityConfig {
                 .toList();
         return token -> {
             List<String> tokenAud = token.getAudience();
-            if (tokenAud != null) {
+            // Cognito access tokens often omit aud and instead have client_id + token_use=access
+            String clientId = token.getClaimAsString("client_id");
+            String tokenUse = token.getClaimAsString("token_use");
+            if (tokenAud != null && !tokenAud.isEmpty()) {
                 for (String a : tokenAud) {
                     if (allowed.contains(a)) {
                         return OAuth2TokenValidatorResult.success();
                     }
                 }
+            } else {
+                // Fall back to client_id when aud absent
+                if (clientId != null && allowed.contains(clientId) && "access".equals(tokenUse)) {
+                    return OAuth2TokenValidatorResult.success();
+                }
             }
-            log.warn("JWT audience mismatch tokenAud={} allowed={} traceId={}", tokenAud, allowed,
+            log.warn("JWT audience/client mismatch tokenAud={} client_id={} token_use={} allowed={} traceId={}",
+                    tokenAud, clientId, tokenUse, allowed,
                     com.safepocket.ledger.security.RequestContextHolder.get().map(c -> c.traceId()).orElse(null));
             return OAuth2TokenValidatorResult.failure(new OAuth2Error(
                     "invalid_token",
-                    "Missing required audience (tokenAud=" + tokenAud + ", allowed=" + allowed + ")",
+                    "Missing required audience or client_id (tokenAud=" + tokenAud + ", client_id=" + clientId + ", allowed=" + allowed + ")",
                     null
             ));
         };

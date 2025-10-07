@@ -15,12 +15,26 @@ export async function GET(request: NextRequest) {
   const url = new URL(`/analytics/summary`, "http://local-proxy");
   url.searchParams.set("month", query.month);
   if (query.generateAi) url.searchParams.set("generateAi", query.generateAi);
-  const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, {
-    method: "GET",
-    headers: {
-      authorization,
-    },
-  });
-  const body = analyticsSummarySchema.parse(result);
-  return NextResponse.json(body);
+  try {
+    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, {
+      method: "GET",
+      headers: {
+        authorization,
+      },
+    });
+    const body = analyticsSummarySchema.parse(result);
+    return NextResponse.json(body);
+  } catch (e) {
+    const err = e as any;
+    // Surface more backend error context to the frontend for debugging (non-sensitive)
+    return NextResponse.json({
+      error: {
+        code: "ANALYTICS_FETCH_FAILED",
+        message: err?.message || "Backend analytics fetch failed",
+        status: err?.status ?? 500,
+        traceId: err?.payload?.error?.traceId ?? undefined,
+        backendPayload: err?.payload ?? undefined,
+      }
+    }, { status: 502 });
+  }
 }

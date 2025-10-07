@@ -68,6 +68,16 @@ public class SecurityConfig {
 
     @Bean
     JwtDecoder jwtDecoder(SafepocketProperties properties) {
+        // Precedence change: if Cognito is enabled, ALWAYS use remote JWKS regardless of dev secret presence.
+        if (properties.cognito().enabledFlag()) {
+            NimbusJwtDecoder decoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(properties.cognito().issuer());
+            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                    JwtValidators.createDefaultWithIssuer(properties.cognito().issuer()),
+                    audienceValidator(properties)
+            ));
+            return decoder;
+        }
+        // Fallback: Cognito disabled -> use dev shared secret if provided
         if (properties.security().hasDevJwtSecret()) {
             SecretKeySpec key = new SecretKeySpec(properties.security().devJwtSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
@@ -76,17 +86,7 @@ public class SecurityConfig {
             decoder.setJwtValidator(token -> OAuth2TokenValidatorResult.success());
             return decoder;
         }
-
-        if (!properties.cognito().enabledFlag()) {
-            throw new IllegalStateException("Cognito JWT verification disabled and no dev secret provided");
-        }
-
-        NimbusJwtDecoder decoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(properties.cognito().issuer());
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(properties.cognito().issuer()),
-                audienceValidator(properties)
-        ));
-        return decoder;
+        throw new IllegalStateException("Neither Cognito enabled nor dev JWT secret configured");
     }
 
     private OAuth2TokenValidator<Jwt> audienceValidator(SafepocketProperties properties) {

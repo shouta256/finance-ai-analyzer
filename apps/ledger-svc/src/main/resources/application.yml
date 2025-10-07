@@ -6,10 +6,10 @@ spring:
     name: ledger-svc
   datasource:
     # 環境変数で上書き可能 (ECS Secrets / local .env)
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/app}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safepocket}
     driver-class-name: org.postgresql.Driver
-    username: ${SPRING_DATASOURCE_USERNAME:app}
-    password: ${SPRING_DATASOURCE_PASSWORD:app}
+    username: ${SPRING_DATASOURCE_USERNAME:safepocket}
+    password: ${SPRING_DATASOURCE_PASSWORD:safepocket}
     hikari:
       # DB が起動前でもアプリ自体は STARTUP させ、readiness で判定するため失敗で落とさない
       initializationFailTimeout: 0
@@ -60,4 +60,6 @@ safepocket:
     endpoint: https://api.openai.com/v1/responses
     api-key: ${OPENAI_API_KEY:}
   security:
-    dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}
+  # Dev shared secret: provide SAFEPOCKET_DEV_JWT_SECRET locally when Cognito disabled.
+  # No default value so production cannot silently fall back.
+  dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:}

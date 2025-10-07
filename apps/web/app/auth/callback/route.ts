@@ -99,8 +99,8 @@ export async function GET(req: NextRequest) {
     }
 
     const json = await resp.json();
-    // Choose which token to store: prefer id_token (identity claims), fallback access_token
-    const token = json.id_token || json.access_token;
+    // Prefer access_token (resource server audience) and fallback to id_token if no access token.
+    const token = json.access_token || json.id_token;
     if (!token) {
       return NextResponse.json({ error: { code: 'NO_TOKEN', message: 'No id/access token returned' } }, { status: 500 });
     }
@@ -117,6 +117,16 @@ export async function GET(req: NextRequest) {
       path: '/',
       maxAge: 3600, // 1h (Cognito token default 1h)
     });
+    // Optional debug: expose token_use for quick validation (non-HTTP only; removed on refresh)
+    try {
+      const [, payloadB64] = token.split('.');
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+      if (payload.token_use) {
+        res.cookies.set('safepocket_token_use', String(payload.token_use), { path: '/', maxAge: 120, httpOnly: false });
+      }
+    } catch {
+      // ignore
+    }
     return res;
   } catch (e) {
     return NextResponse.json({ error: { code: 'EXCHANGE_ERROR', message: (e as Error).message } }, { status: 500 });

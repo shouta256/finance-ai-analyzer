@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.context.annotation.Bean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -27,6 +29,7 @@ import org.springframework.security.oauth2.server.resource.web.authentication.Be
 
 @Configuration
 public class SecurityConfig {
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     @Bean
     SecurityFilterChain securityFilterChain(
@@ -70,6 +73,7 @@ public class SecurityConfig {
     JwtDecoder jwtDecoder(SafepocketProperties properties) {
         // Precedence change: if Cognito is enabled, ALWAYS use remote JWKS regardless of dev secret presence.
         if (properties.cognito().enabledFlag()) {
+            log.info("Security: Using Cognito issuer {} audience {}", properties.cognito().issuer(), properties.cognito().audience());
             NimbusJwtDecoder decoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(properties.cognito().issuer());
             decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
                     JwtValidators.createDefaultWithIssuer(properties.cognito().issuer()),
@@ -79,6 +83,7 @@ public class SecurityConfig {
         }
         // Fallback: Cognito disabled -> use dev shared secret if provided
         if (properties.security().hasDevJwtSecret()) {
+            log.warn("Security: Cognito disabled; falling back to dev shared secret (NOT for production)");
             SecretKeySpec key = new SecretKeySpec(properties.security().devJwtSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
                     .macAlgorithm(MacAlgorithm.HS256)
@@ -86,7 +91,7 @@ public class SecurityConfig {
             decoder.setJwtValidator(token -> OAuth2TokenValidatorResult.success());
             return decoder;
         }
-        throw new IllegalStateException("Neither Cognito enabled nor dev JWT secret configured");
+        throw new IllegalStateException("Neither Cognito enabled nor dev JWT secret configured (set SAFEPOCKET_USE_COGNITO=true or provide SAFEPOCKET_DEV_JWT_SECRET)");
     }
 
     private OAuth2TokenValidator<Jwt> audienceValidator(SafepocketProperties properties) {

@@ -107,15 +107,27 @@ export async function GET(req: NextRequest) {
 
     const redirectTarget = safeRedirectPath(state);
 
-  // Use effectiveOrigin (x-forwarded-host if present) to avoid redirecting to 0.0.0.0:3000
-  const res = NextResponse.redirect(new URL(redirectTarget, effectiveOrigin));
-    // Cookie scopes entire app domain; secure should be true in production with HTTPS
+    // Detect protocol to decide secure flag (NODE_ENV だけで判定すると、HTTPS 終端が ALB でアプリ本体が HTTP の場合に cookie が落ちないケースがある)
+    const forwardedProto = req.headers.get('x-forwarded-proto');
+    const proto = forwardedProto || (req.nextUrl.protocol.replace(':', '')) || 'https';
+    const secureCookie = proto === 'https';
+
+    // Use effectiveOrigin (x-forwarded-host if present) to avoid redirecting to 0.0.0.0:3000
+    const res = NextResponse.redirect(new URL(redirectTarget, effectiveOrigin));
+    // Cookie scopes entire app domain
     res.cookies.set('safepocket_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV !== 'development',
+      secure: secureCookie,
       sameSite: 'lax',
       path: '/',
       maxAge: 3600, // 1h (Cognito token default 1h)
+    });
+    // Debug cookie (non-HTTP only) showing whether secure was used; expires quickly
+    res.cookies.set('safepocket_token_flags', JSON.stringify({ secure: secureCookie, proto }), {
+      httpOnly: false,
+      path: '/',
+      maxAge: 120,
+      sameSite: 'lax'
     });
     // Optional debug: expose token_use for quick validation (non-HTTP only; removed on refresh)
     try {

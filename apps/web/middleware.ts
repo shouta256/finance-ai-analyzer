@@ -128,7 +128,12 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname || '/dashboard');
-    return NextResponse.redirect(url);
+    const r = NextResponse.redirect(url);
+    // 直前の callback で secure cookie がブラウザに保存されなかった場合の調査用
+    if (req.headers.get('x-forwarded-proto') === 'http') {
+      r.headers.set('x-auth-hint', 'missing-token-proto-http');
+    }
+    return r;
   }
 
   try {

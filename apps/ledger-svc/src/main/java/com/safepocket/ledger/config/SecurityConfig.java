@@ -101,14 +101,21 @@ public class SecurityConfig {
     }
 
     private OAuth2TokenValidator<Jwt> audienceValidator(SafepocketProperties properties) {
+        // Support comma-separated list of allowed audiences in the COGNITO_AUDIENCE env (first = primary)
+        List<String> allowed = List.of(properties.cognito().audience().split(","));
         return token -> {
-            List<String> audiences = token.getAudience();
-            if (audiences != null && audiences.contains(properties.cognito().audience())) {
-                return OAuth2TokenValidatorResult.success();
+            List<String> tokenAud = token.getAudience();
+            if (tokenAud != null) {
+                for (String a : tokenAud) {
+                    if (allowed.contains(a)) {
+                        return OAuth2TokenValidatorResult.success();
+                    }
+                }
             }
+            log.warn("JWT audience mismatch tokenAud={} allowed={}", tokenAud, allowed);
             return OAuth2TokenValidatorResult.failure(new OAuth2Error(
                     "invalid_token",
-                    "Missing required audience", null
+                    "Missing required audience (allowed=" + allowed + ")", null
             ));
         };
     }

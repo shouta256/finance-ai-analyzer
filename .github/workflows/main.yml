@@ -199,6 +199,8 @@ jobs:
       SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
       SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
       SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+      # ==== One-time DB bootstrap flag (set secret SAFEPOCKET_DB_BOOTSTRAP=true; remove after schema created) ====
+      SAFEPOCKET_DB_BOOTSTRAP: ${{ secrets.SAFEPOCKET_DB_BOOTSTRAP }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -265,7 +267,8 @@ jobs:
             SAFEPOCKET_USE_COGNITO \
             SPRING_DATASOURCE_URL \
             SPRING_DATASOURCE_USERNAME \
-            SPRING_DATASOURCE_PASSWORD; do
+            SPRING_DATASOURCE_PASSWORD \
+            SAFEPOCKET_DB_BOOTSTRAP; do
             VAL="${!VAR:-}"
             if [ -n "$VAL" ]; then
               ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')

@@ -26,6 +26,14 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDto> handleGeneral(Exception ex) {
+        // Detect missing table (schema not initialized) -> provide specific guidance
+        String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";
+        if (msg.contains("relation \"transactions\" does not exist") || msg.contains("relation \"accounts\" does not exist")) {
+            return build(HttpStatus.INTERNAL_SERVER_ERROR, "DB_SCHEMA_MISSING", "Database schema not initialized", Map.of(
+                    "action", "Enable SAFEPOCKET_DB_BOOTSTRAP=true once or run schema DDL (see docs/operations.md)",
+                    "reason", ex.getMessage()
+            ));
+        }
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected error", Map.of("reason", ex.getMessage()));
     }
 

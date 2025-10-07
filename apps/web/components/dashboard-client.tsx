@@ -333,6 +333,8 @@ function SentimentBadge({ sentiment }: { sentiment: "POSITIVE" | "NEUTRAL" | "NE
 
 function friendlyTitle(code: string): string {
   switch (code) {
+    case 'DB_SCHEMA_MISSING':
+      return 'Database schema missing';
     case 'DB_NOT_FOUND':
       return 'Database not initialized';
     case 'DB_UNAVAILABLE':
@@ -348,6 +350,8 @@ function friendlyTitle(code: string): string {
 
 function friendlyBody(err: { code: string; traceId?: string; details?: string }): string {
   switch (err.code) {
+    case 'DB_SCHEMA_MISSING':
+      return 'The database exists but required tables are missing. An operator must run the schema bootstrap or migrations.';
     case 'DB_NOT_FOUND':
       return 'The configured database does not exist yet. An operator must create it (e.g. CREATE DATABASE safepocket). Once created, retry.';
     case 'DB_UNAVAILABLE':

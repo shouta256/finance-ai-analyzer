@@ -91,6 +91,8 @@ jobs:
       COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
       COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
       SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
+      # Backend service base URL for server-side API calls
+      LEDGER_SERVICE_URL: ${{ secrets.LEDGER_SERVICE_URL }}
     # Ensure all above secrets exist. SAFEPOCKET_USE_COGNITO should be 'true' in production.
     steps:
       - name: Configure AWS credentials
@@ -147,11 +149,17 @@ jobs:
             COGNITO_REGION \
             COGNITO_USER_POOL_ID \
             SAFEPOCKET_USE_COGNITO; do
+            # LEDGER_SERVICE_URL intentionally appended after loop; add if present
             VAL="${!VAR:-}"
             if [ -n "$VAL" ]; then
               ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')
             fi
           done
+
+          # Add LEDGER_SERVICE_URL separately so older loops remain backward compatible
+          if [ -n "${LEDGER_SERVICE_URL:-}" ]; then
+            ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n LEDGER_SERVICE_URL --arg v "$LEDGER_SERVICE_URL" '. + [{name:$n,value:$v}]')
+          fi
 
           # swap container image & merge env (remove duplicates by name)
           jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" --argjson overrides "$ENV_OVERRIDES" '

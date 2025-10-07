@@ -61,7 +61,7 @@ let audience = EXPLICIT_AUDIENCE || CLIENT_ID; // 通常 audience=client_id
 const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
-async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string }> {
+async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string; mode: string }> {
   // 動的フォールバック: まだ issuer/audience 未決定ならヘッダ部を decode して iss/aud 推定
   if (!issuer || !audience) {
     try {
@@ -80,15 +80,34 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
     }
   }
 
-  if (jwksUri && issuer && audience) {
+  if (jwksUri && issuer) {
     remoteJwks ||= createRemoteJWKSet(new URL(jwksUri));
-    const verified = await jwtVerify(token, remoteJwks, { issuer, audience });
-    return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any) };
+    if (audience) {
+      try {
+        const verified = await jwtVerify(token, remoteJwks, { issuer, audience });
+        return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks+audi' };
+      } catch (e: any) {
+        // Audience mismatch fallback: retry with issuer only (prevents infinite login loop when audience secret not injected yet)
+        if (e?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' || e?.message?.includes('audience')) {
+          try {
+            const verified2 = await jwtVerify(token, remoteJwks, { issuer });
+            return { sub: verified2.payload.sub as string | undefined, iss: verified2.payload.iss as string | undefined, aud: (verified2.payload.aud as any), mode: 'jwks-issuer-only' };
+          } catch (inner) {
+            throw inner; // propagate
+          }
+        }
+        throw e;
+      }
+    } else {
+      // Audience unset → verify only issuer
+      const verified = await jwtVerify(token, remoteJwks, { issuer });
+      return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks-no-aud' };
+    }
   }
-  // dev fallback
+  // dev fallback (署名なし検証用 shared secret)
   const encoder = new TextEncoder();
   const verified = await jwtVerify(token, encoder.encode(devSharedSecret));
-  return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any) };
+  return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'dev-shared-secret' };
 }
 
 function extractToken(req: NextRequest): string | null {
@@ -137,7 +156,7 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    const { sub, iss, aud } = await verifyJwt(token);
+    const { sub, iss, aud, mode } = await verifyJwt(token);
     if (!sub) throw new Error('Missing subject');
     if (pathname.startsWith('/login')) {
       const url = req.nextUrl.clone();
@@ -149,6 +168,7 @@ export async function middleware(req: NextRequest) {
     h.set('x-safepocket-user-id', sub);
     if (iss) h.set('x-safepocket-iss', iss);
     if (aud) h.set('x-safepocket-aud', Array.isArray(aud) ? aud[0] : aud);
+    h.set('x-safepocket-auth-mode', mode);
     if (!h.has('authorization')) h.set('authorization', `Bearer ${token}`);
     return NextResponse.next({ request: { headers: h } });
   } catch (e) {

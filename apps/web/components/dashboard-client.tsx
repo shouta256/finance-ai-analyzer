@@ -21,6 +21,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [aiReady, setAiReady] = useState<boolean>(false);
+  const [errorState, setErrorState] = useState<{ code: string; traceId?: string; details?: string } | null>(null);
 
   const anomalies = state.summary.anomalies;
   const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
@@ -51,11 +52,34 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   async function refreshData() {
-    const [summary, transactions] = await Promise.all([
-      getAnalyticsSummary(month),
-      listTransactions(month),
-    ]);
-    setState({ summary, transactions });
+    try {
+      setErrorState(null);
+      const [summary, transactions] = await Promise.all([
+        getAnalyticsSummary(month),
+        listTransactions(month),
+      ]);
+      setState({ summary, transactions });
+    } catch (e) {
+      const err = e as any;
+      // Map backend-shaped payload (ANALYTICS_FETCH_FAILED -> 502 with backendPayload)
+      const payload = err?.payload?.error?.backendPayload?.error || err?.payload?.error || {};
+      const code = payload.code || err?.payload?.error?.code || 'UNKNOWN_ERROR';
+      const traceId = payload.traceId || err?.payload?.error?.traceId;
+      const reason = payload.details?.reason || payload.message || err.message;
+      // One automatic retry for transient DB issues
+      if (code === 'DB_UNAVAILABLE' || reason?.includes('Failed to obtain JDBC Connection')) {
+        try {
+          await new Promise(r => setTimeout(r, 1200));
+          const [summary2, transactions2] = await Promise.all([
+            getAnalyticsSummary(month),
+            listTransactions(month),
+          ]);
+          setState({ summary: summary2, transactions: transactions2 });
+          return;
+        } catch {/* fall through to show error */}
+      }
+      setErrorState({ code, traceId, details: reason });
+    }
   }
 
   async function handleGenerateAi() {
@@ -79,6 +103,26 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   return (
     <div className="flex flex-col gap-6">
+      {errorState ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 flex flex-col gap-2">
+          <div className="font-semibold">{friendlyTitle(errorState.code)}</div>
+          <div>{friendlyBody(errorState)}</div>
+          {errorState.traceId ? (
+            <div className="text-xs text-amber-600">Trace ID: {errorState.traceId}</div>
+          ) : null}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { startTransition(() => refreshData()); }}
+              disabled={isPending}
+              className="rounded bg-amber-600 px-3 py-1 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50"
+            >Retry</button>
+            <button
+              onClick={() => setErrorState(null)}
+              className="rounded bg-white border border-amber-400 px-3 py-1 text-amber-700 text-xs font-medium hover:bg-amber-100"
+            >Dismiss</button>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleLink}
@@ -285,4 +329,30 @@ function SentimentBadge({ sentiment }: { sentiment: "POSITIVE" | "NEUTRAL" | "NE
       {sentiment}
     </span>
   );
+}
+
+function friendlyTitle(code: string): string {
+  switch (code) {
+    case 'DB_UNAVAILABLE':
+      return 'Database warming up';
+    case 'ANALYTICS_FETCH_FAILED':
+      return 'Analytics temporarily unavailable';
+    case 'INTERNAL_ERROR':
+      return 'Service error';
+    default:
+      return 'Unexpected issue';
+  }
+}
+
+function friendlyBody(err: { code: string; traceId?: string; details?: string }): string {
+  switch (err.code) {
+    case 'DB_UNAVAILABLE':
+      return 'The database connection was not ready. Retrying usually fixes this in a moment.';
+    case 'ANALYTICS_FETCH_FAILED':
+      return 'We could not fetch your analytics data. You can retry now or refresh later.';
+    case 'INTERNAL_ERROR':
+      return 'An internal error occurred. If this persists, contact support with the trace ID.';
+    default:
+      return err.details || 'An unknown error occurred.';
+  }
 }

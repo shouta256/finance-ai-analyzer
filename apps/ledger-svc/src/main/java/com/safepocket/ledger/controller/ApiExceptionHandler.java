@@ -7,6 +7,7 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -26,6 +27,13 @@ public class ApiExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDto> handleGeneral(Exception ex) {
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected error", Map.of("reason", ex.getMessage()));
+    }
+
+    @ExceptionHandler(CannotGetJdbcConnectionException.class)
+    public ResponseEntity<ErrorResponseDto> handleJdbc(CannotGetJdbcConnectionException ex) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "DB_UNAVAILABLE", "Database temporarily unavailable", Map.of(
+                "reason", ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage()
+        ));
     }
 
     private ResponseEntity<ErrorResponseDto> build(HttpStatus status, String code, String message, Map<String, Object> details) {

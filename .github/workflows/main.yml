@@ -202,6 +202,27 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Preflight required backend env vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for v in COGNITO_ISSUER COGNITO_AUDIENCE SAFEPOCKET_USE_COGNITO; do
+            val="$(printenv "$v" || true)"
+            if [ -z "$val" ]; then
+              missing+=("$v")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required backend secrets: ${missing[*]}" >&2
+            exit 1
+          fi
+          # Basic sanity: issuer should start with https:// and contain cognito-idp
+          if [[ "$COGNITO_ISSUER" != https://cognito-idp.* ]]; then
+            echo "::warning::COGNITO_ISSUER does not look like a standard Cognito issuer: $COGNITO_ISSUER" >&2
+          fi
+          echo "Backend env preflight OK" >&2
+
       - name: Preflight ECS permission check
         shell: bash
         run: |

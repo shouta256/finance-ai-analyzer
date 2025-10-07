@@ -69,6 +69,6 @@ safepocket:
     endpoint: https://api.openai.com/v1/responses
     api-key: ${OPENAI_API_KEY:}
   security:
-  # Dev shared secret: provide SAFEPOCKET_DEV_JWT_SECRET locally when Cognito disabled.
-  # No default value so production cannot silently fall back.
-  dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:}
+    # Dev shared secret: provide SAFEPOCKET_DEV_JWT_SECRET locally when Cognito disabled.
+    # No default value so production cannot silently fall back.
+    dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:}

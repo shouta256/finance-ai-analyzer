@@ -31,9 +31,17 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(CannotGetJdbcConnectionException.class)
     public ResponseEntity<ErrorResponseDto> handleJdbc(CannotGetJdbcConnectionException ex) {
-        return build(HttpStatus.SERVICE_UNAVAILABLE, "DB_UNAVAILABLE", "Database temporarily unavailable", Map.of(
-                "reason", ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage()
+    String specific = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+    String msgLower = specific != null ? specific.toLowerCase() : "";
+    if (msgLower.contains("does not exist") && msgLower.contains("database")) {
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "DB_NOT_FOUND", "Configured database does not exist", Map.of(
+            "reason", specific,
+            "action", "Create the database (CREATE DATABASE safepocket) or correct SPRING_DATASOURCE_URL"
         ));
+    }
+    return build(HttpStatus.SERVICE_UNAVAILABLE, "DB_UNAVAILABLE", "Database temporarily unavailable", Map.of(
+        "reason", specific
+    ));
     }
 
     private ResponseEntity<ErrorResponseDto> build(HttpStatus status, String code, String message, Map<String, Object> details) {

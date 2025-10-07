@@ -27,6 +27,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import com.safepocket.ledger.security.JsonAuthErrorHandlers;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 @Configuration
 public class SecurityConfig {
@@ -76,7 +78,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    JwtDecoder jwtDecoder(SafepocketProperties properties) {
+    JwtDecoder jwtDecoder(SafepocketProperties properties, Environment environment) {
         // Precedence change: if Cognito is enabled, ALWAYS use remote JWKS regardless of dev secret presence.
         if (properties.cognito().enabledFlag()) {
             log.info("Security: Using Cognito issuer {} audience {}", properties.cognito().issuer(), properties.cognito().audience());
@@ -94,6 +96,17 @@ public class SecurityConfig {
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
                     .macAlgorithm(MacAlgorithm.HS256)
                     .build();
+            decoder.setJwtValidator(token -> OAuth2TokenValidatorResult.success());
+            return decoder;
+        }
+        // Test convenience: if running under 'test' Spring profile, generate an ephemeral secret automatically
+        if (environment.acceptsProfiles(Profiles.of("test"))) {
+            log.warn("Security: Generating ephemeral test JWT secret (no Cognito/dev secret provided)");
+            byte[] random = java.util.UUID.randomUUID().toString().replace("-", "").substring(0,32).getBytes(StandardCharsets.UTF_8);
+            SecretKeySpec key = new SecretKeySpec(random, "HmacSHA256");
+            NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
+                .macAlgorithm(MacAlgorithm.HS256)
+                .build();
             decoder.setJwtValidator(token -> OAuth2TokenValidatorResult.success());
             return decoder;
         }

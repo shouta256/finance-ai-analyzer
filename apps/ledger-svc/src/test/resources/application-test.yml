@@ -1,0 +1,11 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+
+safepocket:
+  cognito:
+    enabled: false
+  security:
+    # Static secret purely for tests; not used in production.
+    # Length >=32 for HS256 key material (tests only)
+    dev-jwt-secret: test-secret-please-change-0123456789

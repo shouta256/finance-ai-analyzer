@@ -72,3 +72,8 @@ safepocket:
     # Dev shared secret: provide SAFEPOCKET_DEV_JWT_SECRET locally when Cognito disabled.
     # No default value so production cannot silently fall back.
     dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:}
+  db:
+    # Temporary bootstrap flag: when true (SAFEPOCKET_DB_BOOTSTRAP=true) the service will
+    # auto-create tables & minimal seed data if schema is empty (no transactions table).
+    # Remove after introducing Flyway.
+    bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}

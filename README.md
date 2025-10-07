@@ -27,9 +27,9 @@ HEALTHCHECK --start-period=45s --interval=30s --timeout=5s --retries=5 CMD curl 
 
 ## 環境変数 (DB Credentials / Connection)
 Backend の `application.yml` は以下の環境変数で上書き可能:
-- `SPRING_DATASOURCE_URL` (default: `jdbc:postgresql://localhost:5432/app`)
-- `SPRING_DATASOURCE_USERNAME` (default: `app`)
-- `SPRING_DATASOURCE_PASSWORD` (default: `app`)
+- `SPRING_DATASOURCE_URL` (default: `jdbc:postgresql://localhost:5432/safepocket`)
+- `SPRING_DATASOURCE_USERNAME` (default: `safepocket`)
+- `SPRING_DATASOURCE_PASSWORD` (default: `safepocket`)
 
 ECS ではこれらを Secrets Manager / SSM からタスク定義環境変数として注入。
 
@@ -45,4 +45,3 @@ ECS ではこれらを Secrets Manager / SSM からタスク定義環境変数�
 - Backend Dockerfile に `HEALTHCHECK` 追加。
 - Frontend に `/api/healthz` 追加。
 - `next start` を明示的に `0.0.0.0:3000` へバインドするようスクリプト調整。
-

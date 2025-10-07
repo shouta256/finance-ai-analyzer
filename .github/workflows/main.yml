@@ -195,6 +195,10 @@ jobs:
       COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
       COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
       SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
+      # ==== Backend (Spring) Datasource vars (must be set as GitHub Secrets) ====
+      SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+      SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+      SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -207,7 +211,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for v in COGNITO_ISSUER COGNITO_AUDIENCE SAFEPOCKET_USE_COGNITO; do
+          for v in COGNITO_ISSUER COGNITO_AUDIENCE SAFEPOCKET_USE_COGNITO SPRING_DATASOURCE_URL SPRING_DATASOURCE_USERNAME SPRING_DATASOURCE_PASSWORD; do
             val="$(printenv "$v" || true)"
             if [ -z "$val" ]; then
               missing+=("$v")
@@ -220,6 +224,11 @@ jobs:
           # Basic sanity: issuer should start with https:// and contain cognito-idp
           if [[ "$COGNITO_ISSUER" != https://cognito-idp.* ]]; then
             echo "::warning::COGNITO_ISSUER does not look like a standard Cognito issuer: $COGNITO_ISSUER" >&2
+          fi
+          # Basic JDBC sanity
+          if [[ "$SPRING_DATASOURCE_URL" != jdbc:postgresql://* ]]; then
+            echo "::error::SPRING_DATASOURCE_URL must start with jdbc:postgresql:// (current='$SPRING_DATASOURCE_URL')" >&2
+            exit 1
           fi
           echo "Backend env preflight OK" >&2
 
@@ -253,7 +262,10 @@ jobs:
           for VAR in \
             COGNITO_ISSUER \
             COGNITO_AUDIENCE \
-            SAFEPOCKET_USE_COGNITO; do
+            SAFEPOCKET_USE_COGNITO \
+            SPRING_DATASOURCE_URL \
+            SPRING_DATASOURCE_USERNAME \
+            SPRING_DATASOURCE_PASSWORD; do
             VAL="${!VAR:-}"
             if [ -n "$VAL" ]; then
               ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')

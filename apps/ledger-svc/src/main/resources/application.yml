@@ -7,6 +7,8 @@ spring:
   datasource:
     # 環境変数で上書き可能 (ECS Secrets / local .env)
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safepocket}
+    # driver-class-name を明示: 一部 CI / buildpack 環境でのクラスパス解決遅延を避けるため。
+    # Spring Boot は通常自動検出するので問題なければ削除可。
     driver-class-name: org.postgresql.Driver
     username: ${SPRING_DATASOURCE_USERNAME:safepocket}
     password: ${SPRING_DATASOURCE_PASSWORD:safepocket}

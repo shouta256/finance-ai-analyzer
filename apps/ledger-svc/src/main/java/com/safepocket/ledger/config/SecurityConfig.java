@@ -26,6 +26,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import com.safepocket.ledger.security.JsonAuthErrorHandlers;
 
 @Configuration
 public class SecurityConfig {
@@ -36,7 +37,8 @@ public class SecurityConfig {
             HttpSecurity http,
             TraceIdFilter traceIdFilter,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            AuthenticatedUserFilter authenticatedUserFilter
+        AuthenticatedUserFilter authenticatedUserFilter,
+        JsonAuthErrorHandlers jsonAuthErrorHandlers
     ) throws Exception {
     http
         .csrf(csrf -> csrf.disable())
@@ -53,7 +55,11 @@ public class SecurityConfig {
             // All other endpoints require authentication
             .anyRequest().authenticated()
         )
-                .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+        .oauth2ResourceServer(resource -> resource
+            .authenticationEntryPoint(jsonAuthErrorHandlers)
+            .accessDeniedHandler(jsonAuthErrorHandlers)
+            .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
+        );
 
         http.addFilterBefore(traceIdFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterAfter(authenticatedUserFilter, BearerTokenAuthenticationFilter.class);

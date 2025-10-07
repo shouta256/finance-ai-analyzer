@@ -122,13 +122,10 @@ export async function GET(req: NextRequest) {
       path: '/',
       maxAge: 3600, // 1h (Cognito token default 1h)
     });
-    // Debug cookie (non-HTTP only) showing whether secure was used; expires quickly
-    res.cookies.set('safepocket_token_flags', JSON.stringify({ secure: secureCookie, proto }), {
-      httpOnly: false,
-      path: '/',
-      maxAge: 120,
-      sameSite: 'lax'
-    });
+    // Removed previous JSON debug cookie (safepocket_token_flags) because browsers reject complex/JSON cookie values.
+    // If needed, surface debug info via a temporary header (not cached) for manual inspection.
+    res.headers.set('x-safepocket-cookie-secure', String(secureCookie));
+    res.headers.set('x-safepocket-proto', proto);
     // Optional debug: expose token_use for quick validation (non-HTTP only; removed on refresh)
     try {
       const [, payloadB64] = token.split('.');

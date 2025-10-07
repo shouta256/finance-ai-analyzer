@@ -17,6 +17,10 @@ spring:
       initializationFailTimeout: 0
       connectionTimeout: 30000
       maximumPoolSize: 10
+      # NOTE: If transient startup failures continue, consider adding:
+      #   validationTimeout: 5000
+      #   idleTimeout: 60000
+      # Current defaults are sufficient for low throughput dev/prod beta.
   jpa:
     hibernate:
       ddl-auto: none
@@ -24,6 +28,9 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        # 起動初期のメタデータ問い合わせ (DatabaseMetaData) を抑止し、一過性の接続失敗ログを減らす
+        temp:
+          use_jdbc_metadata_defaults: false
     open-in-view: false
   sql:
     init:

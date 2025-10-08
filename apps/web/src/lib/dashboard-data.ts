@@ -11,10 +11,8 @@ export async function getDashboardData(month: string): Promise<{
 }> {
   const headerList = headers();
   const cookieStore = cookies();
-  const token = cookieStore.get("safepocket_token")?.value;
-  if (!token) {
-    throw new Error("Missing authentication token");
-  }
+  const token = cookieStore.get("sp_token")?.value;
+  if (!token) throw new Error("Missing authentication token (sp_token)");
   const cookieHeader = cookieStore
     .getAll()
     .map((entry) => `${entry.name}=${entry.value}`)

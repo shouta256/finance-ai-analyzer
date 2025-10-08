@@ -22,6 +22,7 @@ Frontend (`apps/web`):
 - `NEXT_PUBLIC_COGNITO_SCOPE=openid email phone` (remove `profile` unless explicitly allowed in Cognito console)
 - (optional) `NEXT_PUBLIC_COGNITO_REDIRECT_URI=https://app.shota256.me/auth/callback` (used only if host matches at runtime; otherwise code computes `${origin}/auth/callback`)
 - (optional) `NEXT_PUBLIC_ENABLE_DEV_LOGIN=true` (never set in prod unless intentionally exposing dev login)
+- (optional) `SAFEPOCKET_ENABLE_DEV_LOGIN=true` (server-only flag that mirrors the frontend one when running a production build locally)
 - (optional) `NEXT_PUBLIC_AUTH_DEBUG=true` (exposes a debug panel on `/login`)
 
 ## Flow Summary
@@ -31,7 +32,7 @@ Frontend (`apps/web`):
    `https://{domain}/oauth2/authorize?client_id=...&response_type=code&scope=...&redirect_uri=...&state=...`
 4. Cognito redirects to `/auth/callback?code=...&state=...`.
 5. Callback exchanges code → tokens via `POST https://{domain}/oauth2/token` (uses Basic auth when secret present else form params).
-6. ID token (or access token fallback) stored as `safepocket_token` (httpOnly, secure in HTTPS).
+6. ID token (or access token fallback) stored as `sp_token` (httpOnly, secure in HTTPS).
 7. Middleware enforces authentication; backend validates JWT again on API calls.
 
 ## Middleware Auto Configuration
@@ -39,7 +40,7 @@ If `COGNITO_ISSUER` is absent it is derived from region + pool id. JWKS endpoint
 Audience defaults to `COGNITO_CLIENT_ID` unless overridden.
 
 ## Dev Fallback
-Absent Cognito vars: only the dev login button is shown. Production best practice: omit `NEXT_PUBLIC_ENABLE_DEV_LOGIN` and ensure backend dev endpoint guarded or disabled.
+Absent Cognito vars: only the dev login button is shown. Production best practice: omit `NEXT_PUBLIC_ENABLE_DEV_LOGIN` (and the server-only `SAFEPOCKET_ENABLE_DEV_LOGIN`) and ensure backend dev endpoint guarded or disabled.
 
 ## Logout (Planned)
 Implement `/logout` to clear cookie and redirect to:

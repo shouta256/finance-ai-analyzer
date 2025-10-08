@@ -11,3 +11,10 @@ apps/ledger-svc/.gradle
 apps/ledger-svc/build
 apps/ledger-svc/gradle-app.setting
 apps/ledger-svc/*.log
+
+# Environment & secrets (do not commit API keys)
+.env
+.env.local
+.env.*.local
+apps/web/.env
+apps/web/.env.local

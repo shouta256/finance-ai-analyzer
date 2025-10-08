@@ -14,10 +14,14 @@ public class CorsConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         // Production app domain; can be externalized to properties if needed
-        config.setAllowedOrigins(List.of("https://app.shota256.me"));
+    config.setAllowedOrigins(List.of(
+        "https://app.shota256.me",
+        "http://localhost:3000",
+        "https://app.safepocket.local"
+    ));
         config.setAllowCredentials(true);
         config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization","Content-Type","Accept"));
+    config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("X-Request-Trace"));
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

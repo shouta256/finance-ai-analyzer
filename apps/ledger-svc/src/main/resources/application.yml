@@ -5,22 +5,14 @@ spring:
   application:
     name: ledger-svc
   datasource:
-    # 環境変数で上書き可能 (ECS Secrets / local .env)
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safepocket}
-    # driver-class-name を明示: 一部 CI / buildpack 環境でのクラスパス解決遅延を避けるため。
-    # Spring Boot は通常自動検出するので問題なければ削除可。
     driver-class-name: org.postgresql.Driver
     username: ${SPRING_DATASOURCE_USERNAME:safepocket}
     password: ${SPRING_DATASOURCE_PASSWORD:safepocket}
     hikari:
-      # DB が起動前でもアプリ自体は STARTUP させ、readiness で判定するため失敗で落とさない
       initializationFailTimeout: 0
       connectionTimeout: 30000
       maximumPoolSize: 10
-      # NOTE: If transient startup failures continue, consider adding:
-      #   validationTimeout: 5000
-      #   idleTimeout: 60000
-      # Current defaults are sufficient for low throughput dev/prod beta.
   jpa:
     hibernate:
       ddl-auto: none
@@ -28,13 +20,16 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        # 起動初期のメタデータ問い合わせ (DatabaseMetaData) を抑止し、一過性の接続失敗ログを減らす
         temp:
           use_jdbc_metadata_defaults: false
     open-in-view: false
   sql:
     init:
       mode: never
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
   jackson:
     serialization:
       indent_output: true
@@ -52,28 +47,24 @@ management:
 
 safepocket:
   cognito:
-    # 実運用では以下 3 通りのいずれかで設定してください:
-    # 1) 直接 issuer / audience を指定 (COGNITO_ISSUER, COGNITO_AUDIENCE)
-    # 2) region + user pool id から組み立て (今後の拡張対象: 現在は issuer を必須入力)
-    # 3) dev 環境では dev-jwt-secret を使い Cognito 無効化
     issuer: ${COGNITO_ISSUER:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_mFd4O5tGY}
-    audience: ${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv} # 通常は Cognito App Client ID
+    audience: ${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv}
     enabled: ${SAFEPOCKET_USE_COGNITO:false}
-    # 参考: 将来サポート予定 -> COGNITO_REGION / COGNITO_USER_POOL_ID から issuer 派生
   plaid:
     client-id: ${PLAID_CLIENT_ID:demo-client}
     client-secret: ${PLAID_CLIENT_SECRET:demo-secret}
     redirect-uri: https://app.safepocket.local/plaid/callback
+    base-url: ${PLAID_BASE_URL:https://sandbox.plaid.com}
+    environment: ${PLAID_ENV:sandbox}
+    webhook-url: ${PLAID_WEBHOOK_URL:}
+    webhook-secret: ${PLAID_WEBHOOK_SECRET:}
   ai:
-    model: gpt-5-nano
+    model: ${SAFEPOCKET_AI_MODEL:gpt-4o-mini}
+    snapshot: ${SAFEPOCKET_AI_MODEL_SNAPSHOT:}
     endpoint: https://api.openai.com/v1/responses
     api-key: ${OPENAI_API_KEY:}
   security:
-    # Dev shared secret: provide SAFEPOCKET_DEV_JWT_SECRET locally when Cognito disabled.
-    # No default value so production cannot silently fall back.
-    dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:}
+    # Must match frontend middleware fallback (ensure consistent default for local dev)
+    dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}
   db:
-    # Temporary bootstrap flag: when true (SAFEPOCKET_DB_BOOTSTRAP=true) the service will
-    # auto-create tables & minimal seed data if schema is empty (no transactions table).
-    # Remove after introducing Flyway.
     bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}

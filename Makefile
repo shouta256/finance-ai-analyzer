@@ -9,6 +9,12 @@ export SAFEPOCKET_USE_COGNITO ?= false
 COMPOSE_FILE ?= infra/compose/docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
 
+# Load root .env (if present) so make targets propagate shared environment vars
+ifneq (,$(wildcard .env))
+include .env
+export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
+endif
+
 .PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down logs clean kill-port
 
 help: ## Show available targets

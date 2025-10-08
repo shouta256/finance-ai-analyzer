@@ -28,8 +28,8 @@ export const transactionSchema = z.object({
   anomalyScore: z
     .object({
       method: z.enum(["Z_SCORE", "IQR"]),
-      zScore: z.number(),
-      iqrScore: z.number(),
+      deltaAmount: z.number(),
+      budgetImpactPercent: z.number(),
       commentary: z.string().nullable().optional(),
     })
     .nullable()
@@ -67,8 +67,9 @@ export const analyticsSummarySchema = z.object({
     z.object({
       transactionId: z.string(),
       method: z.enum(["Z_SCORE", "IQR"]),
-      score: z.number(),
       amount: z.number(),
+      deltaAmount: z.number(),
+      budgetImpactPercent: z.number(),
       occurredAt: z.string().datetime(),
       merchantName: z.string(),
       commentary: z.string().nullable().optional(),
@@ -89,3 +90,20 @@ export const transactionsSyncSchema = z.object({
   pendingCount: z.number(),
   traceId: z.string().nullable().optional(),
 });
+
+// Chat schemas
+export const chatMessageSchema = z.object({
+  id: z.string().uuid(),
+  role: z.enum(["USER", "ASSISTANT"]),
+  content: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+export const chatResponseSchema = z.object({
+  conversationId: z.string().uuid(),
+  messages: z.array(chatMessageSchema),
+  traceId: z.string().nullable().optional(),
+});
+
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+export type ChatResponse = z.infer<typeof chatResponseSchema>;

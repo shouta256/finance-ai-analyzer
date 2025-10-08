@@ -37,6 +37,25 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- 1-user-1-item (Phase1). item_id unique for potential multi-link future.
+CREATE TABLE IF NOT EXISTS plaid_items (
+    user_id uuid PRIMARY KEY REFERENCES users(id),
+    item_id text NOT NULL UNIQUE,
+    encrypted_access_token text NOT NULL,
+    linked_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Chat messages (simple conversation storage). A conversation groups messages by conversation_id.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id uuid NOT NULL,
+    user_id uuid NOT NULL REFERENCES users(id),
+    role text NOT NULL CHECK (role IN ('USER','ASSISTANT')),
+    content text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_messages_conversation_idx ON chat_messages(conversation_id, created_at);
+
 INSERT INTO users (id, email, full_name)
 VALUES
     ('0f08d2b9-28b3-4b28-bd33-41a36161e9ab', 'demo@safepocket.app', 'Demo User')

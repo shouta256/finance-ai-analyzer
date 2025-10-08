@@ -155,6 +155,27 @@ paths:
                 $ref: '#/components/schemas/AnalyticsSummaryResponse'
         default:
           $ref: '#/components/responses/ErrorResponse'
+  /ai/chat:
+    post:
+      summary: Send a chat message to AI assistant
+      operationId: sendAiChatMessage
+      tags:
+        - AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiChatRequest'
+      responses:
+        '200':
+          description: Chat response returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiChatResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -405,27 +426,33 @@ components:
       type: object
       required:
         - method
-        - zScore
-        - iqrScore
+        - deltaAmount
+        - budgetImpactPercent
       properties:
         method:
           type: string
           enum:
             - Z_SCORE
             - IQR
-        zScore:
+        deltaAmount:
           type: number
           format: double
-        iqrScore:
+          description: Absolute difference compared to typical spend for this merchant/category
+        budgetImpactPercent:
           type: number
           format: double
+          description: Percentage share of the month's total expenses accounted for by this transaction
+        commentary:
+          type: string
+          nullable: true
     AnomalyInsight:
       type: object
       required:
         - transactionId
         - method
-        - score
         - amount
+        - deltaAmount
+        - budgetImpactPercent
         - occurredAt
         - merchantName
       properties:
@@ -437,12 +464,17 @@ components:
           enum:
             - Z_SCORE
             - IQR
-        score:
-          type: number
-          format: double
         amount:
           type: number
           format: double
+        deltaAmount:
+          type: number
+          format: double
+          description: Absolute difference from typical spend for this merchant/category
+        budgetImpactPercent:
+          type: number
+          format: double
+          description: Percentage share of this month's total expenses
         occurredAt:
           type: string
           format: date-time
@@ -492,5 +524,52 @@ components:
             details:
               type: object
               additionalProperties: {}
+        traceId:
+          type: string
+    AiChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+          description: Existing conversation identifier; when omitted a new conversation is started.
+        message:
+          type: string
+          description: User's message content
+    AiChatMessage:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [USER, ASSISTANT]
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AiChatResponse:
+      type: object
+      required:
+        - conversationId
+        - messages
+        - traceId
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiChatMessage'
         traceId:
           type: string

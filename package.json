@@ -1,5 +1,9 @@
 {
   "name": "safepocket-monorepo",
   "private": true,
-  "packageManager": "pnpm@8.15.4"
+  "packageManager": "pnpm@8.15.4",
+  "devDependencies": {
+    "@types/node": "^20.11.30"
+  },
+  "scripts": {}
 }

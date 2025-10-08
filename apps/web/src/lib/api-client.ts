@@ -31,6 +31,17 @@ export async function ledgerFetch<T>(
   if (!headers.has("content-type") && init.body) {
     headers.set("content-type", defaultHeaders["content-type"]);
   }
+  // Auto-inject Authorization from sp_token cookie if not already present (server-side only)
+  if (!headers.has("authorization")) {
+    try {
+      // Dynamically import next/headers only in server runtime
+      const mod = await import("next/headers");
+      const token = mod.cookies().get("sp_token")?.value;
+      if (token) headers.set("authorization", `Bearer ${token}`);
+    } catch {
+      // ignore if not in a Next.js server context
+    }
+  }
   const response = await fetch(`${env.LEDGER_SERVICE_URL}${path}`, {
     credentials: 'include',
     ...init,
@@ -43,6 +54,19 @@ export async function ledgerFetch<T>(
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+// Chat API helper
+export interface ChatRequestBody {
+  conversationId?: string;
+  message: string;
+}
+
+export async function sendChatMessage(body: ChatRequestBody) {
+  return await ledgerFetch<import("./schemas").ChatResponse>("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 async function buildError(response: Response) {

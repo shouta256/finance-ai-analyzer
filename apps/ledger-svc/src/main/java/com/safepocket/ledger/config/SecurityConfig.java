@@ -2,6 +2,7 @@ package com.safepocket.ledger.config;
 
 import com.safepocket.ledger.security.AuthenticatedUserFilter;
 import com.safepocket.ledger.security.TraceIdFilter;
+import com.safepocket.ledger.security.CookieBearerTokenFilter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import javax.crypto.spec.SecretKeySpec;
@@ -17,6 +18,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtValidators;
@@ -52,6 +54,10 @@ public class SecurityConfig {
             // Public / webhook endpoints
             .requestMatchers(HttpMethod.POST, "/webhook/plaid/**").permitAll()
             .requestMatchers(HttpMethod.POST, "/login").permitAll()
+            .requestMatchers(HttpMethod.POST, "/dev/auth/login").permitAll()
+            // Temporarily allow chat without auth (frontend browser direct call). Secure later with JWT once integrated.
+            // Chat endpoint now requires authentication (was temporarily permitAll during bring-up)
+            .requestMatchers(HttpMethod.POST, "/ai/chat").authenticated()
             .requestMatchers("/healthz").permitAll()
             .requestMatchers("/actuator/health/liveness").permitAll()
             // All other endpoints require authentication
@@ -63,11 +69,13 @@ public class SecurityConfig {
             .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
         );
 
-        http.addFilterBefore(traceIdFilter, UsernamePasswordAuthenticationFilter.class);
+    http.addFilterBefore(traceIdFilter, UsernamePasswordAuthenticationFilter.class);
+    http.addFilterBefore(new CookieBearerTokenFilter(), BearerTokenAuthenticationFilter.class);
         http.addFilterAfter(authenticatedUserFilter, BearerTokenAuthenticationFilter.class);
 
         return http.build();
     }
+
 
     @Bean
     JwtAuthenticationConverter jwtAuthenticationConverter() {
@@ -78,19 +86,42 @@ public class SecurityConfig {
     }
 
     @Bean
-    JwtDecoder jwtDecoder(SafepocketProperties properties, Environment environment) {
+    public JwtDecoder jwtDecoder(SafepocketProperties properties, Environment environment) {
         // Precedence change: if Cognito is enabled, ALWAYS use remote JWKS regardless of dev secret presence.
         if (properties.cognito().enabledFlag()) {
             log.info("Security: Using Cognito issuer {} audience {}", properties.cognito().issuer(), properties.cognito().audience());
-            NimbusJwtDecoder decoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(properties.cognito().issuer());
-            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+            NimbusJwtDecoder cognitoDecoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(properties.cognito().issuer());
+            cognitoDecoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
                     JwtValidators.createDefaultWithIssuer(properties.cognito().issuer()),
                     audienceValidator(properties)
             ));
-            return decoder;
+
+            JwtDecoder activeDecoder = cognitoDecoder;
+            if (properties.security().hasDevJwtSecret() && !environment.acceptsProfiles(Profiles.of("prod"))) {
+                log.info("Security: enabling dev JWT fallback decoder (non-prod)");
+                SecretKeySpec fallbackKey = new SecretKeySpec(properties.security().devJwtSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+                NimbusJwtDecoder fallbackDecoder = NimbusJwtDecoder.withSecretKey(fallbackKey)
+                        .macAlgorithm(MacAlgorithm.HS256)
+                        .build();
+                fallbackDecoder.setJwtValidator(token -> OAuth2TokenValidatorResult.success());
+
+                activeDecoder = token -> {
+                    try {
+                        return cognitoDecoder.decode(token);
+                    } catch (JwtException ex) {
+                        if (!looksLikeSignatureMismatch(ex)) {
+                            throw ex;
+                        }
+                        log.debug("Security: Cognito validation failed with '{}'; attempting dev fallback", ex.getMessage());
+                        return fallbackDecoder.decode(token);
+                    }
+                };
+            }
+
+            return activeDecoder;
         }
-        // Fallback: Cognito disabled -> use dev shared secret if provided
-        if (properties.security().hasDevJwtSecret()) {
+        // Fallback: Cognito disabled -> use dev shared secret if provided (only outside prod profile)
+        if (properties.security().hasDevJwtSecret() && !environment.acceptsProfiles(Profiles.of("prod"))) {
             log.warn("Security: Cognito disabled; falling back to dev shared secret (NOT for production)");
             SecretKeySpec key = new SecretKeySpec(properties.security().devJwtSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
@@ -146,5 +177,13 @@ public class SecurityConfig {
                     null
             ));
         };
+    }
+
+    private boolean looksLikeSignatureMismatch(JwtException ex) {
+        String message = ex.getMessage();
+        if (message == null) {
+            return false;
+        }
+        return message.contains("Invalid signature") || message.contains("MAC check failed");
     }
 }

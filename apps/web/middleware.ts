@@ -61,15 +61,25 @@ let audience = EXPLICIT_AUDIENCE || CLIENT_ID; // 通常 audience=client_id
 const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
+function isHttpUrl(value?: string) {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string; mode: string }> {
   // 動的フォールバック: まだ issuer/audience 未決定ならヘッダ部を decode して iss/aud 推定
   if (!issuer || !audience) {
     try {
       const [, payloadB64] = token.split('.');
       const json = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
-      if (!issuer && typeof json.iss === 'string') {
+      if (typeof json.iss === 'string' && issuer !== json.iss) {
         issuer = json.iss;
-        jwksUri = `${issuer}/.well-known/jwks.json`;
+        jwksUri = isHttpUrl(issuer) ? `${issuer}/.well-known/jwks.json` : undefined;
       }
       if (!audience) {
         if (Array.isArray(json.aud)) audience = json.aud[0];
@@ -80,7 +90,7 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
     }
   }
 
-  if (jwksUri && issuer) {
+  if (jwksUri && issuer && isHttpUrl(jwksUri)) {
     remoteJwks ||= createRemoteJWKSet(new URL(jwksUri));
     if (audience) {
       try {
@@ -113,7 +123,10 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
 function extractToken(req: NextRequest): string | null {
   const auth = req.headers.get('authorization');
   if (auth?.startsWith('Bearer ')) return auth.slice('Bearer '.length);
-  return req.cookies.get('safepocket_token')?.value || null;
+  // 強制移行: legacy safepocket_token は一時的に無視して再ログインを誘発
+  const sp = req.cookies.get('sp_token')?.value;
+  if (sp) return sp;
+  return null;
 }
 
 export async function middleware(req: NextRequest) {

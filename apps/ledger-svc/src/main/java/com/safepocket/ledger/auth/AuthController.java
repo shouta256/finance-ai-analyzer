@@ -14,6 +14,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Deprecated dev login (manual HS256). Kept for backward compatibility in tests but issues only sp_token now.
+ * Prefer /dev/auth/login (JwtIssuerService) or Cognito flow.
+ */
 @RestController
 public class AuthController {
 
@@ -47,7 +51,7 @@ public class AuthController {
         String signature = hmacSha256(header + "." + payloadEnc, secret);
         String token = header + "." + payloadEnc + "." + signature;
 
-        ResponseCookie cookie = ResponseCookie.from("safepocket_token", token)
+    ResponseCookie cookie = ResponseCookie.from("sp_token", token)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Lax")
@@ -58,7 +62,7 @@ public class AuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                .body(Map.of("accessToken", token, "tokenType", "Bearer", "expiresIn", 3600));
+                .body(Map.of("accessToken", token, "tokenType", "Bearer", "expiresIn", 3600, "cookie", "sp_token"));
     }
 
     private String hmacSha256(String data, String secret) {

@@ -38,9 +38,9 @@ class AuthControllerTest {
 
         String setCookie = result.getResponse().getHeader("Set-Cookie");
         assertThat(setCookie).isNotNull();
-        assertThat(setCookie).contains("safepocket_token=");
+    assertThat(setCookie).contains("sp_token=");
         // crude JWT structure check
-        Pattern p = Pattern.compile("safepocket_token=([^.]+\\.[^.]+\\.[^;]+)");
+    Pattern p = Pattern.compile("sp_token=([^.]+\\.[^.]+\\.[^;]+)");
         Matcher m = p.matcher(setCookie);
         assertThat(m.find()).isTrue();
         String jwt = m.group(1);

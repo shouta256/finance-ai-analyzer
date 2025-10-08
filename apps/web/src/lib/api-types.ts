@@ -29,6 +29,10 @@ export interface paths {
     /** Retrieve monthly analytics summary */
     get: operations["getAnalyticsSummary"];
   };
+  "/ai/chat": {
+    /** Send a chat message to AI assistant */
+    post: operations["sendAiChatMessage"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -159,9 +163,10 @@ export interface components {
       /** @enum {string} */
       method: "Z_SCORE" | "IQR";
       /** Format: double */
-      zScore: number;
+      deltaAmount: number;
       /** Format: double */
-      iqrScore: number;
+      budgetImpactPercent: number;
+      commentary?: string | null;
     };
     AnomalyInsight: {
       /** Format: uuid */
@@ -169,9 +174,11 @@ export interface components {
       /** @enum {string} */
       method: "Z_SCORE" | "IQR";
       /** Format: double */
-      score: number;
-      /** Format: double */
       amount: number;
+      /** Format: double */
+      deltaAmount: number;
+      /** Format: double */
+      budgetImpactPercent: number;
       /** Format: date-time */
       occurredAt: string;
       merchantName: string;
@@ -193,6 +200,30 @@ export interface components {
           [key: string]: unknown;
         };
       };
+      traceId: string;
+    };
+    AiChatRequest: {
+      /**
+       * Format: uuid
+       * @description Existing conversation identifier; when omitted a new conversation is started.
+       */
+      conversationId?: string;
+      /** @description User's message content */
+      message: string;
+    };
+    AiChatMessage: {
+      /** Format: uuid */
+      id: string;
+      /** @enum {string} */
+      role: "USER" | "ASSISTANT";
+      content: string;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    AiChatResponse: {
+      /** Format: uuid */
+      conversationId: string;
+      messages: components["schemas"]["AiChatMessage"][];
       traceId: string;
     };
   };
@@ -319,6 +350,23 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["AnalyticsSummaryResponse"];
+        };
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
+  /** Send a chat message to AI assistant */
+  sendAiChatMessage: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AiChatRequest"];
+      };
+    };
+    responses: {
+      /** @description Chat response returned */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AiChatResponse"];
         };
       };
       default: components["responses"]["ErrorResponse"];

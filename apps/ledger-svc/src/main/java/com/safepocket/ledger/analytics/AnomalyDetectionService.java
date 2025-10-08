@@ -4,12 +4,10 @@ import com.safepocket.ledger.model.AnalyticsSummary;
 import com.safepocket.ledger.model.Transaction;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.DoubleSummaryStatistics;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
@@ -41,6 +39,8 @@ public class AnomalyDetectionService {
         double q3 = percentile(magnitudes, 75);
         double iqr = q3 - q1;
         double iqrUpper = q3 + IQR_MULTIPLIER * iqr;
+        double median = percentile(magnitudes, 50);
+        double totalMagnitude = magnitudes.stream().mapToDouble(Double::doubleValue).sum();
 
         List<AnalyticsSummary.AnomalyInsight> anomalies = new ArrayList<>();
         for (Transaction tx : debitTransactions) {
@@ -49,14 +49,21 @@ public class AnomalyDetectionService {
             boolean zScoreAnomaly = Math.abs(zScore) >= Z_SCORE_THRESHOLD;
             boolean iqrAnomaly = magnitude > iqrUpper;
             if (zScoreAnomaly || iqrAnomaly) {
+                BigDecimal amount = tx.amount().setScale(2, RoundingMode.HALF_UP);
+                double rawDelta = Math.max(0d, magnitude - median);
+                BigDecimal deltaAmount = BigDecimal.valueOf(rawDelta).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal impactPercent = totalMagnitude == 0
+                        ? BigDecimal.ZERO
+                        : BigDecimal.valueOf((magnitude / totalMagnitude) * 100).setScale(2, RoundingMode.HALF_UP);
                 AnalyticsSummary.AnomalyInsight insight = new AnalyticsSummary.AnomalyInsight(
                         tx.id().toString(),
                         zScoreAnomaly ? com.safepocket.ledger.model.AnomalyScore.Method.Z_SCORE : com.safepocket.ledger.model.AnomalyScore.Method.IQR,
-                        BigDecimal.valueOf(zScore).setScale(2, RoundingMode.HALF_UP),
-                        tx.amount().setScale(2, RoundingMode.HALF_UP),
+                        amount,
+                        deltaAmount,
+                        impactPercent,
                         tx.merchantName(),
                         tx.occurredAt(),
-                        commentaryFor(tx, zScore, magnitude, mean, iqrUpper)
+                        commentaryFor(tx, deltaAmount, impactPercent, BigDecimal.valueOf(mean).setScale(2, RoundingMode.HALF_UP))
                 );
                 anomalies.add(insight);
             }
@@ -79,15 +86,15 @@ public class AnomalyDetectionService {
         return sortedValues.get(lower) * (1 - weight) + sortedValues.get(upper) * weight;
     }
 
-    private String commentaryFor(Transaction tx, double zScore, double magnitude, double mean, double iqrUpper) {
+    private String commentaryFor(Transaction tx, BigDecimal delta, BigDecimal impactPercent, BigDecimal averageSpend) {
         StringBuilder commentary = new StringBuilder();
         commentary.append("Detected spend anomaly for ")
                 .append(tx.merchantName())
                 .append(" with amount $")
                 .append(tx.amount().abs());
-        commentary.append("; mean spend $").append(BigDecimal.valueOf(mean).setScale(2, RoundingMode.HALF_UP));
-        commentary.append("; allowed upper bound $").append(BigDecimal.valueOf(iqrUpper).setScale(2, RoundingMode.HALF_UP));
-        commentary.append("; z-score ").append(BigDecimal.valueOf(zScore).setScale(2, RoundingMode.HALF_UP));
+        commentary.append("; typical spend $").append(averageSpend);
+        commentary.append("; delta $").append(delta);
+        commentary.append("; budget impact ").append(impactPercent).append("%");
         return commentary.toString();
     }
 }

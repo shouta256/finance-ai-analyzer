@@ -73,11 +73,12 @@ public class TransactionService {
         if (insight == null) {
             return transaction;
         }
-        BigDecimal zScore = insight.score().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal deltaAmount = Optional.ofNullable(insight.deltaAmount()).orElse(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal budgetImpact = Optional.ofNullable(insight.budgetImpactPercent()).orElse(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         AnomalyScore score = new AnomalyScore(
                 insight.method(),
-                zScore,
-                insight.amount().abs().setScale(2, RoundingMode.HALF_UP),
+                deltaAmount,
+                budgetImpact,
                 insight.commentary()
         );
         return transaction.withAnomalyScore(score);

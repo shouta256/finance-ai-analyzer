@@ -3,7 +3,9 @@ package com.safepocket.ledger.controller;
 import com.safepocket.ledger.analytics.AnalyticsService;
 import com.safepocket.ledger.controller.dto.AnalyticsSummaryResponseDto;
 import com.safepocket.ledger.model.AnalyticsSummary;
+import java.math.BigDecimal;
 import java.time.YearMonth;
+import java.util.Optional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,8 +47,9 @@ public class AnalyticsController {
                         .map(anomaly -> new AnalyticsSummaryResponseDto.AnomalyInsight(
                                 anomaly.transactionId(),
                                 anomaly.method().name(),
-                                anomaly.score(),
                                 anomaly.amount(),
+                                Optional.ofNullable(anomaly.deltaAmount()).orElse(BigDecimal.ZERO),
+                                Optional.ofNullable(anomaly.budgetImpactPercent()).orElse(BigDecimal.ZERO),
                                 anomaly.occurredAt(),
                                 anomaly.merchantName(),
                                 anomaly.commentary()

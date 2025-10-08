@@ -22,7 +22,15 @@ public record AnalyticsSummaryResponseDto(
     public record MerchantBreakdown(String merchant, BigDecimal amount, int transactionCount) {
     }
 
-    public record AnomalyInsight(String transactionId, String method, BigDecimal score, BigDecimal amount, Instant occurredAt, String merchantName, String commentary) {
+    public record AnomalyInsight(
+            String transactionId,
+            String method,
+            BigDecimal amount,
+            BigDecimal deltaAmount,
+            BigDecimal budgetImpactPercent,
+            Instant occurredAt,
+            String merchantName,
+            String commentary) {
     }
 
     public record AiHighlight(String title, String summary, String sentiment, List<String> recommendations) {

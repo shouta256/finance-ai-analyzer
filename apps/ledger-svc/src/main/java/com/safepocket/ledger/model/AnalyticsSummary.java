@@ -25,8 +25,9 @@ public record AnalyticsSummary(
     public record AnomalyInsight(
             String transactionId,
             AnomalyScore.Method method,
-            BigDecimal score,
             BigDecimal amount,
+            BigDecimal deltaAmount,
+            BigDecimal budgetImpactPercent,
             String merchantName,
             java.time.Instant occurredAt,
             String commentary

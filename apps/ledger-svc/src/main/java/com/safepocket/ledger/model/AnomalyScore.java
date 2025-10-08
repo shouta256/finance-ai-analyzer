@@ -4,8 +4,8 @@ import java.math.BigDecimal;
 
 public record AnomalyScore(
         Method method,
-        BigDecimal zScore,
-        BigDecimal iqrScore,
+        BigDecimal deltaAmount,
+        BigDecimal budgetImpactPercent,
         String commentary
 ) {
     public enum Method {

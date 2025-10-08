@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { formatCurrency, formatDateTime } from "@/src/lib/date";
+import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
 import { getAnalyticsSummary, listTransactions, triggerTransactionSync, createPlaidLinkToken } from "@/src/lib/client-api";
 
@@ -225,7 +225,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Anomaly Alerts</h2>
         <p className="mb-3 text-sm text-slate-500">
-          Monitoring spend spikes using z-score and IQR detection.
+          Highlighting spend spikes versus your usual pattern and monthly budget impact.
         </p>
         <div className="flow-root overflow-hidden rounded-lg border border-slate-100">
           <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -233,7 +233,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
               <tr>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Merchant</th>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Amount</th>
-                <th className="px-4 py-2 text-left font-semibold text-slate-600">Score</th>
+                <th className="px-4 py-2 text-left font-semibold text-slate-600">Diff vs Typical</th>
+                <th className="px-4 py-2 text-left font-semibold text-slate-600">Budget Impact</th>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Detected</th>
               </tr>
             </thead>
@@ -242,13 +243,14 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
                 <tr key={anomaly.transactionId} className="hover:bg-slate-50">
                   <td className="px-4 py-2 text-slate-700">{anomaly.merchantName}</td>
                   <td className="px-4 py-2 text-slate-600">{formatCurrency(anomaly.amount)}</td>
-                  <td className="px-4 py-2 text-slate-600">{anomaly.method} · {anomaly.score.toFixed(2)}</td>
+                  <td className="px-4 py-2 text-slate-600">{formatCurrency(Math.abs(anomaly.deltaAmount))}</td>
+                  <td className="px-4 py-2 text-slate-600">{formatPercent(anomaly.budgetImpactPercent / 100)}</td>
                   <td className="px-4 py-2 text-slate-600">{formatDateTime(anomaly.occurredAt)}</td>
                 </tr>
               ))}
               {anomalies.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-sm text-slate-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
                     No anomalies detected this month.
                   </td>
                 </tr>

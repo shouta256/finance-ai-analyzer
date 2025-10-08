@@ -37,3 +37,11 @@ Client → **ALB+WAF** → **Next.js (BFF+Web on ECS Fargate)** → **Spring Boo
 2) `POST /plaid/exchange` saves encrypted access_token
 3) `POST /transactions/sync` → `/transactions/sync` (Plaid) → store → Redis events
 4) `GET /analytics/summary` (LLM optional) → return dashboard data
+## Plaid Stage1 Integration
+### Required Environment Variables
+PLATFORM_ENV=development
+PLAID_CLIENT_ID=your_client_id
+PLAID_SECRET=your_secret
+PLAID_PUBLIC_KEY=your_public_key
+PLAID_ENV=sandbox
+PLAID_WEBHOOK_URL=https://your-webhook-url

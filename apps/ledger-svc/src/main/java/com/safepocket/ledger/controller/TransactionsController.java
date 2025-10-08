@@ -98,8 +98,8 @@ public class TransactionsController {
     private TransactionResponseDto.AnomalyScoreDto map(AnomalyScore score) {
         return new TransactionResponseDto.AnomalyScoreDto(
                 score.method().name(),
-                score.zScore(),
-                score.iqrScore(),
+                score.deltaAmount(),
+                score.budgetImpactPercent(),
                 score.commentary()
         );
     }

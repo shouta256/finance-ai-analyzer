@@ -20,6 +20,6 @@ public record TransactionResponseDto(
         AnomalyScoreDto anomalyScore,
         String notes
 ) {
-    public record AnomalyScoreDto(String method, BigDecimal zScore, BigDecimal iqrScore, String commentary) {
+    public record AnomalyScoreDto(String method, BigDecimal deltaAmount, BigDecimal budgetImpactPercent, String commentary) {
     }
 }

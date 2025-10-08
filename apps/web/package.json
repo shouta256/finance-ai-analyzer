@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
   "start": "next start -p 3000 -H 0.0.0.0",
-    "lint": "next lint",
+  "lint": "next lint",
+  "lint:fix": "next lint --fix && pnpm biome:fix",
     "test": "cross-env NODE_OPTIONS= vitest run",
     "e2e": "playwright test",
+    "biome:check": "biome check --ci .",
     "biome:fix": "biome format --write . && biome lint --write .",
     "generate:api": "openapi-typescript ../../contracts/openapi.yaml --output src/lib/api-types.ts"
   },

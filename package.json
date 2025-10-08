@@ -5,5 +5,8 @@
   "devDependencies": {
     "@types/node": "^20.11.30"
   },
-  "scripts": {}
+  "scripts": {
+    "lint": "node scripts/lint-runner.mjs",
+    "test": "pnpm -C apps/web test"
+  }
 }

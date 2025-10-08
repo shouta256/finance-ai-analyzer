@@ -2,6 +2,7 @@ package com.safepocket.ledger.plaid;
 
 import com.safepocket.ledger.config.SafepocketProperties;
 import com.safepocket.ledger.security.AccessTokenEncryptor;
+import com.safepocket.ledger.entity.PlaidItemEntity;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -14,36 +15,41 @@ public class PlaidService {
     private final AccessTokenEncryptor accessTokenEncryptor;
     private final SafepocketProperties properties;
 
+    private final PlaidClient plaidClient;
+
     public PlaidService(
             PlaidItemRepository plaidItemRepository,
             AccessTokenEncryptor accessTokenEncryptor,
-            SafepocketProperties properties
+            SafepocketProperties properties,
+            PlaidClient plaidClient
     ) {
         this.plaidItemRepository = plaidItemRepository;
         this.accessTokenEncryptor = accessTokenEncryptor;
         this.properties = properties;
+        this.plaidClient = plaidClient;
     }
 
     public PlaidLinkToken createLinkToken(UUID userId) {
-        String linkToken = "link-token-" + UUID.randomUUID();
-        Instant expiration = Instant.now().plus(30, ChronoUnit.MINUTES);
-        String requestId = "req-" + UUID.randomUUID();
-        return new PlaidLinkToken(linkToken, expiration, requestId);
+        var response = plaidClient.createLinkToken(userId.toString());
+        // Plaid returns expiration as RFC 3339 timestamp; we let frontend treat it as string but here parse to Instant if needed.
+        Instant exp;
+        try {
+            exp = Instant.parse(response.expiration());
+        } catch (Exception e) {
+            exp = Instant.now().plus(30, ChronoUnit.MINUTES); // fallback
+        }
+        return new PlaidLinkToken(response.linkToken(), exp, response.requestId());
     }
 
     public PlaidItem exchangePublicToken(UUID userId, String publicToken) {
-        // In the sandbox, exchanging a public token yields an access token and item id.
-        String itemId = "item-" + UUID.randomUUID();
-        String accessToken = "access-" + publicToken;
-        String encrypted = accessTokenEncryptor.encrypt(accessToken);
-        PlaidItem plaidItem = new PlaidItem(userId, itemId, encrypted, Instant.now());
-        plaidItemRepository.save(plaidItem);
-        return plaidItem;
+        var response = plaidClient.exchangePublicToken(publicToken);
+        String encrypted = accessTokenEncryptor.encrypt(response.accessToken());
+        PlaidItemEntity entity = new PlaidItemEntity(userId, response.itemId(), encrypted, Instant.now());
+        plaidItemRepository.save(entity);
+        return new PlaidItem(entity.getUserId(), entity.getItemId(), entity.getEncryptedAccessToken(), entity.getLinkedAt());
     }
 
-    public String decryptAccessToken(PlaidItem item) {
-        return accessTokenEncryptor.decrypt(item.encryptedAccessToken());
-    }
+    public String decryptAccessToken(PlaidItem item) { return accessTokenEncryptor.decrypt(item.encryptedAccessToken()); }
 
     public SafepocketProperties.Plaid plaidProperties() {
         return properties.plaid();

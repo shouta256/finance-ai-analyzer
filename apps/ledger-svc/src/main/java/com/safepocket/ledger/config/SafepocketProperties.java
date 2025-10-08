@@ -40,7 +40,7 @@ public record SafepocketProperties(
         }
     }
 
-    public record Plaid(String clientId, String clientSecret, String redirectUri) {
+    public record Plaid(String clientId, String clientSecret, String redirectUri, String baseUrl, String environment, String webhookUrl, String webhookSecret) {
         public Plaid {
             if (clientId == null || clientId.isBlank()) {
                 throw new IllegalArgumentException("clientId must be provided");
@@ -51,10 +51,17 @@ public record SafepocketProperties(
             if (redirectUri == null || redirectUri.isBlank()) {
                 throw new IllegalArgumentException("redirectUri must be provided");
             }
+            if (baseUrl == null || baseUrl.isBlank()) {
+                throw new IllegalArgumentException("baseUrl must be provided");
+            }
+            if (environment == null || environment.isBlank()) {
+                throw new IllegalArgumentException("environment must be provided");
+            }
+            // webhookUrl and webhookSecret are optional (may be null) for early sandbox stage
         }
     }
 
-    public record Ai(String model, String endpoint, String apiKey) {
+    public record Ai(String model, String endpoint, String apiKey, String snapshot) {
         public Ai {
             if (model == null || model.isBlank()) {
                 throw new IllegalArgumentException("model must be provided");
@@ -63,6 +70,11 @@ public record SafepocketProperties(
                 throw new IllegalArgumentException("endpoint must be provided");
             }
             // apiKey may be null/blank; when absent the app will use a deterministic fallback (no external calls)
+            // snapshot is optional: used when primary alias (model) requires explicit snapshot access (e.g. gpt-5-nano-YYYY-MM-DD)
+        }
+
+        public String snapshotOrDefault() {
+            return (snapshot != null && !snapshot.isBlank()) ? snapshot : model;
         }
     }
 

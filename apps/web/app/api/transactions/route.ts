@@ -12,9 +12,7 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest) {
   const authorization = request.headers.get("authorization");
-  if (!authorization) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
-  }
+  if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const query = querySchema.parse({
     month: searchParams.get("month"),
@@ -25,12 +23,7 @@ export async function GET(request: NextRequest) {
   if (query.accountId) {
     endpoint.searchParams.set("accountId", query.accountId);
   }
-  const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, {
-    method: "GET",
-    headers: {
-      authorization,
-    },
-  });
+  const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, { method: "GET", headers: { authorization } });
   const body = transactionsListSchema.parse(result);
   return NextResponse.json(body);
 }

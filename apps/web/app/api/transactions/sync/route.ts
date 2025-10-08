@@ -7,17 +7,9 @@ const requestSchema = z.object({ cursor: z.string().optional(), forceFullSync: z
 
 export async function POST(request: NextRequest) {
   const authorization = request.headers.get("authorization");
-  if (!authorization) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
-  }
+  if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   const body = request.headers.get("content-length") === "0" ? undefined : requestSchema.parse(await request.json());
-  const result = await ledgerFetch<unknown>("/transactions/sync", {
-    method: "POST",
-    headers: {
-      authorization,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const result = await ledgerFetch<unknown>("/transactions/sync", { method: "POST", headers: { authorization }, body: body ? JSON.stringify(body) : undefined });
   const response = transactionsSyncSchema.parse(result);
   return NextResponse.json(response, { status: 202 });
 }

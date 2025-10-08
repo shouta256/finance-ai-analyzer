@@ -44,8 +44,9 @@ function resolveRedirectUri(): string {
 const cognitoEnabled = Boolean(cognitoStatic.domain && cognitoStatic.clientId);
 // Enable debug either via build-time flag or a query param (?authdebug=1) for production troubleshooting
 const authDebugFlag = process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true';
+const envTag = process.env.NEXT_PUBLIC_ENV || (process.env.NODE_ENV === 'production' ? 'prod' : 'local');
 const devLoginAllowed =
-  process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NODE_ENV !== 'production';
+  envTag !== 'prod' || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true';
 
 function LoginForm() {
   const router = useRouter();
@@ -59,7 +60,7 @@ function LoginForm() {
     startTransition(async () => {
       setMessage(null);
       try {
-        const response = await fetch("/api/dev/login", { method: "GET" });
+        const response = await fetch("/api/dev/login", { method: "GET", credentials: "include" });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload?.error?.message ?? "ログインに失敗しました");

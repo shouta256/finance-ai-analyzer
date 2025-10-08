@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { cookies } from "next/headers";
 import { z } from "zod";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { analyticsSummarySchema } from "@/src/lib/schemas";
@@ -7,17 +6,8 @@ import { analyticsSummarySchema } from "@/src/lib/schemas";
 const querySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), generateAi: z.string().optional() });
 
 export async function GET(request: NextRequest) {
-  // 1) Authorization ヘッダが無ければ safepocket_token Cookie から再構築 (SSR fetch 時に失われるケース対策)
-  let authorization = request.headers.get("authorization");
-  if (!authorization) {
-    const token = cookies().get("safepocket_token")?.value;
-    if (token) {
-      authorization = `Bearer ${token}`;
-    }
-  }
-  if (!authorization) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
-  }
+  const authorization = request.headers.get("authorization");
+  if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   const { searchParams } = new URL(request.url);
   // 2) month 正規化: 2025/08 → 2025-08 などスラッシュをハイフンへ
   const rawMonth = searchParams.get("month") ?? undefined;
@@ -27,12 +17,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("month", query.month);
   if (query.generateAi) url.searchParams.set("generateAi", query.generateAi);
   try {
-    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, {
-      method: "GET",
-      headers: {
-        authorization,
-      },
-    });
+    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, { method: "GET", headers: { authorization } });
     const body = analyticsSummarySchema.parse(result);
     return NextResponse.json(body);
   } catch (e) {

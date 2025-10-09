@@ -7,6 +7,13 @@ const DEV_USER_ID = '0f08d2b9-28b3-4b28-bd33-41a36161e9ab';
 const PRIMARY_COOKIE = 'sp_token';
 const ONE_HOUR_SECONDS = 60 * 60;
 
+function shouldUseSecureCookie() {
+  const envFlag = process.env.SAFEPOCKET_DEV_COOKIE_SECURE;
+  if (envFlag === 'true') return true;
+  if (envFlag === 'false') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
 function devLoginEnabled(): boolean {
   if (process.env.NODE_ENV !== 'production') return true;
   return process.env.SAFEPOCKET_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true';
@@ -50,7 +57,7 @@ export async function GET() {
   const response = NextResponse.json({ ok: true, mode: 'local' });
   const cookieInit = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookie(),
     path: '/',
     sameSite: 'lax' as const,
     maxAge: ONE_HOUR_SECONDS,

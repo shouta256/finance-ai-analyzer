@@ -69,6 +69,11 @@ export async function sendChatMessage(body: ChatRequestBody) {
   });
 }
 
+export async function fetchChatConversation(conversationId?: string) {
+  const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
+  return await ledgerFetch<import("./schemas").ChatResponse>(`/ai/chat${query}`);
+}
+
 async function buildError(response: Response) {
   let payload: unknown;
   try {

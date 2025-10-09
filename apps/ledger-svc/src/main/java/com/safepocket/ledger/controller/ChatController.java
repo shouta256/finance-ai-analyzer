@@ -24,6 +24,20 @@ public class ChatController {
     public record ChatMessageDto(UUID id, String role, String content, java.time.Instant createdAt) {}
     public record ChatResponseDto(UUID conversationId, java.util.List<ChatMessageDto> messages, String traceId) {}
 
+    @GetMapping
+    public ResponseEntity<ChatResponseDto> history(@RequestParam(value = "conversationId", required = false) UUID conversationId,
+                                                   Authentication auth) {
+        UUID userId = UUID.fromString("0f08d2b9-28b3-4b28-bd33-41a36161e9ab");
+        if (auth != null && auth.getName() != null) {
+            try { userId = UUID.fromString(auth.getName()); } catch (Exception ignored) {}
+        }
+        var res = chatService.getConversation(userId, conversationId);
+        var dto = new ChatResponseDto(res.conversationId(),
+                res.messages().stream().map(m -> new ChatMessageDto(m.id(), m.role(), m.content(), m.createdAt())).toList(),
+                res.traceId());
+        return ResponseEntity.ok(dto);
+    }
+
     @PostMapping
     public ResponseEntity<ChatResponseDto> chat(@RequestBody ChatRequest request, Authentication auth) {
         UUID userId = UUID.fromString("0f08d2b9-28b3-4b28-bd33-41a36161e9ab"); // demo user default

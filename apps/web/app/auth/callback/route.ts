@@ -114,14 +114,16 @@ export async function GET(req: NextRequest) {
 
     // Use effectiveOrigin (x-forwarded-host if present) to avoid redirecting to 0.0.0.0:3000
     const res = NextResponse.redirect(new URL(redirectTarget, effectiveOrigin));
-    // Cookie scopes entire app domain
-    res.cookies.set('safepocket_token', token, {
+    // Cookie scopes entire app domain – use canonical sp_token (middleware expects this)
+    res.cookies.set('sp_token', token, {
       httpOnly: true,
       secure: secureCookie,
       sameSite: 'lax',
       path: '/',
       maxAge: 3600, // 1h (Cognito token default 1h)
     });
+    // Optional: set legacy cookie for temporary diagnostics (middleware ignores this)
+    // res.cookies.set('safepocket_token', token, { httpOnly: true, secure: secureCookie, sameSite: 'lax', path: '/', maxAge: 3600 });
     // Removed previous JSON debug cookie (safepocket_token_flags) because browsers reject complex/JSON cookie values.
     // If needed, surface debug info via a temporary header (not cached) for manual inspection.
     res.headers.set('x-safepocket-cookie-secure', String(secureCookie));

@@ -40,16 +40,25 @@ public class AnalyticsService {
         this.aiHighlightService = aiHighlightService;
     }
 
-        public AnalyticsSummary getSummary(YearMonth month) {
-                return getSummary(month, false);
-        }
+    public AnalyticsSummary getSummary(YearMonth month) {
+        return getSummary(month, false);
+    }
 
-        public AnalyticsSummary getSummary(YearMonth month, boolean generateAi) {
+    public AnalyticsSummary getSummary(YearMonth month, boolean generateAi) {
         UUID userId = authenticatedUserProvider.requireCurrentUserId();
+        return getSummaryForUser(userId, month, generateAi);
+    }
+
+    public AnalyticsSummary getSummaryForUser(UUID userId, YearMonth month, boolean generateAi) {
+        return buildSummary(userId, month, generateAi);
+    }
+
+    private AnalyticsSummary buildSummary(UUID userId, YearMonth month, boolean generateAi) {
         rlsGuard.setAppsecUser(userId);
+        RequestContextHolder.setUserId(userId);
         List<Transaction> transactions = transactionRepository.findByUserIdAndMonth(userId, month);
         List<AnalyticsSummary.AnomalyInsight> anomalies = anomalyDetectionService.detectAnomalies(transactions);
-                AnalyticsSummary.AiHighlight highlight = aiHighlightService.generateHighlight(transactions, anomalies, generateAi);
+        AnalyticsSummary.AiHighlight highlight = aiHighlightService.generateHighlight(transactions, anomalies, generateAi);
         AnalyticsSummary.Totals totals = calculateTotals(transactions);
         List<AnalyticsSummary.CategoryBreakdown> categories = calculateCategoryBreakdown(transactions);
         List<AnalyticsSummary.MerchantBreakdown> merchants = calculateTopMerchants(transactions);

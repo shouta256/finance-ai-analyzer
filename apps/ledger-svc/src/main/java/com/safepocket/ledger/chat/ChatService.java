@@ -79,27 +79,29 @@ public ChatResponse sendMessage(UUID userId, UUID conversationId, String message
         log.warn("AI chat: OpenAI 応答が取得できなかったため fallback 表示");
         return "(Fallback) 応答を生成できませんでしたがメッセージは保存されました。";
     }
-}
-
-@Transactional(readOnly = true)
-public ChatResponse getConversation(UUID userId, UUID conversationId) {
-    List<ChatMessageEntity> history;
-    UUID resolvedConversationId = conversationId;
-    if (conversationId != null) {
-        history = repository.findByConversationIdOrderByCreatedAtAsc(conversationId);
-    } else {
-        history = repository.findLatestConversation(userId, org.springframework.data.domain.PageRequest.of(0, 1));
-        if (!history.isEmpty()) {
-            resolvedConversationId = history.get(0).getConversationId();
+    @Transactional(readOnly = true)
+    public ChatResponse getConversation(UUID userId, UUID conversationId) {
+        List<ChatMessageEntity> history;
+        UUID resolvedConversationId = conversationId;
+        if (conversationId != null) {
+            history = repository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+        } else {
+            ChatMessageEntity latest = repository.findFirstByUserIdOrderByCreatedAtDesc(userId);
+            if (latest != null) {
+                resolvedConversationId = latest.getConversationId();
+                history = repository.findByConversationIdOrderByCreatedAtAsc(resolvedConversationId);
+            } else {
+                history = List.of();
+            }
         }
+        if (history.isEmpty()) {
+            UUID newConvId = resolvedConversationId != null ? resolvedConversationId : UUID.randomUUID();
+            return new ChatResponse(newConvId, List.of(), UUID.randomUUID().toString());
+        }
+        List<ChatMessageDto> msgs = history.stream()
+                .map(e -> new ChatMessageDto(e.getId(), e.getRole().name(), e.getContent(), e.getCreatedAt()))
+                .collect(Collectors.toList());
+        UUID convId = history.get(0).getConversationId();
+        return new ChatResponse(convId, msgs, UUID.randomUUID().toString());
     }
-    if (history.isEmpty()) {
-        UUID newConvId = resolvedConversationId != null ? resolvedConversationId : UUID.randomUUID();
-        return new ChatResponse(newConvId, List.of(), UUID.randomUUID().toString());
-    }
-    List<ChatMessageDto> msgs = history.stream()
-            .map(e -> new ChatMessageDto(e.getId(), e.getRole().name(), e.getContent(), e.getCreatedAt()))
-            .collect(Collectors.toList());
-    UUID convId = history.get(0).getConversationId();
-    return new ChatResponse(convId, msgs, UUID.randomUUID().toString());
 }

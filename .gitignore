@@ -16,5 +16,6 @@ apps/ledger-svc/*.log
 .env
 .env.local
 .env.*.local
+examples/*
 apps/web/.env
 apps/web/.env.local

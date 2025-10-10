@@ -20,23 +20,29 @@ public class ChatService {
     private final ChatMessageRepository repository;
     private final OpenAiResponsesClient openAiClient;
     private final ChatContextService chatContextService;
+    private final ChatMessageRetentionManager retentionManager;
 
     private volatile boolean apiKeyWarned = false;
 
     private static final String SYSTEM_PROMPT = "You are Safepocket's financial assistant. Use the provided account "
             + "summaries as context, cite concrete amounts and dates when available, and never fabricate data.";
 
-    public ChatService(ChatMessageRepository repository, OpenAiResponsesClient openAiClient, ChatContextService chatContextService) {
+    public ChatService(ChatMessageRepository repository,
+                       OpenAiResponsesClient openAiClient,
+                       ChatContextService chatContextService,
+                       ChatMessageRetentionManager retentionManager) {
         this.repository = repository;
         this.openAiClient = openAiClient;
         this.chatContextService = chatContextService;
+        this.retentionManager = retentionManager;
     }
 
-public record ChatResponse(UUID conversationId, List<ChatMessageDto> messages, String traceId) {}
-public record ChatMessageDto(UUID id, String role, String content, Instant createdAt) {}
+    public record ChatResponse(UUID conversationId, List<ChatMessageDto> messages, String traceId) {}
+    public record ChatMessageDto(UUID id, String role, String content, Instant createdAt) {}
 
-@Transactional
-public ChatResponse sendMessage(UUID userId, UUID conversationId, String message) {
+    @Transactional
+    public ChatResponse sendMessage(UUID userId, UUID conversationId, String message) {
+        retentionManager.purgeExpiredMessagesNow();
         boolean newConversation = conversationId == null;
         UUID convId = newConversation ? UUID.randomUUID() : conversationId;
         Instant now = Instant.now();
@@ -48,7 +54,9 @@ public ChatResponse sendMessage(UUID userId, UUID conversationId, String message
         ChatMessageEntity assistantMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.ASSISTANT, assistantContent, Instant.now());
         repository.save(assistantMsg);
 
+        Instant cutoff = retentionManager.currentCutoff();
         List<ChatMessageDto> msgs = repository.findByConversationIdOrderByCreatedAtAsc(convId).stream()
+                .filter(e -> !e.getCreatedAt().isBefore(cutoff))
                 .map(e -> new ChatMessageDto(e.getId(), e.getRole().name(), e.getContent(), e.getCreatedAt()))
                 .collect(Collectors.toList());
         return new ChatResponse(convId, msgs, UUID.randomUUID().toString());
@@ -63,7 +71,7 @@ public ChatResponse sendMessage(UUID userId, UUID conversationId, String message
             return "(Fallback) 了解しました。現在はサンドボックスモードです — メッセージ: " + latestUserMessage;
         }
 
-        String context = chatContextService.buildContext(userId, latestUserMessage);
+        String context = chatContextService.buildContext(userId, conversationId, latestUserMessage);
         List<OpenAiResponsesClient.Message> messages = new ArrayList<>();
         messages.add(new OpenAiResponsesClient.Message("system", SYSTEM_PROMPT));
         if (!context.isBlank()) {
@@ -79,8 +87,10 @@ public ChatResponse sendMessage(UUID userId, UUID conversationId, String message
         log.warn("AI chat: OpenAI 応答が取得できなかったため fallback 表示");
         return "(Fallback) 応答を生成できませんでしたがメッセージは保存されました。";
     }
+
     @Transactional(readOnly = true)
     public ChatResponse getConversation(UUID userId, UUID conversationId) {
+        Instant cutoff = retentionManager.currentCutoff();
         List<ChatMessageEntity> history;
         UUID resolvedConversationId = conversationId;
         if (conversationId != null) {
@@ -94,6 +104,9 @@ public ChatResponse sendMessage(UUID userId, UUID conversationId, String message
                 history = List.of();
             }
         }
+        history = history.stream()
+                .filter(e -> !e.getCreatedAt().isBefore(cutoff))
+                .collect(Collectors.toList());
         if (history.isEmpty()) {
             UUID newConvId = resolvedConversationId != null ? resolvedConversationId : UUID.randomUUID();
             return new ChatResponse(newConvId, List.of(), UUID.randomUUID().toString());

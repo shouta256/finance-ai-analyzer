@@ -8,7 +8,8 @@ public record SafepocketProperties(
         Cognito cognito,
         Plaid plaid,
         Ai ai,
-        Security security
+        Security security,
+        Rag rag
 ) {
 
     @ConstructorBinding
@@ -21,6 +22,9 @@ public record SafepocketProperties(
         }
         if (ai == null) {
             throw new IllegalArgumentException("ai configuration must be provided");
+        }
+        if (rag == null) {
+            throw new IllegalArgumentException("rag configuration must be provided");
         }
         // security may be null for production defaults; handle via accessor method
     }
@@ -85,6 +89,23 @@ public record SafepocketProperties(
     public record Security(String devJwtSecret) {
         public boolean hasDevJwtSecret() {
             return devJwtSecret != null && !devJwtSecret.isBlank();
+        }
+    }
+
+    public record Rag(String vectorProvider, String embeddingModel, Integer maxRows, Integer embedDimension) {
+        public Rag {
+            if (vectorProvider == null || vectorProvider.isBlank()) {
+                throw new IllegalArgumentException("vectorProvider must be provided");
+            }
+            if (embeddingModel == null || embeddingModel.isBlank()) {
+                throw new IllegalArgumentException("embeddingModel must be provided");
+            }
+            if (maxRows == null || maxRows <= 0) {
+                throw new IllegalArgumentException("maxRows must be positive");
+            }
+            if (embedDimension == null || embedDimension <= 0) {
+                throw new IllegalArgumentException("embedDimension must be positive");
+            }
         }
     }
 }

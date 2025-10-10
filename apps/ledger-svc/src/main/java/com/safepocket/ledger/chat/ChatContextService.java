@@ -2,8 +2,13 @@ package com.safepocket.ledger.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.safepocket.ledger.analytics.AnalyticsService;
-import com.safepocket.ledger.model.AnalyticsSummary;
+import com.safepocket.ledger.rag.RagService;
+import com.safepocket.ledger.rag.RagService.AggregateResponse;
+import com.safepocket.ledger.rag.RagService.SearchRequest;
+import com.safepocket.ledger.rag.RagService.SearchResponse;
+import com.safepocket.ledger.rag.RagService.SummariesResponse;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -28,30 +33,73 @@ public class ChatContextService {
     private static final int MAX_MONTHS = 6;
     private static final long CACHE_TTL_MILLIS = 5 * 60 * 1000L; // 5 minutes
 
-    private final AnalyticsService analyticsService;
+    private final RagService ragService;
     private final ObjectMapper objectMapper;
     private final ConcurrentHashMap<CacheKey, CachedSummary> cache = new ConcurrentHashMap<>();
 
-    public ChatContextService(AnalyticsService analyticsService, ObjectMapper objectMapper) {
-        this.analyticsService = analyticsService;
+    public ChatContextService(RagService ragService, ObjectMapper objectMapper) {
+        this.ragService = ragService;
         this.objectMapper = objectMapper;
     }
 
-    public String buildContext(UUID userId, String latestUserMessage) {
+    public String buildContext(UUID userId, UUID conversationId, String latestUserMessage) {
         List<YearMonth> months = resolveRelevantMonths(latestUserMessage);
         List<Map<String, Object>> monthSummaries = new ArrayList<>();
         for (YearMonth month : months) {
-            AnalyticsSummary summary = getCachedSummary(userId, month);
+            SummariesResponse summary = getCachedSummary(userId, month);
             if (summary != null) {
-                monthSummaries.add(toContextMap(summary));
+                monthSummaries.add(toSummaryMap(summary));
             }
         }
         if (monthSummaries.isEmpty()) {
             return "";
         }
+
+        String chatId = conversationId != null ? conversationId.toString() : UUID.randomUUID().toString();
+        YearMonth primaryMonth = months.isEmpty() ? YearMonth.now(ZoneOffset.UTC) : months.getFirst();
+
         Map<String, Object> context = new LinkedHashMap<>();
-        context.put("generatedAt", java.time.Instant.now().toString());
+        context.put("generatedAt", Instant.now().toString());
         context.put("months", monthSummaries);
+
+        LocalDate from = primaryMonth.atDay(1);
+        LocalDate to = primaryMonth.atEndOfMonth();
+
+        if (requiresAggregate(latestUserMessage)) {
+            AggregateResponse aggregate = ragService.aggregateForUser(userId, new RagService.AggregateRequest(
+                    from,
+                    to,
+                    inferGranularity(latestUserMessage),
+                    chatId
+            ));
+            context.put("aggregate", toAggregateMap(aggregate));
+        }
+
+        if (requiresSearch(latestUserMessage)) {
+            SearchResponse search = ragService.searchForUser(
+                    userId,
+                    new SearchRequest(
+                            latestUserMessage,
+                            from,
+                            to,
+                            List.of(),
+                            null,
+                            null,
+                            null
+                    ),
+                    chatId
+            );
+            if (!search.rowsCsv().isBlank()) {
+                context.put("transactionsCsv", search.rowsCsv());
+                context.put("dictionary", search.dict());
+                context.put("searchStats", Map.of(
+                        "count", search.stats().count(),
+                        "sum", search.stats().sum(),
+                        "avg", search.stats().avg()
+                ));
+            }
+        }
+
         try {
             return objectMapper.writeValueAsString(context);
         } catch (JsonProcessingException e) {
@@ -60,7 +108,7 @@ public class ChatContextService {
         }
     }
 
-    private AnalyticsSummary getCachedSummary(UUID userId, YearMonth month) {
+    private SummariesResponse getCachedSummary(UUID userId, YearMonth month) {
         CacheKey key = new CacheKey(userId, month);
         CachedSummary cached = cache.get(key);
         long now = System.currentTimeMillis();
@@ -68,13 +116,47 @@ public class ChatContextService {
             return cached.summary();
         }
         try {
-            AnalyticsSummary summary = analyticsService.getSummaryForUser(userId, month, false);
+            SummariesResponse summary = ragService.summariesForUser(userId, month);
             cache.put(key, new CachedSummary(summary, now));
             return summary;
         } catch (Exception ex) {
-            log.warn("Unable to load analytics summary for {} {}: {}", userId, month, ex.getMessage());
+            log.warn("Unable to load rag summaries for {} {}: {}", userId, month, ex.getMessage());
             return null;
         }
+    }
+
+    private boolean requiresSearch(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String normalized = message.toLowerCase();
+        return normalized.matches(".*(明細|見せ|detail|show|list|取引|transactions?).*")
+                || normalized.matches(".*(昨日|today|yesterday|先週|specific).*")
+                || normalized.matches(".*\\d{1,2}\\s*(日|th|st|nd|rd).*")
+                || normalized.contains("追加")
+                || normalized.contains("more");
+    }
+
+    private boolean requiresAggregate(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String normalized = message.toLowerCase();
+        return normalized.matches(".*(平均|trend|推移|per category|by category| breakdown |比較|compare|トレンド|一番|top|most|最大|ランキング).*");
+    }
+
+    private String inferGranularity(String message) {
+        if (message == null) {
+            return "category";
+        }
+        String normalized = message.toLowerCase();
+        if (normalized.matches(".*(merchant|店舗|店).*")) {
+            return "merchant";
+        }
+        if (normalized.matches(".*(month|推移|月次|trend).*")) {
+            return "month";
+        }
+        return "category";
     }
 
     private List<YearMonth> resolveRelevantMonths(String message) {
@@ -128,21 +210,56 @@ public class ChatContextService {
         return false;
     }
 
-    private Map<String, Object> toContextMap(AnalyticsSummary summary) {
+    private Map<String, Object> toSummaryMap(SummariesResponse summary) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("month", summary.month().toString());
+        map.put("month", summary.month());
         map.put("totals", Map.of(
                 "income", summary.totals().income(),
                 "expense", summary.totals().expense(),
                 "net", summary.totals().net()
         ));
-        map.put("topCategories", summary.categories());
-        map.put("topMerchants", summary.merchants());
-        map.put("anomalies", summary.anomalies());
+        map.put("topCategories", summary.categories().stream()
+                .map(cat -> Map.of(
+                        "code", cat.code(),
+                        "count", cat.count(),
+                        "sum", cat.sum(),
+                        "avg", cat.avg()
+                ))
+                .toList());
+        map.put("topMerchants", summary.merchants().stream()
+                .map(merch -> Map.of(
+                        "merchantId", merch.merchantId(),
+                        "count", merch.count(),
+                        "sum", merch.sum()
+                ))
+                .toList());
+        return map;
+    }
+
+    private Map<String, Object> toAggregateMap(AggregateResponse response) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("granularity", response.granularity());
+        map.put("from", response.from() != null ? response.from().toString() : null);
+        map.put("to", response.to() != null ? response.to().toString() : null);
+        map.put("buckets", response.buckets().stream()
+                .map(bucket -> Map.of(
+                        "key", bucket.key(),
+                        "count", bucket.count(),
+                        "sum", bucket.sum(),
+                        "avg", bucket.avg()
+                ))
+                .toList());
+        map.put("timeline", response.timeline().stream()
+                .map(point -> Map.of(
+                        "bucket", point.bucket(),
+                        "count", point.count(),
+                        "sum", point.sum()
+                ))
+                .toList());
         return map;
     }
 
     private record CacheKey(UUID userId, YearMonth month) {}
 
-    private record CachedSummary(AnalyticsSummary summary, long createdAt) {}
+    private record CachedSummary(SummariesResponse summary, long createdAt) {}
 }

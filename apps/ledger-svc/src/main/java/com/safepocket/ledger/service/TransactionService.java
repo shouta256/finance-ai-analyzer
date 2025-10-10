@@ -1,6 +1,7 @@
 package com.safepocket.ledger.service;
 
 import com.safepocket.ledger.analytics.AnomalyDetectionService;
+import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.model.AnalyticsSummary;
 import com.safepocket.ledger.model.AnomalyScore;
 import com.safepocket.ledger.model.Transaction;
@@ -25,17 +26,20 @@ public class TransactionService {
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
     private final AnomalyDetectionService anomalyDetectionService;
+    private final TransactionEmbeddingService transactionEmbeddingService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
-            AnomalyDetectionService anomalyDetectionService
+            AnomalyDetectionService anomalyDetectionService,
+            TransactionEmbeddingService transactionEmbeddingService
     ) {
         this.transactionRepository = transactionRepository;
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
         this.anomalyDetectionService = anomalyDetectionService;
+        this.transactionEmbeddingService = transactionEmbeddingService;
     }
 
     @Transactional(readOnly = true)
@@ -66,7 +70,9 @@ public class TransactionService {
         if (notes.isPresent()) {
             updated = updated.withNotes(notes.get());
         }
-        return transactionRepository.save(updated);
+        Transaction saved = transactionRepository.save(updated);
+        transactionEmbeddingService.upsertEmbeddings(userId, List.of(saved.id()));
+        return saved;
     }
 
     private Transaction annotateWithAnomaly(Transaction transaction, AnalyticsSummary.AnomalyInsight insight) {

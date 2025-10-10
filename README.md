@@ -38,6 +38,14 @@ ECS ではこれらを Secrets Manager / SSM からタスク定義環境変数�
 2. Backend: `./apps/ledger-svc/gradlew -p apps/ledger-svc bootRun`
 3. Frontend: `pnpm -C apps/web dev`
 
+## RAG デモ (家計データの最小パイプライン)
+- `pnpm demo` または `make demo` を実行すると、以下の流れをローカルで再現できます:
+  1. `examples/rag-demo-input.csv` を読み込み
+  2. 簡易ベクトル化 → カテゴリ/店舗の集計要約を生成（`examples/rag-demo-summary.json`）
+  3. サンプル質問に対する検索結果を生成（`examples/rag-demo-qa.json`）
+- 実行ログはコンソールに出力され、生成物は `examples/` 配下に保存されます。
+- デモは全てローカルで完結し、本番サービスや外部APIには接続しません。
+
 ## 変更概要 (Health Feature)
 - Actuator probes 有効化 (`management.endpoint.health.probes.enabled=true`).
 - liveness/readiness 導入。liveness は DB 非依存。

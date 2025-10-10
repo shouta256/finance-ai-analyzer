@@ -15,7 +15,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down logs clean kill-port
+.PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down logs clean kill-port demo
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -69,3 +69,6 @@ kill-port: ## Kill process listening on port 8081 (macOS/Linux)
 	PID=$$(lsof -ti tcp:$$PORT || true); \
 	if [ -n "$$PID" ]; then \
 	  echo "Killing process $$PID on port $$PORT"; kill $$PID; else echo "No process on port $$PORT"; fi
+
+demo: ## Run minimal RAG demo pipeline (CSV -> summary & Q&A artifacts)
+	$(PNPM) demo

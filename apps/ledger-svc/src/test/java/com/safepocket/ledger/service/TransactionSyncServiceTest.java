@@ -9,6 +9,7 @@ import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.repository.TransactionRepository;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
+import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
@@ -29,6 +30,9 @@ class TransactionSyncServiceTest {
 
     @Mock
     private JpaAccountRepository jpaAccountRepository;
+
+    @Mock
+    private TransactionEmbeddingService transactionEmbeddingService;
 
     private TransactionRepository transactionRepository;
 
@@ -52,7 +56,8 @@ class TransactionSyncServiceTest {
         transactionRepository,
         jpaAccountRepository,
         authenticatedUserProvider,
-        rlsGuard
+        rlsGuard,
+        transactionEmbeddingService
     );
     }
 

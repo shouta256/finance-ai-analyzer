@@ -6,6 +6,7 @@ import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.repository.TransactionRepository;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
+import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -28,18 +29,21 @@ public class TransactionSyncService {
     private final JpaAccountRepository jpaAccountRepository;
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
+    private final TransactionEmbeddingService transactionEmbeddingService;
     private final Map<UUID, Instant> userSyncCursor = new ConcurrentHashMap<>();
 
     public TransactionSyncService(
             TransactionRepository transactionRepository,
             JpaAccountRepository jpaAccountRepository,
             AuthenticatedUserProvider authenticatedUserProvider,
-            RlsGuard rlsGuard
+            RlsGuard rlsGuard,
+            TransactionEmbeddingService transactionEmbeddingService
     ) {
         this.transactionRepository = transactionRepository;
         this.jpaAccountRepository = jpaAccountRepository;
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
+        this.transactionEmbeddingService = transactionEmbeddingService;
     }
 
     public SyncResult triggerSync(boolean forceFullSync, String traceId) {
@@ -52,6 +56,7 @@ public class TransactionSyncService {
             List<Transaction> seeded = seedTransactions(userId);
             seeded.forEach(transactionRepository::save);
             synced = seeded.size();
+            transactionEmbeddingService.upsertEmbeddings(userId, seeded.stream().map(Transaction::id).toList());
         }
         userSyncCursor.put(userId, Instant.now());
         return new SyncResult("STARTED", synced, Math.max(0, 50 - synced), traceId);

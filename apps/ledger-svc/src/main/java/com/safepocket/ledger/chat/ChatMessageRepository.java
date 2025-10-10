@@ -1,14 +1,21 @@
 package com.safepocket.ledger.chat;
 
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
     List<ChatMessageEntity> findByConversationIdOrderByCreatedAtAsc(UUID conversationId);
 
     ChatMessageEntity findFirstByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ChatMessageEntity m where m.createdAt < :threshold")
+    int deleteOlderThan(@Param("threshold") Instant threshold);
 }

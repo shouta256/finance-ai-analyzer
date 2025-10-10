@@ -103,15 +103,45 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
             const verified2 = await jwtVerify(token, remoteJwks, { issuer });
             return { sub: verified2.payload.sub as string | undefined, iss: verified2.payload.iss as string | undefined, aud: (verified2.payload.aud as any), mode: 'jwks-issuer-only' };
           } catch (inner) {
+            // Non-production fallback: try dev shared secret to avoid blocking local flows when Cognito not configured
+            if (process.env.NODE_ENV !== 'production') {
+              try {
+                const verifiedDev = await jwtVerify(token, new TextEncoder().encode(devSharedSecret));
+                return { sub: verifiedDev.payload.sub as string | undefined, iss: verifiedDev.payload.iss as string | undefined, aud: (verifiedDev.payload.aud as any), mode: 'dev-fallback' };
+              } catch {
+                // ignore; propagate original error below
+              }
+            }
             throw inner; // propagate
+          }
+        }
+        // Non-production fallback: try dev shared secret on any signature/verification error
+        if (process.env.NODE_ENV !== 'production') {
+          try {
+            const verifiedDev = await jwtVerify(token, new TextEncoder().encode(devSharedSecret));
+            return { sub: verifiedDev.payload.sub as string | undefined, iss: verifiedDev.payload.iss as string | undefined, aud: (verifiedDev.payload.aud as any), mode: 'dev-fallback' };
+          } catch {
+            // ignore; propagate original error below
           }
         }
         throw e;
       }
     } else {
       // Audience unset → verify only issuer
-      const verified = await jwtVerify(token, remoteJwks, { issuer });
-      return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks-no-aud' };
+      try {
+        const verified = await jwtVerify(token, remoteJwks, { issuer });
+        return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks-no-aud' };
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') {
+          try {
+            const verifiedDev = await jwtVerify(token, new TextEncoder().encode(devSharedSecret));
+            return { sub: verifiedDev.payload.sub as string | undefined, iss: verifiedDev.payload.iss as string | undefined, aud: (verifiedDev.payload.aud as any), mode: 'dev-fallback' };
+          } catch {
+            // ignore; propagate original error below
+          }
+        }
+        throw e;
+      }
     }
   }
   // dev fallback (署名なし検証用 shared secret)

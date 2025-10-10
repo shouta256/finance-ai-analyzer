@@ -59,19 +59,12 @@ function LoginForm() {
   const handleDevLogin = () => {
     startTransition(async () => {
       setMessage(null);
-      try {
-        const response = await fetch("/api/dev/login", { method: "GET", credentials: "include" });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload?.error?.message ?? "ログインに失敗しました");
-        }
-  const raw = searchParams.get("redirect");
-  // Only allow redirecting to /dashboard or its subpaths to keep typedRoutes happy and avoid open redirects
-  const redirectTo: Route = (raw && raw.startsWith("/dashboard") ? raw : "/dashboard") as Route;
-  router.replace(redirectTo);
-      } catch (error) {
-        setMessage((error as Error).message ?? "ログイン処理でエラーが発生しました");
-      }
+      const raw = searchParams.get("redirect");
+      const redirectTo: Route = (raw && raw.startsWith("/dashboard") ? raw : "/dashboard") as Route;
+      // Navigate to API so the browser processes Set-Cookie in a full navigation, then land on redirect target
+      const url = new URL("/api/dev/login", window.location.origin);
+      url.searchParams.set("redirect", redirectTo);
+      window.location.href = url.toString();
     });
   };
 

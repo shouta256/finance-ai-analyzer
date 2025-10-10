@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { SignJWT } from 'jose';
 
 export const runtime = 'nodejs';
@@ -19,7 +19,7 @@ function devLoginEnabled(): boolean {
   return process.env.SAFEPOCKET_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true';
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!devLoginEnabled()) {
     return NextResponse.json(
       {
@@ -32,6 +32,41 @@ export async function GET() {
     );
   }
 
+  // Prefer backend-minted token to ensure signature matches backend decoder
+  const backend = process.env.LEDGER_SERVICE_URL ?? 'http://localhost:8081';
+  try {
+    const res = await fetch(`${backend}/dev/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: DEV_USER_ID }),
+      // Do not forward cookies; this is a server-to-server call
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const json: any = await res.json();
+      const token: string | undefined = json?.token;
+      const ttl: number = Number(json?.expiresInSeconds ?? ONE_HOUR_SECONDS);
+      if (token && typeof token === 'string') {
+        const redirect = req.nextUrl.searchParams.get('redirect');
+        const response = redirect
+          ? NextResponse.redirect(new URL(redirect, req.nextUrl.origin), { status: 303 })
+          : NextResponse.json({ ok: true, mode: 'backend' });
+        const cookieInit = {
+          httpOnly: true,
+          secure: shouldUseSecureCookie(),
+          path: '/',
+          sameSite: 'lax' as const,
+          maxAge: ttl,
+        };
+        response.cookies.set(PRIMARY_COOKIE, token, cookieInit);
+        return response;
+      }
+    }
+  } catch {
+    // fall through to local mint
+  }
+
+  // Fallback: mint locally (requires matching SAFEPOCKET_DEV_JWT_SECRET across web and backend)
   const secret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
   if (secret.length < 32) {
     return NextResponse.json(
@@ -54,7 +89,10 @@ export async function GET() {
     .setExpirationTime(nowSeconds + ONE_HOUR_SECONDS)
     .sign(new TextEncoder().encode(secret));
 
-  const response = NextResponse.json({ ok: true, mode: 'local' });
+  const redirect = req.nextUrl.searchParams.get('redirect');
+  const response = redirect
+    ? NextResponse.redirect(new URL(redirect, req.nextUrl.origin), { status: 303 })
+    : NextResponse.json({ ok: true, mode: 'local-fallback' }, { status: 200, headers: { 'x-dev-login-warning': 'backend-login-failed; ensure both apps share SAFEPOCKET_DEV_JWT_SECRET' } });
   const cookieInit = {
     httpOnly: true,
     secure: shouldUseSecureCookie(),

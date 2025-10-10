@@ -30,6 +30,7 @@ spring:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 0
+    locations: classpath:db/migration/{vendor}
   jackson:
     serialization:
       indent_output: true
@@ -63,8 +64,19 @@ safepocket:
     snapshot: ${SAFEPOCKET_AI_MODEL_SNAPSHOT:}
     endpoint: https://api.openai.com/v1/responses
     api-key: ${OPENAI_API_KEY:}
+  chat:
+    retention-days: ${SAFEPOCKET_CHAT_RETENTION_DAYS:30}
+    cleanup-cron: ${SAFEPOCKET_CHAT_CLEANUP_CRON:0 30 3 * * *}
   security:
     # Must match frontend middleware fallback (ensure consistent default for local dev)
     dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}
+  rag:
+    vector-provider: ${VECTOR_PROVIDER:pgvector}
+    embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
+    max-rows: ${RAG_MAX_ROWS:20}
+    embed-dimension: ${RAG_EMBED_DIM:1536}
   db:
-    bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}
+    # Enable lightweight bootstrap by default for local/dev so brand-new DBs have core tables
+    # (users, merchants, transactions). In prod/staging, set SAFEPOCKET_DB_BOOTSTRAP=false
+    # and rely on Flyway-managed migrations only.
+    bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:true}

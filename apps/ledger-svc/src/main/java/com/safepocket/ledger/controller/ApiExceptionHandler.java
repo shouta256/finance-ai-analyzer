@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -35,6 +36,19 @@ public class ApiExceptionHandler {
             ));
         }
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected error", Map.of("reason", ex.getMessage()));
+    }
+
+    @ExceptionHandler(BadSqlGrammarException.class)
+    public ResponseEntity<ErrorResponseDto> handleBadSql(BadSqlGrammarException ex) {
+        var sqlEx = ex.getSQLException();
+        String sqlState = sqlEx != null ? sqlEx.getSQLState() : null;
+        String pgMsg = sqlEx != null ? sqlEx.getMessage() : ex.getMessage();
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "SQL_GRAMMAR_ERROR", "Bad SQL grammar",
+                Map.of(
+                        "sql", ex.getSql(),
+                        "sqlState", sqlState,
+                        "reason", pgMsg
+                ));
     }
 
     @ExceptionHandler(CannotGetJdbcConnectionException.class)

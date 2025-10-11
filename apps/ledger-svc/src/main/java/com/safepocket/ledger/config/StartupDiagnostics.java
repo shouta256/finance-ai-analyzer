@@ -21,7 +21,13 @@ public class StartupDiagnostics {
         String issuer = props.cognito().issuer();
         String audience = props.cognito().audience();
         boolean hasDevSecret = props.security().hasDevJwtSecret();
-    log.info("Startup diagnostics: cognitoEnabled={}, issuer='{}', audience='{}', hasDevSecret={}, env(SAFEPOCKET_USE_COGNITO)='{}'",
+        log.info("Startup diagnostics: cognitoEnabled={}, issuer='{}', audience='{}', hasDevSecret={}, env(SAFEPOCKET_USE_COGNITO)='{}'",
                 cognitoEnabled, issuer, audience, hasDevSecret, System.getenv("SAFEPOCKET_USE_COGNITO"));
+
+        var plaid = props.plaid();
+        String clientIdTail = plaid.clientId() != null && plaid.clientId().length() > 4
+                ? plaid.clientId().substring(plaid.clientId().length() - 4) : "";
+        log.info("Plaid config: env='{}', baseUrl='{}', clientId='***{}', redirectUriPresent={}",
+                plaid.environment(), plaid.baseUrl(), clientIdTail, plaid.redirectUri() != null && !plaid.redirectUri().isBlank());
     }
 }

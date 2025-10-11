@@ -2,6 +2,8 @@ package com.safepocket.ledger.plaid;
 
 import com.safepocket.ledger.config.SafepocketProperties;
 import com.safepocket.ledger.security.AccessTokenEncryptor;
+import com.safepocket.ledger.entity.AccountEntity;
+import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.entity.PlaidItemEntity;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -14,6 +16,7 @@ public class PlaidService {
     private final PlaidItemRepository plaidItemRepository;
     private final AccessTokenEncryptor accessTokenEncryptor;
     private final SafepocketProperties properties;
+    private final JpaAccountRepository accountRepository;
 
     private final PlaidClient plaidClient;
 
@@ -21,11 +24,13 @@ public class PlaidService {
             PlaidItemRepository plaidItemRepository,
             AccessTokenEncryptor accessTokenEncryptor,
             SafepocketProperties properties,
+            JpaAccountRepository accountRepository,
             PlaidClient plaidClient
     ) {
         this.plaidItemRepository = plaidItemRepository;
         this.accessTokenEncryptor = accessTokenEncryptor;
         this.properties = properties;
+        this.accountRepository = accountRepository;
         this.plaidClient = plaidClient;
     }
 
@@ -53,6 +58,21 @@ public class PlaidService {
                 })
                 .orElseGet(() -> new PlaidItemEntity(userId, response.itemId(), encrypted, Instant.now()));
         plaidItemRepository.save(entity);
+        // Auto-provision default accounts if none exist yet for this user
+        try {
+            var accounts = accountRepository.findByUserId(userId);
+            if (accounts == null || accounts.isEmpty()) {
+                var now = Instant.now();
+                var defaults = java.util.List.of(
+                        new AccountEntity(java.util.UUID.randomUUID(), userId, "Primary Checking", "Plaid Sandbox", now),
+                        new AccountEntity(java.util.UUID.randomUUID(), userId, "Savings", "Plaid Sandbox", now),
+                        new AccountEntity(java.util.UUID.randomUUID(), userId, "Credit Card", "Plaid Sandbox", now)
+                );
+                accountRepository.saveAll(defaults);
+            }
+        } catch (Exception e) {
+            // Non-fatal: syncing can still proceed for existing accounts
+        }
         return new PlaidItem(entity.getUserId(), entity.getItemId(), entity.getEncryptedAccessToken(), entity.getLinkedAt());
     }
 

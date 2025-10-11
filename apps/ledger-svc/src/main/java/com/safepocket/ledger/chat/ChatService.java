@@ -123,7 +123,8 @@ public class ChatService {
             String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
                     .orElseGet(() -> UUID.randomUUID().toString());
             log.error("AI chat: unexpected failure building reply traceId {}", traceId, ex);
-            return "(Fallback) 応答生成でエラーが発生しました。traceId=" + traceId + " をサポートへお伝えください。";
+            // Use phrasing consistent with outer fallback for test stability and UX
+            return "(Fallback) 応答を生成できませんでした。traceId=" + traceId + " をサポートへお伝えください。";
         }
     }
 

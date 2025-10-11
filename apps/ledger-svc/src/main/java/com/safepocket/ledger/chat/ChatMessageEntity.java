@@ -46,5 +46,13 @@ public class ChatMessageEntity {
     public String getContent() { return content; }
     public Instant getCreatedAt() { return createdAt; }
 
+    public void setContent(String content) {
+        this.content = content;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
     public enum Role { USER, ASSISTANT }
 }

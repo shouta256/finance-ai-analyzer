@@ -41,14 +41,37 @@ public class ChatService {
     public record ChatMessageDto(UUID id, String role, String content, Instant createdAt) {}
 
     @Transactional
-    public ChatResponse sendMessage(UUID userId, UUID conversationId, String message) {
+    public ChatResponse sendMessage(UUID userId, UUID conversationId, String message, java.util.UUID truncateFromMessageId) {
         retentionManager.purgeExpiredMessagesNow();
-        boolean newConversation = conversationId == null;
-        UUID convId = newConversation ? UUID.randomUUID() : conversationId;
+        UUID convId = conversationId;
+
+        ChatMessageEntity userMsg = null;
         Instant now = Instant.now();
 
-        ChatMessageEntity userMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.USER, message, now);
-        repository.save(userMsg);
+        if (truncateFromMessageId != null) {
+            Optional<ChatMessageEntity> targetOpt = repository.findById(truncateFromMessageId);
+            if (targetOpt.isPresent()) {
+                ChatMessageEntity target = targetOpt.get();
+                if (target.getUserId().equals(userId)) {
+                    UUID targetConversationId = target.getConversationId();
+                    if (convId == null || convId.equals(targetConversationId)) {
+                        repository.deleteConversationTail(targetConversationId, target.getCreatedAt());
+                        convId = targetConversationId;
+                        target.setContent(message);
+                        target.setCreatedAt(now);
+                        userMsg = repository.save(target);
+                    }
+                }
+            }
+        }
+
+        boolean newConversation = convId == null;
+        convId = newConversation ? UUID.randomUUID() : convId;
+
+        if (userMsg == null) {
+            userMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.USER, message, now);
+            repository.save(userMsg);
+        }
 
         String assistantContent = generateAssistantReply(convId, userId, message);
         ChatMessageEntity assistantMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.ASSISTANT, assistantContent, Instant.now());

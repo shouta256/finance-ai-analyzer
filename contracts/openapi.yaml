@@ -603,6 +603,10 @@ components:
         message:
           type: string
           description: User's message content
+        truncateFromMessageId:
+          type: string
+          format: uuid
+          description: Trim the stored conversation from this message (inclusive) before appending the new user message.
     AiChatMessage:
       type: object
       required:

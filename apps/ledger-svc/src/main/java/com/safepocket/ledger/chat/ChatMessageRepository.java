@@ -18,4 +18,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from ChatMessageEntity m where m.createdAt < :threshold")
     int deleteOlderThan(@Param("threshold") Instant threshold);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ChatMessageEntity m where m.conversationId = :conversationId and m.createdAt > :cutoff")
+    int deleteConversationTail(@Param("conversationId") UUID conversationId, @Param("cutoff") Instant cutoff);
 }

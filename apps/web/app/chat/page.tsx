@@ -14,10 +14,11 @@ const [initializing, setInitializing] = useState(true);
 const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 const [editingDraft, setEditingDraft] = useState("");
 const [editingLoading, setEditingLoading] = useState(false);
-const disabled = loading || initializing || input.trim().length === 0;
+const disabled = loading || initializing || editingMessageId !== null || input.trim().length === 0;
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
-  const editingMessage = editingMessageId ? messages.find((m) => m.id === editingMessageId) : undefined;
+const editingMessage = editingMessageId ? messages.find((m) => m.id === editingMessageId) : undefined;
+const editingIndex = editingMessageId ? messages.findIndex((m) => m.id === editingMessageId) : -1;
   const storageKey = "safepocket_chat_conversation_id";
 
 const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
@@ -84,7 +85,11 @@ const copyToClipboard = async (content: string) => {
         setMessages((current) => [...current, userMsg]);
       }
       requestAnimationFrame(() => scrollToBottom());
-      const res = await sendChatMessage({ conversationId, message: msg });
+      const res = await sendChatMessage({
+        conversationId,
+        message: msg,
+        truncateFromMessageId: editingMessage ? editingMessage.id : undefined,
+      });
       setConversationId(res.conversationId);
       setMessages(res.messages);
       if (typeof window !== "undefined") {
@@ -111,14 +116,28 @@ const copyToClipboard = async (content: string) => {
   }, [messages, initializing]);
 
 function handleStartEdit(message: ChatMessage) {
+  if (message.role !== "USER") return;
   setEditingMessageId(message.id);
   setEditingDraft(message.content);
+  setEditingLoading(false);
+  requestAnimationFrame(() => scrollToBottom("auto"));
 }
 
-function handleCancelEdit() {
+async function handleCancelEdit() {
   setEditingMessageId(null);
   setEditingDraft("");
   setEditingLoading(false);
+  try {
+    const res = await fetchChatConversation(conversationId);
+    setConversationId(res.conversationId);
+    setMessages(res.messages);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, res.conversationId);
+    }
+    requestAnimationFrame(() => scrollToBottom("auto"));
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 async function handleSubmitEdit(event: React.FormEvent) {
@@ -127,7 +146,11 @@ async function handleSubmitEdit(event: React.FormEvent) {
   const msg = editingDraft;
   setEditingLoading(true);
   try {
-    const res = await sendChatMessage({ conversationId, message: msg });
+    const res = await sendChatMessage({
+      conversationId,
+      message: msg,
+      truncateFromMessageId: editingMessageId,
+    });
     setConversationId(res.conversationId);
     setMessages(res.messages);
     if (typeof window !== "undefined") {
@@ -159,7 +182,10 @@ async function handleSubmitEdit(event: React.FormEvent) {
               メッセージを入力してください。支出やカテゴリについて質問できます。
             </p>
           )}
-          {messages.map((m) => {
+          {messages.map((m, idx) => {
+            if (editingIndex >= 0 && idx > editingIndex) {
+              return null;
+            }
             const isUser = m.role === "USER";
             const isEditingTarget = editingMessageId === m.id;
             const bubbleTone = isUser ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-800";
@@ -222,6 +248,13 @@ async function handleSubmitEdit(event: React.FormEvent) {
               </div>
             );
           })}
+          {(loading || editingLoading) && (
+            <div className="text-left">
+              <div className="inline-block rounded bg-slate-100 px-3 py-2 text-sm text-slate-600">
+                アシスタントが返信を生成しています…
+              </div>
+            </div>
+          )}
         </div>
         <form onSubmit={handleSend} className="flex gap-2">
           <input

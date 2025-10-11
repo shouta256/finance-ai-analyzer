@@ -60,6 +60,7 @@ export async function ledgerFetch<T>(
 export interface ChatRequestBody {
   conversationId?: string;
   message: string;
+  truncateFromMessageId?: string;
 }
 
 export async function sendChatMessage(body: ChatRequestBody) {

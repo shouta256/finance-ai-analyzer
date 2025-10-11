@@ -234,6 +234,11 @@ export interface components {
       conversationId?: string;
       /** @description User's message content */
       message: string;
+      /**
+       * Format: uuid
+       * @description Trim the stored conversation from this message (inclusive) before appending the new user message.
+       */
+      truncateFromMessageId?: string;
     };
     AiChatMessage: {
       /** Format: uuid */

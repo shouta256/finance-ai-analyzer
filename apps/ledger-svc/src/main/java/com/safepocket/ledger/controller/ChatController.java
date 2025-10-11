@@ -20,7 +20,7 @@ public class ChatController {
         this.chatService = chatService;
     }
 
-    public record ChatRequest(UUID conversationId, @NotBlank String message) {}
+    public record ChatRequest(UUID conversationId, @NotBlank String message, UUID truncateFromMessageId) {}
     public record ChatMessageDto(UUID id, String role, String content, java.time.Instant createdAt) {}
     public record ChatResponseDto(UUID conversationId, java.util.List<ChatMessageDto> messages, String traceId) {}
 
@@ -44,7 +44,7 @@ public class ChatController {
         if (auth != null && auth.getName() != null) {
             try { userId = UUID.fromString(auth.getName()); } catch (Exception ignored) {}
         }
-        var res = chatService.sendMessage(userId, request.conversationId(), request.message());
+        var res = chatService.sendMessage(userId, request.conversationId(), request.message(), request.truncateFromMessageId());
         var dto = new ChatResponseDto(res.conversationId(), res.messages().stream().map(m -> new ChatMessageDto(m.id(), m.role(), m.content(), m.createdAt())).toList(), res.traceId());
         return ResponseEntity.ok(dto);
     }

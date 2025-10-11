@@ -89,6 +89,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         onEvent: (eventName, metadata) => {
           if (eventName === "ERROR") {
             console.error("[PlaidLink] error", metadata);
+            const code = (metadata as any)?.error_code || (metadata as any)?.status || "UNKNOWN";
+            const msg = (metadata as any)?.error_message || (metadata as any)?.message || "Plaid initialization failed";
+            setMessage(`Plaid error (${code}): ${msg}`);
           }
         },
       });

@@ -33,7 +33,9 @@ public class OpenAiResponsesClient {
     }
 
     public Optional<String> generateText(List<Message> inputMessages, Integer maxOutputTokens) {
-        return generateText(inputMessages, maxOutputTokens, properties.ai().model(), true);
+        // Prefer explicit snapshot if configured to avoid alias-locked 421 followed by a retry.
+        String preferredModel = properties.ai().snapshotOrDefault();
+        return generateText(inputMessages, maxOutputTokens, preferredModel, true);
     }
 
     public Optional<String> generateText(List<Message> inputMessages, Integer maxOutputTokens, String overrideModel) {

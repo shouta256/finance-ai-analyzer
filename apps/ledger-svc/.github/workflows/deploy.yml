@@ -21,6 +21,12 @@ env:
   # コンテナ名（タスク定義内の name と一致させる）
   CONTAINER_BE: ledger-svc
   CONTAINER_WEB: next-web
+  # Plaid credentials (provided via GitHub Secrets)
+  PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
+  PLAID_CLIENT_SECRET: ${{ secrets.PLAID_CLIENT_SECRET }}
+  PLAID_ENV: ${{ secrets.PLAID_ENV }}
+  PLAID_BASE_URL: ${{ secrets.PLAID_BASE_URL }}
+  PLAID_REDIRECT_URI: ${{ secrets.PLAID_REDIRECT_URI }}
 
 jobs:
   build-and-deploy:
@@ -73,10 +79,41 @@ jobs:
           # クリーニング
           jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td-be.json > td-be.clean.json
 
-          # コンテナ image 差し替え
-          jq --arg name "$CONTAINER_BE" --arg img "${{ steps.meta.outputs.ECR_BE }}" '
-            .containerDefinitions |=
-              (map(if .name==$name then .image=$img else . end))
+          # コンテナ image 差し替え & Plaid 環境変数を上書き
+          jq \
+            --arg name "$CONTAINER_BE" \
+            --arg img "${{ steps.meta.outputs.ECR_BE }}" \
+            --arg plaidClientId "$PLAID_CLIENT_ID" \
+            --arg plaidClientSecret "$PLAID_CLIENT_SECRET" \
+            --arg plaidEnv "$PLAID_ENV" \
+            --arg plaidBaseUrl "$PLAID_BASE_URL" \
+            --arg plaidRedirectUri "${PLAID_REDIRECT_URI:-}" '
+            .containerDefinitions |= (
+              map(
+                if .name == $name then
+                  .image = $img
+                  | .environment = (
+                      (.environment // [])
+                      | map(select(
+                          .name != "PLAID_CLIENT_ID"
+                          and .name != "PLAID_CLIENT_SECRET"
+                          and .name != "PLAID_ENV"
+                          and .name != "PLAID_BASE_URL"
+                          and .name != "PLAID_REDIRECT_URI"
+                        ))
+                      + [
+                          { name: "PLAID_CLIENT_ID", value: $plaidClientId },
+                          { name: "PLAID_CLIENT_SECRET", value: $plaidClientSecret },
+                          { name: "PLAID_ENV", value: $plaidEnv },
+                          { name: "PLAID_BASE_URL", value: $plaidBaseUrl }
+                        ]
+                      + (if ($plaidRedirectUri | length) > 0 then
+                          [ { name: "PLAID_REDIRECT_URI", value: $plaidRedirectUri } ]
+                        else [] end)
+                    )
+                else . end
+              )
+            )
           ' td-be.clean.json > td-be.new.json
 
           NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://td-be.new.json \

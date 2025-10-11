@@ -1,4 +1,5 @@
 import { env } from "./env";
+import { chatResponseSchema } from "./schemas";
 
 class LedgerApiError extends Error {
   status: number;
@@ -63,16 +64,37 @@ export interface ChatRequestBody {
   truncateFromMessageId?: string;
 }
 
-export async function sendChatMessage(body: ChatRequestBody) {
-  return await ledgerFetch<import("./schemas").ChatResponse>("/ai/chat", {
+export async function sendChatMessage(body: ChatRequestBody): Promise<import("./schemas").ChatResponse> {
+  const res = await fetch("/api/chat", {
     method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    cache: "no-store",
   });
+  return await parseChatResponse(res);
 }
 
-export async function fetchChatConversation(conversationId?: string) {
+export async function fetchChatConversation(conversationId?: string): Promise<import("./schemas").ChatResponse> {
   const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
-  return await ledgerFetch<import("./schemas").ChatResponse>(`/ai/chat${query}`);
+  const res = await fetch(`/api/chat${query}`, { cache: "no-store" });
+  return await parseChatResponse(res);
+}
+
+async function parseChatResponse(res: Response): Promise<import("./schemas").ChatResponse> {
+  const text = await res.text();
+  let payload: unknown = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = {};
+    }
+  }
+  if (!res.ok) {
+    const message = (payload as { error?: { message?: string } })?.error?.message ?? res.statusText ?? "Chat API error";
+    throw new LedgerApiError(message, res.status, payload);
+  }
+  return chatResponseSchema.parse(payload);
 }
 
 async function buildError(response: Response) {

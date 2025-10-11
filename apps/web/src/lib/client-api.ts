@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analyticsSummarySchema, transactionsListSchema } from "./schemas";
+import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema } from "./schemas";
 
 export type AnalyticsSummary = z.infer<typeof analyticsSummarySchema>;
 export type TransactionsList = z.infer<typeof transactionsListSchema>;
@@ -13,8 +13,6 @@ class ApiError extends Error {
     this.payload = payload;
   }
 }
-
-const plaidLinkTokenSchema = z.object({ linkToken: z.string() });
 
 async function handleJson<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> {
   if (!res.ok) {
@@ -67,4 +65,13 @@ export async function triggerTransactionSync(): Promise<void> {
 export async function createPlaidLinkToken(): Promise<{ linkToken: string }> {
   const res = await fetch(`/api/plaid/link-token`, { method: "POST" });
   return handleJson(res, plaidLinkTokenSchema);
+}
+
+export async function exchangePlaidPublicToken(publicToken: string) {
+  const res = await fetch(`/api/plaid/exchange`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ publicToken }),
+  });
+  return handleJson(res, plaidExchangeSchema);
 }

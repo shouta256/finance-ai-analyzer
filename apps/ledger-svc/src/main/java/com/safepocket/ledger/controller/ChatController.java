@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/ai/chat")
+@RequestMapping({"/ai/chat", "/api/chat"})
 @Validated
 public class ChatController {
 

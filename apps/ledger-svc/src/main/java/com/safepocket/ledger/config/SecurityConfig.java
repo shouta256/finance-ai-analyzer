@@ -55,9 +55,9 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/webhook/plaid", "/webhook/plaid/**", "/plaid/webhook").permitAll()
             .requestMatchers(HttpMethod.POST, "/login").permitAll()
             .requestMatchers(HttpMethod.POST, "/dev/auth/login").permitAll()
-            // Temporarily allow chat without auth (frontend browser direct call). Secure later with JWT once integrated.
-            // Chat endpoint now requires authentication (was temporarily permitAll during bring-up)
-            .requestMatchers(HttpMethod.POST, "/ai/chat").authenticated()
+            // Chat endpoint requires authentication (both /ai/chat and /api/chat for compatibility)
+            .requestMatchers(HttpMethod.POST, "/ai/chat", "/api/chat").authenticated()
+            .requestMatchers(HttpMethod.GET, "/ai/chat", "/api/chat").authenticated()
             .requestMatchers("/healthz").permitAll()
             .requestMatchers("/actuator/health/liveness").permitAll()
             // All other endpoints require authentication

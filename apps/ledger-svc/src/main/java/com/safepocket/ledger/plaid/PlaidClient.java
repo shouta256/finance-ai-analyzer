@@ -39,7 +39,9 @@ public class PlaidClient {
         bodyBuilder.put("country_codes", new String[]{"US"});
         bodyBuilder.put("user", Map.of("client_user_id", userId));
         bodyBuilder.put("products", new String[]{"transactions"});
-        bodyBuilder.put("redirect_uri", properties.plaid().redirectUri());
+        if (properties.plaid().hasRedirectUri()) {
+            bodyBuilder.put("redirect_uri", properties.plaid().redirectUri());
+        }
         if (properties.plaid().webhookUrl() != null && !properties.plaid().webhookUrl().isBlank()) {
             bodyBuilder.put("webhook", properties.plaid().webhookUrl());
         }

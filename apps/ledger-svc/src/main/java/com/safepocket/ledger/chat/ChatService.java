@@ -110,7 +110,23 @@ public class ChatService {
             if (!context.isBlank()) {
                 messages.add(new OpenAiResponsesClient.Message("system", "Account summary context (JSON):\n" + context));
             }
-            messages.add(new OpenAiResponsesClient.Message("user", latestUserMessage));
+
+            // Include recent conversation history so the assistant can respond with context
+            // Keep within retention window and a small sliding window to control tokens
+            Instant cutoff = retentionManager.currentCutoff();
+            List<ChatMessageEntity> history = repository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+                    .stream()
+                    .filter(e -> !e.getCreatedAt().isBefore(cutoff))
+                    .toList();
+
+            // Keep only the last N messages
+            final int maxMessages = 20; // roughly ~10 turns
+            int start = Math.max(0, history.size() - maxMessages);
+            for (int i = start; i < history.size(); i++) {
+                ChatMessageEntity e = history.get(i);
+                String role = e.getRole() == ChatMessageEntity.Role.ASSISTANT ? "assistant" : "user";
+                messages.add(new OpenAiResponsesClient.Message(role, e.getContent()));
+            }
 
             Optional<String> aiReply = openAiClient.generateText(messages, 400);
 

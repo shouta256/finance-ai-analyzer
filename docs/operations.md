@@ -52,7 +52,7 @@ Store the following values in your secret manager (AWS Secrets Manager / Paramet
   - Sandbox: `https://sandbox.plaid.com`
   - Development: `https://development.plaid.com`
   - Production: `https://production.plaid.com`
-- `PLAID_REDIRECT_URI` — Must match the URI registered in your Plaid application (e.g., `https://app.example.com/plaid/callback`).
+- `PLAID_REDIRECT_URI` — Optional; set if you registered a redirect URI in Plaid (e.g., `https://app.example.com/plaid/callback`).
 - `PLAID_WEBHOOK_URL` — Public HTTPS endpoint for Plaid webhooks (optional but recommended in production).
 - `PLAID_WEBHOOK_SECRET` — Shared secret for validating webhook signatures.
 

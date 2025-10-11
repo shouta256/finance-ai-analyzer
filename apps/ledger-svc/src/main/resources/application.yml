@@ -54,7 +54,7 @@ safepocket:
   plaid:
     client-id: ${PLAID_CLIENT_ID:demo-client}
     client-secret: ${PLAID_CLIENT_SECRET:demo-secret}
-    redirect-uri: ${PLAID_REDIRECT_URI:}
+    redirect-uri: https://app.safepocket.local/plaid/callback
     base-url: ${PLAID_BASE_URL:https://sandbox.plaid.com}
     environment: ${PLAID_ENV:sandbox}
     webhook-url: ${PLAID_WEBHOOK_URL:}
@@ -76,7 +76,4 @@ safepocket:
     max-rows: ${RAG_MAX_ROWS:20}
     embed-dimension: ${RAG_EMBED_DIM:1536}
   db:
-    # Enable lightweight bootstrap by default for local/dev so brand-new DBs have core tables
-    # (users, merchants, transactions). In prod/staging, set SAFEPOCKET_DB_BOOTSTRAP=false
-    # and rely on Flyway-managed migrations only.
-    bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:true}
+    bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}

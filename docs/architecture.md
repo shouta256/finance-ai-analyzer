@@ -41,7 +41,9 @@ Client → **ALB+WAF** → **Next.js (BFF+Web on ECS Fargate)** → **Spring Boo
 ### Required Environment Variables
 PLATFORM_ENV=development
 PLAID_CLIENT_ID=your_client_id
-PLAID_SECRET=your_secret
-PLAID_PUBLIC_KEY=your_public_key
+PLAID_CLIENT_SECRET=your_secret
 PLAID_ENV=sandbox
+PLAID_BASE_URL=https://sandbox.plaid.com
+PLAID_REDIRECT_URI=https://app.safepocket.local/plaid/callback
 PLAID_WEBHOOK_URL=https://your-webhook-url
+PLAID_WEBHOOK_SECRET=your_webhook_shared_secret

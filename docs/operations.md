@@ -41,3 +41,32 @@ docker compose -f infra/compose/docker-compose.yml down -v
 make setup
 ```
 
+## Plaid Configuration
+
+### Required Secrets
+Store the following values in your secret manager (AWS Secrets Manager / Parameter Store) and inject them as environment variables for the `ledger-svc` task definition:
+- `PLAID_CLIENT_ID` — Organization-wide identifier (same for sandbox and production).
+- `PLAID_CLIENT_SECRET` — Environment-specific secret (`Sandbox` or `Production` value from the Plaid dashboard).
+- `PLAID_ENV` — One of `sandbox`, `development`, or `production`.
+- `PLAID_BASE_URL` — Plaid API host for the selected environment:
+  - Sandbox: `https://sandbox.plaid.com`
+  - Development: `https://development.plaid.com`
+  - Production: `https://production.plaid.com`
+- `PLAID_REDIRECT_URI` — Must match the URI registered in your Plaid application (e.g., `https://app.example.com/plaid/callback`).
+- `PLAID_WEBHOOK_URL` — Public HTTPS endpoint for Plaid webhooks (optional but recommended in production).
+- `PLAID_WEBHOOK_SECRET` — Shared secret for validating webhook signatures.
+
+### Production Cutover Steps
+1. Request Plaid production access and ensure your account is approved.
+2. Rotate `PLAID_CLIENT_SECRET` to the Production value. Do **not** reuse the sandbox secret.
+3. Update the Plaid Link redirect URI in the Plaid dashboard to the production domain and set `PLAID_REDIRECT_URI` accordingly.
+4. Switch environment variables for the backend:
+   ```
+   PLAID_ENV=production
+   PLAID_BASE_URL=https://production.plaid.com
+   ```
+5. Restart the `ledger-svc` service so the new credentials take effect.
+6. Verify Link token creation (`POST /plaid/link-token`) succeeds and Plaid transactions sync end-to-end.
+7. Enable webhook signature verification by setting `PLAID_WEBHOOK_SECRET` and confirming the Plaid webhook is pointed to `/webhook/plaid`.
+
+> Never commit Plaid secrets to Git. Always rely on the secret manager / runtime environment variables.

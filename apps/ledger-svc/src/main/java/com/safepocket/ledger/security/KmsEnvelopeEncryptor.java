@@ -12,6 +12,8 @@ import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -24,14 +26,18 @@ public class KmsEnvelopeEncryptor implements AccessTokenEncryptor {
     private final SecretKey secretKey;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public KmsEnvelopeEncryptor(@Value("${SAFEPOCKET_KMS_DATA_KEY:}") String keyMaterial) {
+    public KmsEnvelopeEncryptor(@Value("${SAFEPOCKET_KMS_DATA_KEY:}") String keyMaterial, Environment environment) {
         byte[] keyBytes;
         if (keyMaterial != null && !keyMaterial.isBlank()) {
             keyBytes = Base64.getDecoder().decode(keyMaterial);
         } else {
+            // In production, a stable data key is required. Fail fast to avoid storing undecryptable tokens.
+            if (environment.acceptsProfiles(Profiles.of("prod"))) {
+                throw new IllegalStateException("SAFEPOCKET_KMS_DATA_KEY is required in production (AES-256 key, base64-encoded)");
+            }
             keyBytes = new byte[32];
             secureRandom.nextBytes(keyBytes);
-            log.warn("SAFEPOCKET_KMS_DATA_KEY not provided; generated volatile key for runtime only");
+            log.warn("SAFEPOCKET_KMS_DATA_KEY not provided; generated volatile key for runtime only (non-prod)");
         }
         this.secretKey = new SecretKeySpec(keyBytes, "AES");
     }

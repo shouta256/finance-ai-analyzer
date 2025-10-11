@@ -44,7 +44,14 @@ public class PlaidService {
     public PlaidItem exchangePublicToken(UUID userId, String publicToken) {
         var response = plaidClient.exchangePublicToken(publicToken);
         String encrypted = accessTokenEncryptor.encrypt(response.accessToken());
-        PlaidItemEntity entity = new PlaidItemEntity(userId, response.itemId(), encrypted, Instant.now());
+        PlaidItemEntity entity = plaidItemRepository.findByUserId(userId)
+                .map(existing -> {
+                    existing.setItemId(response.itemId());
+                    existing.setEncryptedAccessToken(encrypted);
+                    existing.setLinkedAt(Instant.now());
+                    return existing;
+                })
+                .orElseGet(() -> new PlaidItemEntity(userId, response.itemId(), encrypted, Instant.now()));
         plaidItemRepository.save(entity);
         return new PlaidItem(entity.getUserId(), entity.getItemId(), entity.getEncryptedAccessToken(), entity.getLinkedAt());
     }

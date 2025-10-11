@@ -52,7 +52,7 @@ public class SecurityConfig {
             // Allow all CORS preflight requests
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             // Public / webhook endpoints
-            .requestMatchers(HttpMethod.POST, "/webhook/plaid/**").permitAll()
+            .requestMatchers(HttpMethod.POST, "/webhook/plaid", "/webhook/plaid/**", "/plaid/webhook").permitAll()
             .requestMatchers(HttpMethod.POST, "/login").permitAll()
             .requestMatchers(HttpMethod.POST, "/dev/auth/login").permitAll()
             // Temporarily allow chat without auth (frontend browser direct call). Secure later with JWT once integrated.

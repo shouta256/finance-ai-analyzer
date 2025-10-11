@@ -54,7 +54,9 @@ safepocket:
   plaid:
     client-id: ${PLAID_CLIENT_ID:demo-client}
     client-secret: ${PLAID_CLIENT_SECRET:demo-secret}
-    redirect-uri: https://app.safepocket.local/plaid/callback
+    # For OAuth institutions in Plaid Production, set PLAID_REDIRECT_URI to a URL you've whitelisted in the Plaid dashboard.
+    # Leave empty for Sandbox/non-OAuth flows.
+    redirect-uri: ${PLAID_REDIRECT_URI:}
     base-url: ${PLAID_BASE_URL:https://sandbox.plaid.com}
     environment: ${PLAID_ENV:sandbox}
     webhook-url: ${PLAID_WEBHOOK_URL:}

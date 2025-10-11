@@ -3,7 +3,14 @@
 import { useMemo, useState, useTransition } from "react";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
-import { getAnalyticsSummary, listTransactions, triggerTransactionSync, createPlaidLinkToken } from "@/src/lib/client-api";
+import {
+  getAnalyticsSummary,
+  listTransactions,
+  triggerTransactionSync,
+  createPlaidLinkToken,
+  exchangePlaidPublicToken,
+} from "@/src/lib/client-api";
+import { loadPlaidLink } from "@/src/lib/plaid";
 
 interface DashboardClientProps {
   month: string;
@@ -22,6 +29,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [message, setMessage] = useState<string | null>(null);
   const [aiReady, setAiReady] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<{ code: string; traceId?: string; details?: string } | null>(null);
+  const [linking, setLinking] = useState<boolean>(false);
 
   const anomalies = state.summary.anomalies;
   const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
@@ -41,14 +49,55 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   async function handleLink() {
-    startTransition(async () => {
-      try {
-        const token = await createPlaidLinkToken();
-        setMessage(`Sandbox link token generated: ${token.linkToken}`);
-      } catch (error) {
-        setMessage((error as Error).message ?? "Unable to create link token");
-      }
-    });
+    if (linking) return;
+    setErrorState(null);
+    setMessage(null);
+    setLinking(true);
+    try {
+      const token = await createPlaidLinkToken();
+      setMessage("Opening Plaid Link...");
+      const plaid = await loadPlaidLink();
+      const handler = plaid.create({
+        token: token.linkToken,
+        onSuccess: async (publicToken) => {
+          try {
+            setMessage("Link successful. Finalizing...");
+            await exchangePlaidPublicToken(publicToken);
+            setMessage("Account linked. Syncing transactions...");
+            await triggerTransactionSync();
+            await refreshData();
+            setMessage("Plaid account linked and sync triggered");
+          } catch (error) {
+            console.error(error);
+            setMessage((error as Error).message ?? "Failed to finalize Plaid link");
+          } finally {
+            handler.destroy?.();
+            setLinking(false);
+          }
+        },
+        onExit: (err) => {
+          if (err?.display_message) {
+            setMessage(err.display_message);
+          } else if (err?.error_code) {
+            setMessage(`Plaid Link closed (${err.error_code})`);
+          } else {
+            setMessage("Plaid Link closed");
+          }
+          handler.destroy?.();
+          setLinking(false);
+        },
+        onEvent: (eventName, metadata) => {
+          if (eventName === "ERROR") {
+            console.error("[PlaidLink] error", metadata);
+          }
+        },
+      });
+      handler.open();
+    } catch (error) {
+      console.error(error);
+      setMessage((error as Error).message ?? "Unable to start Plaid Link");
+      setLinking(false);
+    }
   }
 
   async function refreshData() {
@@ -126,10 +175,10 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleLink}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
-          disabled={isPending}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:opacity-50"
+          disabled={isPending || linking}
         >
-          Generate Plaid Link Token
+          Link Accounts with Plaid
         </button>
         <button
           onClick={handleSync}

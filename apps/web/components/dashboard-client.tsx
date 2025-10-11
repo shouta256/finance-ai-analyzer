@@ -56,7 +56,14 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     try {
       const token = await createPlaidLinkToken();
       setMessage("Opening Plaid Link...");
-      const plaid = await loadPlaidLink();
+      let plaid: ReturnType<typeof loadPlaidLink> extends Promise<infer X> ? X : never;
+      try {
+        plaid = await loadPlaidLink();
+      } catch (e) {
+        // One retry with longer timeout in case of transient CDN/network delays
+        console.warn("Plaid load failed; retrying with extended timeout", e);
+        plaid = await loadPlaidLink(45000);
+      }
       const handler = plaid.create({
         token: token.linkToken,
         onSuccess: async (publicToken) => {

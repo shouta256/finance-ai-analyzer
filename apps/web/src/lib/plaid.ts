@@ -32,7 +32,18 @@ const PLAID_SCRIPT_SRC = "https://cdn.plaid.com/link/v2/stable/link-initialize.j
 
 let plaidPromise: Promise<PlaidLinkFactory> | null = null;
 
-export function loadPlaidLink(timeoutMs = 10000): Promise<PlaidLinkFactory> {
+function pollForWindowPlaid(deadlineTs: number, intervalMs = 50): Promise<PlaidLinkFactory> {
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      if (window.Plaid) return resolve(window.Plaid);
+      if (Date.now() >= deadlineTs) return reject(new Error("Plaid Link loaded but window.Plaid is undefined"));
+      setTimeout(check, intervalMs);
+    };
+    check();
+  });
+}
+
+export function loadPlaidLink(timeoutMs = 30000): Promise<PlaidLinkFactory> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("Plaid Link is only available in the browser"));
   }
@@ -63,10 +74,16 @@ export function loadPlaidLink(timeoutMs = 10000): Promise<PlaidLinkFactory> {
       cleanup();
       if (window.Plaid) {
         resolve(window.Plaid);
-      } else {
-        plaidPromise = null;
-        reject(new Error("Plaid Link loaded but window.Plaid is undefined"));
+        return;
       }
+      // In some browsers, window.Plaid is set slightly after load; poll briefly.
+      const deadline = Date.now() + Math.min(2000, Math.max(500, Math.floor(timeoutMs / 5)));
+      pollForWindowPlaid(deadline)
+        .then(resolve)
+        .catch((e) => {
+          plaidPromise = null;
+          reject(e);
+        });
     };
 
     const handleError = () => {
@@ -77,8 +94,23 @@ export function loadPlaidLink(timeoutMs = 10000): Promise<PlaidLinkFactory> {
 
     if (existing) {
       script = existing;
-      script.addEventListener("load", handleLoad, { once: true });
-      script.addEventListener("error", handleError, { once: true });
+      // If script already loaded previously, try resolving immediately or polling.
+      const ready = (script as any).readyState;
+      if (window.Plaid) {
+        resolve(window.Plaid);
+        return;
+      } else if (ready === "complete" || ready === "loaded") {
+        const deadline = Date.now() + Math.min(2000, Math.max(500, Math.floor(timeoutMs / 5)));
+        pollForWindowPlaid(deadline)
+          .then(resolve)
+          .catch((e) => {
+            plaidPromise = null;
+            reject(e);
+          });
+      } else {
+        script.addEventListener("load", handleLoad, { once: true });
+        script.addEventListener("error", handleError, { once: true });
+      }
     } else {
       script = document.createElement("script");
       script.id = PLAID_SCRIPT_ID;
@@ -87,7 +119,8 @@ export function loadPlaidLink(timeoutMs = 10000): Promise<PlaidLinkFactory> {
       script.crossOrigin = "anonymous";
       script.addEventListener("load", handleLoad, { once: true });
       script.addEventListener("error", handleError, { once: true });
-      document.body.appendChild(script);
+  // Prefer <head> to avoid some hydration/ordering quirks
+  (document.head ?? document.body).appendChild(script);
     }
 
     timeoutId = window.setTimeout(() => {

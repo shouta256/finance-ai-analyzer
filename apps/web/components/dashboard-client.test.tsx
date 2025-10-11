@@ -42,7 +42,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient month="2024-03" initialSummary={summary} initialTransactions={transactions} />);
 
     expect(screen.getByText("Income")).toBeInTheDocument();
-    expect(screen.getByText("Generate Plaid Link Token")).toBeInTheDocument();
+    expect(screen.getByText("Link Accounts with Plaid")).toBeInTheDocument();
     expect(screen.getAllByText("Amazon").length).toBeGreaterThan(0);
   });
 });

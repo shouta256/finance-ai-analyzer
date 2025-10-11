@@ -48,12 +48,15 @@ export function loadPlaidLink(timeoutMs = 10000): Promise<PlaidLinkFactory> {
   plaidPromise = new Promise<PlaidLinkFactory>((resolve, reject) => {
     const existing = document.getElementById(PLAID_SCRIPT_ID) as HTMLScriptElement | null;
     let script: HTMLScriptElement;
-    let timeoutId: ReturnType<typeof window.setTimeout>;
+    let timeoutId: number | undefined;
 
     const cleanup = () => {
       script.removeEventListener("load", handleLoad);
       script.removeEventListener("error", handleError);
-      window.clearTimeout(timeoutId);
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
     };
 
     const handleLoad = () => {

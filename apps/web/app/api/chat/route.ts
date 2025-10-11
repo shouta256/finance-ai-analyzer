@@ -23,36 +23,83 @@ function requireAuthorization(request: NextRequest): string | NextResponse {
   return authorization;
 }
 
+function mapError(error: unknown): NextResponse {
+  if (error instanceof NextResponse) {
+    return error;
+  }
+  if (error instanceof z.ZodError) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "INVALID_REQUEST",
+          message: error.issues.map((issue) => issue.message).join(", "),
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
+  const payload = (error as { payload?: unknown })?.payload as { error?: { code?: string; message?: string; traceId?: string } } | undefined;
+  const code = payload?.error?.code ?? "CHAT_PROXY_FAILED";
+  const message = payload?.error?.message ?? (error instanceof Error ? error.message : "Chat proxy failed");
+  const traceId = payload?.error?.traceId;
+
+  if (process.env.NODE_ENV !== "test") {
+    console.error("[api/chat] proxy error", { status, code, message, traceId });
+  }
+
+  return NextResponse.json(
+    {
+      error: {
+        code,
+        message,
+        traceId,
+      },
+    },
+    { status },
+  );
+}
+
 export async function GET(request: NextRequest) {
   const authorization = requireAuthorization(request);
   if (authorization instanceof NextResponse) return authorization;
 
-  const { searchParams } = new URL(request.url);
-  const query = chatQuerySchema.parse({
-    conversationId: searchParams.get("conversationId") ?? undefined,
-  });
-  const endpoint = new URL("/ai/chat", "http://localhost");
-  if (query.conversationId) {
-    endpoint.searchParams.set("conversationId", query.conversationId);
+  try {
+    const { searchParams } = new URL(request.url);
+    const query = chatQuerySchema.parse({
+      conversationId: searchParams.get("conversationId") ?? undefined,
+    });
+    const endpoint = new URL("/ai/chat", "http://localhost");
+    if (query.conversationId) {
+      endpoint.searchParams.set("conversationId", query.conversationId);
+    }
+    const result = await ledgerFetch(endpoint.pathname + endpoint.search, {
+      method: "GET",
+      headers: { authorization },
+    });
+    const body = chatResponseSchema.parse(result);
+    return NextResponse.json(body);
+  } catch (error) {
+    return mapError(error);
   }
-  const result = await ledgerFetch(endpoint.pathname + endpoint.search, {
-    method: "GET",
-    headers: { authorization },
-  });
-  const body = chatResponseSchema.parse(result);
-  return NextResponse.json(body);
 }
 
 export async function POST(request: NextRequest) {
   const authorization = requireAuthorization(request);
   if (authorization instanceof NextResponse) return authorization;
 
-  const body = chatRequestSchema.parse(await request.json());
-  const result = await ledgerFetch("/ai/chat", {
-    method: "POST",
-    headers: { authorization, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const response = chatResponseSchema.parse(result);
-  return NextResponse.json(response);
+  try {
+    const raw = await request.json();
+    const body = chatRequestSchema.parse(raw);
+    const result = await ledgerFetch("/ai/chat", {
+      method: "POST",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const response = chatResponseSchema.parse(result);
+    return NextResponse.json(response);
+  } catch (error) {
+    return mapError(error);
+  }
 }

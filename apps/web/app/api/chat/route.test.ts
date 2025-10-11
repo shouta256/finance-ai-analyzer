@@ -69,4 +69,39 @@ describe("/api/chat route", () => {
     });
     expect(await res.json()).toEqual(sampleConversation);
   });
+
+  it("returns 400 when payload fails validation", async () => {
+    const request = {
+      headers: new Headers({ authorization: "Bearer token" }),
+      url: "https://example.com/api/chat",
+      json: async () => ({ message: "" }),
+    } as any;
+
+    const res = await POST(request);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: { code: "INVALID_REQUEST", message: expect.stringContaining("String must contain at least 1 character") },
+    });
+    expect(mockedLedgerFetch).not.toHaveBeenCalled();
+  });
+
+  it("maps backend error status and payload", async () => {
+    const err = Object.assign(new Error("Forbidden"), {
+      status: 403,
+      payload: { error: { code: "FORBIDDEN", message: "Forbidden request", traceId: "trace123" } },
+    });
+    mockedLedgerFetch.mockRejectedValue(err);
+
+    const request = {
+      headers: new Headers({ authorization: "Bearer token" }),
+      url: "https://example.com/api/chat",
+      json: async () => ({ message: "hello" }),
+    } as any;
+
+    const res = await POST(request);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Forbidden request", traceId: "trace123" },
+    });
+  });
 });

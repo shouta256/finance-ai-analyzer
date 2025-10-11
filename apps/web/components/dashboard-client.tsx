@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useMemo, useState, useTransition } from "react";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";

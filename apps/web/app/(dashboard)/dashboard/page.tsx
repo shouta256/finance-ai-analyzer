@@ -1,7 +1,12 @@
 import { Suspense } from "react";
-import { DashboardClient } from "@/components/dashboard-client";
+import dynamic from "next/dynamic";
 import { currentYearMonth } from "@/src/lib/date";
 import { getDashboardData } from "@/src/lib/dashboard-data";
+
+const DashboardClient = dynamic(
+  () => import("@/components/dashboard-client").then((mod) => mod.DashboardClient),
+  { ssr: false },
+);
 
 interface DashboardPageProps {
   searchParams?: {

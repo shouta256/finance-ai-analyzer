@@ -7,6 +7,7 @@ import com.safepocket.ledger.repository.TransactionRepository;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
 import com.safepocket.ledger.rag.TransactionEmbeddingService;
+import com.safepocket.ledger.plaid.PlaidService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -30,6 +31,7 @@ public class TransactionSyncService {
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
     private final TransactionEmbeddingService transactionEmbeddingService;
+    private final PlaidService plaidService;
     private final boolean demoSeedEnabled;
     private final Map<UUID, Instant> userSyncCursor = new ConcurrentHashMap<>();
 
@@ -39,6 +41,7 @@ public class TransactionSyncService {
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
             TransactionEmbeddingService transactionEmbeddingService,
+        PlaidService plaidService,
             @org.springframework.beans.factory.annotation.Value("${safepocket.demo.seed:false}") boolean demoSeedEnabled
     ) {
         this.transactionRepository = transactionRepository;
@@ -46,6 +49,7 @@ public class TransactionSyncService {
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
         this.transactionEmbeddingService = transactionEmbeddingService;
+        this.plaidService = plaidService;
         this.demoSeedEnabled = demoSeedEnabled;
     }
 
@@ -55,11 +59,19 @@ public class TransactionSyncService {
         Instant lastSync = userSyncCursor.get(userId);
         boolean needsSeed = forceFullSync || lastSync == null;
         int synced = 0;
-        if (needsSeed && demoSeedEnabled) {
-            List<Transaction> seeded = seedTransactions(userId);
-            seeded.forEach(transactionRepository::save);
-            synced = seeded.size();
-            transactionEmbeddingService.upsertEmbeddings(userId, seeded.stream().map(Transaction::id).toList());
+        if (needsSeed) {
+            List<Transaction> toInsert = List.of();
+            if (demoSeedEnabled) {
+                toInsert = seedTransactions(userId);
+            } else {
+                // Fetch recent real transactions from Plaid
+                toInsert = plaidService.fetchRecentTransactions(userId, 30);
+            }
+            if (!toInsert.isEmpty()) {
+                toInsert.forEach(transactionRepository::save);
+                synced = toInsert.size();
+                transactionEmbeddingService.upsertEmbeddings(userId, toInsert.stream().map(Transaction::id).toList());
+            }
         }
         userSyncCursor.put(userId, Instant.now());
         // If demo seeding is disabled, there is no backlog to process.

@@ -3,11 +3,15 @@ package com.safepocket.ledger.plaid;
 import com.safepocket.ledger.config.SafepocketProperties;
 import com.safepocket.ledger.entity.AccountEntity;
 import com.safepocket.ledger.entity.PlaidItemEntity;
+import com.safepocket.ledger.model.Transaction;
 import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.security.AccessTokenEncryptor;
 import com.safepocket.ledger.security.RlsGuard;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -86,5 +90,51 @@ public class PlaidService {
 
     public SafepocketProperties.Plaid plaidProperties() {
         return properties.plaid();
+    }
+
+    /**
+     * Fetch recent transactions from Plaid and map them into our domain model.
+     * Returns empty list if no Plaid item or no accounts exist yet for the user.
+     */
+    public List<Transaction> fetchRecentTransactions(UUID userId, int days) {
+        rlsGuard.setAppsecUser(userId);
+        var itemOpt = plaidItemRepository.findByUserId(userId);
+        if (itemOpt.isEmpty()) return List.of();
+        var item = itemOpt.get();
+        String accessToken = decryptAccessToken(new PlaidItem(item.getUserId(), item.getItemId(), item.getEncryptedAccessToken(), item.getLinkedAt()));
+
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusDays(Math.max(1, days));
+        var resp = plaidClient.getTransactions(accessToken, start.toString(), end.toString(), 100);
+
+        // Choose an account to attribute these transactions to (fallback: first account)
+        var accounts = accountRepository.findByUserId(userId);
+        if (accounts == null || accounts.isEmpty()) return List.of();
+        UUID accountId = accounts.get(0).getId();
+
+        List<Transaction> results = new ArrayList<>();
+        for (var t : resp.transactions()) {
+            String merchant = (t.merchantName() != null && !t.merchantName().isBlank()) ? t.merchantName() : t.name();
+            var occurred = LocalDate.parse(t.date()).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            var authorized = occurred.minus(1, ChronoUnit.HOURS);
+            // Plaid amount is positive for outflows; store expenses as negative
+            var amount = t.amount().negate();
+            results.add(new Transaction(
+                    java.util.UUID.randomUUID(),
+                    userId,
+                    accountId,
+                    merchant,
+                    amount,
+                    t.currency() != null ? t.currency() : "USD",
+                    occurred,
+                    authorized,
+                    t.pending(),
+                    "Uncategorized",
+                    t.name(),
+                    java.util.Optional.empty(),
+                    java.util.Optional.empty()
+            ));
+        }
+        return results;
     }
 }

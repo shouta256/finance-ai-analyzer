@@ -66,6 +66,22 @@ public class PlaidClient {
                 .block();
     }
 
+    public TransactionsGetResponse getTransactions(String accessToken, String startDate, String endDate, int count) {
+        var body = new java.util.LinkedHashMap<String, Object>();
+        body.put("client_id", properties.plaid().clientId());
+        body.put("secret", properties.plaid().clientSecret());
+        body.put("access_token", accessToken);
+        body.put("start_date", startDate);
+        body.put("end_date", endDate);
+        body.put("options", Map.of("count", count));
+        return webClient.post().uri("/transactions/get")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(TransactionsGetResponse.class)
+                .doOnError(e -> log.error("Plaid transactions get failed", e))
+                .block();
+    }
+
     // --- Response DTOs --- //
     public record LinkTokenCreateResponse(
             @JsonProperty("link_token") String linkToken,
@@ -78,6 +94,20 @@ public class PlaidClient {
             @JsonProperty("item_id") String itemId,
             @JsonProperty("request_id") String requestId
     ) {}
+
+    public record TransactionsGetResponse(
+            @JsonProperty("transactions") java.util.List<PlaidTransaction> transactions,
+            @JsonProperty("request_id") String requestId
+    ) {
+        public record PlaidTransaction(
+                @JsonProperty("name") String name,
+                @JsonProperty("merchant_name") String merchantName,
+                @JsonProperty("amount") java.math.BigDecimal amount,
+                @JsonProperty("iso_currency_code") String currency,
+                @JsonProperty("date") String date,
+                @JsonProperty("pending") boolean pending
+        ) {}
+    }
 
         // --- Webhook verification key (JWT JWK) ---
         public record WebhookVerificationKeyResponse(Key key, String requestId) {

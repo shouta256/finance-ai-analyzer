@@ -1,6 +1,7 @@
 package com.safepocket.ledger.chat;
 
 import com.safepocket.ledger.ai.OpenAiResponsesClient;
+import com.safepocket.ledger.security.RequestContextHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -73,7 +74,15 @@ public class ChatService {
             repository.save(userMsg);
         }
 
-        String assistantContent = generateAssistantReply(convId, userId, message);
+        String assistantContent;
+        try {
+            assistantContent = generateAssistantReply(convId, userId, message);
+        } catch (Exception ex) {
+            String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
+                    .orElseGet(() -> UUID.randomUUID().toString());
+            log.error("AI chat: failed to generate reply for conversation {} user {} traceId {}", convId, userId, traceId, ex);
+            assistantContent = "(Fallback) 応答を生成できませんでした。サポートに連絡し、traceId=" + traceId + " を共有してください。";
+        }
         ChatMessageEntity assistantMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.ASSISTANT, assistantContent, Instant.now());
         repository.save(assistantMsg);
 
@@ -86,29 +95,36 @@ public class ChatService {
     }
 
     private String generateAssistantReply(UUID conversationId, UUID userId, String latestUserMessage) {
-        if (!openAiClient.hasCredentials()) {
-            if (!apiKeyWarned) {
-                log.warn("AI chat: OPENAI_API_KEY が設定されていないため fallback 応答を使用します (以後同警告抑制)" );
-                apiKeyWarned = true;
+        try {
+            if (!openAiClient.hasCredentials()) {
+                if (!apiKeyWarned) {
+                    log.warn("AI chat: OPENAI_API_KEY が設定されていないため fallback 応答を使用します (以後同警告抑制)" );
+                    apiKeyWarned = true;
+                }
+                return "(Fallback) 了解しました。現在はサンドボックスモードです — メッセージ: " + latestUserMessage;
             }
-            return "(Fallback) 了解しました。現在はサンドボックスモードです — メッセージ: " + latestUserMessage;
-        }
 
-        String context = chatContextService.buildContext(userId, conversationId, latestUserMessage);
-        List<OpenAiResponsesClient.Message> messages = new ArrayList<>();
-        messages.add(new OpenAiResponsesClient.Message("system", SYSTEM_PROMPT));
-        if (!context.isBlank()) {
-            messages.add(new OpenAiResponsesClient.Message("system", "Account summary context (JSON):\n" + context));
-        }
-        messages.add(new OpenAiResponsesClient.Message("user", latestUserMessage));
+            String context = chatContextService.buildContext(userId, conversationId, latestUserMessage);
+            List<OpenAiResponsesClient.Message> messages = new ArrayList<>();
+            messages.add(new OpenAiResponsesClient.Message("system", SYSTEM_PROMPT));
+            if (!context.isBlank()) {
+                messages.add(new OpenAiResponsesClient.Message("system", "Account summary context (JSON):\n" + context));
+            }
+            messages.add(new OpenAiResponsesClient.Message("user", latestUserMessage));
 
-        Optional<String> aiReply = openAiClient.generateText(messages, 400);
+            Optional<String> aiReply = openAiClient.generateText(messages, 400);
 
-        if (aiReply.isPresent()) {
-            return aiReply.get();
+            if (aiReply.isPresent()) {
+                return aiReply.get();
+            }
+            log.warn("AI chat: OpenAI 応答が取得できなかったため fallback 表示");
+            return "(Fallback) 応答を生成できませんでしたがメッセージは保存されました。";
+        } catch (Exception ex) {
+            String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
+                    .orElseGet(() -> UUID.randomUUID().toString());
+            log.error("AI chat: unexpected failure building reply traceId {}", traceId, ex);
+            return "(Fallback) 応答生成でエラーが発生しました。traceId=" + traceId + " をサポートへお伝えください。";
         }
-        log.warn("AI chat: OpenAI 応答が取得できなかったため fallback 表示");
-        return "(Fallback) 応答を生成できませんでしたがメッセージは保存されました。";
     }
 
     @Transactional(readOnly = true)

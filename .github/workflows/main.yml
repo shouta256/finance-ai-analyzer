@@ -195,6 +195,14 @@ jobs:
       COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
       COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
       SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
+      # ==== Backend (Spring) Plaid credentials ====
+      PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
+      PLAID_CLIENT_SECRET: ${{ secrets.PLAID_CLIENT_SECRET }}
+      PLAID_ENV: ${{ secrets.PLAID_ENV }}
+      PLAID_BASE_URL: ${{ secrets.PLAID_BASE_URL }}
+      PLAID_REDIRECT_URI: ${{ secrets.PLAID_REDIRECT_URI }}
+      PLAID_WEBHOOK_URL: ${{ secrets.PLAID_WEBHOOK_URL }}
+      PLAID_WEBHOOK_SECRET: ${{ secrets.PLAID_WEBHOOK_SECRET }}
       # ==== Backend (Spring) Datasource vars (must be set as GitHub Secrets) ====
       SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
       SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
@@ -213,7 +221,10 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for v in COGNITO_ISSUER COGNITO_AUDIENCE SAFEPOCKET_USE_COGNITO SPRING_DATASOURCE_URL SPRING_DATASOURCE_USERNAME SPRING_DATASOURCE_PASSWORD; do
+          for v in \
+            COGNITO_ISSUER COGNITO_AUDIENCE SAFEPOCKET_USE_COGNITO \
+            SPRING_DATASOURCE_URL SPRING_DATASOURCE_USERNAME SPRING_DATASOURCE_PASSWORD \
+            PLAID_CLIENT_ID PLAID_CLIENT_SECRET PLAID_ENV PLAID_BASE_URL; do
             val="$(printenv "$v" || true)"
             if [ -z "$val" ]; then
               missing+=("$v")
@@ -231,6 +242,14 @@ jobs:
           if [[ "$SPRING_DATASOURCE_URL" != jdbc:postgresql://* ]]; then
             echo "::error::SPRING_DATASOURCE_URL must start with jdbc:postgresql:// (current='$SPRING_DATASOURCE_URL')" >&2
             exit 1
+          fi
+          # Plaid base URL sanity
+          case "$PLAID_ENV" in
+            sandbox|development|production) : ;; 
+            *) echo "::warning::PLAID_ENV should be one of sandbox|development|production (current='$PLAID_ENV')" >&2 ;;
+          esac
+          if [[ -n "${PLAID_REDIRECT_URI:-}" && "$PLAID_REDIRECT_URI" != https://* ]]; then
+            echo "::warning::PLAID_REDIRECT_URI should be an https URL (current='$PLAID_REDIRECT_URI')" >&2
           fi
           echo "Backend env preflight OK" >&2
 
@@ -265,6 +284,13 @@ jobs:
             COGNITO_ISSUER \
             COGNITO_AUDIENCE \
             SAFEPOCKET_USE_COGNITO \
+            PLAID_CLIENT_ID \
+            PLAID_CLIENT_SECRET \
+            PLAID_ENV \
+            PLAID_BASE_URL \
+            PLAID_REDIRECT_URI \
+            PLAID_WEBHOOK_URL \
+            PLAID_WEBHOOK_SECRET \
             SPRING_DATASOURCE_URL \
             SPRING_DATASOURCE_USERNAME \
             SPRING_DATASOURCE_PASSWORD \

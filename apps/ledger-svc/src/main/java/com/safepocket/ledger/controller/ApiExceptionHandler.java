@@ -11,6 +11,8 @@ import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -36,6 +38,32 @@ public class ApiExceptionHandler {
             ));
         }
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected error", Map.of("reason", ex.getMessage()));
+    }
+
+    // --- Upstream (Plaid/WebClient) mapping ---
+    @ExceptionHandler(WebClientResponseException.class)
+    public ResponseEntity<ErrorResponseDto> handleWebClientResponse(WebClientResponseException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getRawStatusCode());
+        if (status == null) status = HttpStatus.BAD_GATEWAY;
+        String body = ex.getResponseBodyAsString();
+        return build(status,
+                "PLAID_UPSTREAM_ERROR",
+                "Plaid API response error",
+                Map.of(
+                        "status", ex.getRawStatusCode(),
+                        "reason", ex.getMessage(),
+                        "body", body == null || body.isBlank() ? null : body
+                ));
+    }
+
+    @ExceptionHandler(WebClientRequestException.class)
+    public ResponseEntity<ErrorResponseDto> handleWebClientRequest(WebClientRequestException ex) {
+        return build(HttpStatus.BAD_GATEWAY,
+                "PLAID_CONNECT_ERROR",
+                "Failed to connect to Plaid API",
+                Map.of(
+                        "reason", ex.getMessage()
+                ));
     }
 
     @ExceptionHandler(BadSqlGrammarException.class)

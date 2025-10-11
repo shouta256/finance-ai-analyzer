@@ -1,10 +1,11 @@
 package com.safepocket.ledger.plaid;
 
 import com.safepocket.ledger.config.SafepocketProperties;
-import com.safepocket.ledger.security.AccessTokenEncryptor;
 import com.safepocket.ledger.entity.AccountEntity;
-import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.entity.PlaidItemEntity;
+import com.safepocket.ledger.repository.JpaAccountRepository;
+import com.safepocket.ledger.security.AccessTokenEncryptor;
+import com.safepocket.ledger.security.RlsGuard;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -17,21 +18,23 @@ public class PlaidService {
     private final AccessTokenEncryptor accessTokenEncryptor;
     private final SafepocketProperties properties;
     private final JpaAccountRepository accountRepository;
-
     private final PlaidClient plaidClient;
+    private final RlsGuard rlsGuard;
 
     public PlaidService(
             PlaidItemRepository plaidItemRepository,
             AccessTokenEncryptor accessTokenEncryptor,
             SafepocketProperties properties,
             JpaAccountRepository accountRepository,
-            PlaidClient plaidClient
+            PlaidClient plaidClient,
+            RlsGuard rlsGuard
     ) {
         this.plaidItemRepository = plaidItemRepository;
         this.accessTokenEncryptor = accessTokenEncryptor;
         this.properties = properties;
         this.accountRepository = accountRepository;
         this.plaidClient = plaidClient;
+        this.rlsGuard = rlsGuard;
     }
 
     public PlaidLinkToken createLinkToken(UUID userId) {
@@ -47,6 +50,9 @@ public class PlaidService {
     }
 
     public PlaidItem exchangePublicToken(UUID userId, String publicToken) {
+        // Ensure RLS context is set for this connection before DB writes
+        rlsGuard.setAppsecUser(userId);
+
         var response = plaidClient.exchangePublicToken(publicToken);
         String encrypted = accessTokenEncryptor.encrypt(response.accessToken());
         PlaidItemEntity entity = plaidItemRepository.findByUserId(userId)

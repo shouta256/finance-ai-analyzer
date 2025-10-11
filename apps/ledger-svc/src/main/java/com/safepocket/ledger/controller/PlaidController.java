@@ -8,6 +8,7 @@ import com.safepocket.ledger.plaid.PlaidLinkToken;
 import com.safepocket.ledger.plaid.PlaidService;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RequestContextHolder;
+import com.safepocket.ledger.user.UserService;
 import java.util.UUID;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -19,13 +20,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/plaid")
 public class PlaidController {
-
+    
     private final PlaidService plaidService;
     private final AuthenticatedUserProvider authenticatedUserProvider;
+    private final UserService userService;
 
-    public PlaidController(PlaidService plaidService, AuthenticatedUserProvider authenticatedUserProvider) {
+    public PlaidController(PlaidService plaidService, AuthenticatedUserProvider authenticatedUserProvider, UserService userService) {
         this.plaidService = plaidService;
         this.authenticatedUserProvider = authenticatedUserProvider;
+        this.userService = userService;
     }
 
     @PostMapping("/link-token")
@@ -38,6 +41,8 @@ public class PlaidController {
     @PostMapping("/exchange")
     public ResponseEntity<PlaidExchangeResponseDto> exchangePublicToken(@RequestBody @Valid PlaidExchangeRequestDto request) {
         UUID userId = authenticatedUserProvider.requireCurrentUserId();
+        // Ensure the user row exists to satisfy FK constraints before persisting Plaid item
+        userService.ensureUserExists(userId, null, null);
         PlaidItem item = plaidService.exchangePublicToken(userId, request.publicToken());
         String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId).orElse(null);
         return ResponseEntity.ok(new PlaidExchangeResponseDto(item.itemId(), "SUCCESS", traceId));

@@ -30,6 +30,7 @@ public class TransactionSyncService {
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
     private final TransactionEmbeddingService transactionEmbeddingService;
+    private final boolean demoSeedEnabled;
     private final Map<UUID, Instant> userSyncCursor = new ConcurrentHashMap<>();
 
     public TransactionSyncService(
@@ -37,13 +38,15 @@ public class TransactionSyncService {
             JpaAccountRepository jpaAccountRepository,
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
-            TransactionEmbeddingService transactionEmbeddingService
+            TransactionEmbeddingService transactionEmbeddingService,
+            @org.springframework.beans.factory.annotation.Value("${safepocket.demo.seed:false}") boolean demoSeedEnabled
     ) {
         this.transactionRepository = transactionRepository;
         this.jpaAccountRepository = jpaAccountRepository;
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
         this.transactionEmbeddingService = transactionEmbeddingService;
+        this.demoSeedEnabled = demoSeedEnabled;
     }
 
     public SyncResult triggerSync(boolean forceFullSync, String traceId) {
@@ -52,14 +55,16 @@ public class TransactionSyncService {
         Instant lastSync = userSyncCursor.get(userId);
         boolean needsSeed = forceFullSync || lastSync == null;
         int synced = 0;
-        if (needsSeed) {
+        if (needsSeed && demoSeedEnabled) {
             List<Transaction> seeded = seedTransactions(userId);
             seeded.forEach(transactionRepository::save);
             synced = seeded.size();
             transactionEmbeddingService.upsertEmbeddings(userId, seeded.stream().map(Transaction::id).toList());
         }
         userSyncCursor.put(userId, Instant.now());
-        return new SyncResult("STARTED", synced, Math.max(0, 50 - synced), traceId);
+        // If demo seeding is disabled, there is no backlog to process.
+        int pending = demoSeedEnabled ? Math.max(0, 50 - synced) : 0;
+        return new SyncResult("STARTED", synced, pending, traceId);
     }
 
     private List<Transaction> seedTransactions(UUID userId) {

@@ -79,3 +79,7 @@ safepocket:
     embed-dimension: ${RAG_EMBED_DIM:1536}
   db:
     bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}
+  demo:
+    # Controls whether to insert demo/sample transactions on first sync.
+    # Default is false for all environments. Enable only for demos.
+    seed: ${SAFEPOCKET_DEMO_SEED:false}

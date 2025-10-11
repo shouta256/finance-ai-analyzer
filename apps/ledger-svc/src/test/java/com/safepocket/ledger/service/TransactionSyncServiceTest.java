@@ -57,7 +57,8 @@ class TransactionSyncServiceTest {
         jpaAccountRepository,
         authenticatedUserProvider,
         rlsGuard,
-        transactionEmbeddingService
+        transactionEmbeddingService,
+        true
     );
     }
 
@@ -75,5 +76,26 @@ class TransactionSyncServiceTest {
         }
         YearMonth previous = current.minusMonths(1);
         assertThat(transactionRepository.findByUserIdAndMonth(userId, previous)).isNotEmpty();
+    }
+
+    @Test
+    void doesNotSeedWhenDisabled() {
+        // Reinitialize service with seeding disabled
+        transactionSyncService = new TransactionSyncService(
+            transactionRepository,
+            jpaAccountRepository,
+            authenticatedUserProvider,
+            rlsGuard,
+            transactionEmbeddingService,
+            false
+        );
+
+        when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
+        var result = transactionSyncService.triggerSync(false, "trace-2");
+
+        assertThat(result.syncedCount()).isZero();
+        assertThat(result.pendingCount()).isZero();
+        YearMonth current = YearMonth.now(ZoneOffset.UTC);
+        assertThat(transactionRepository.findByUserIdAndMonth(userId, current)).isEmpty();
     }
 }

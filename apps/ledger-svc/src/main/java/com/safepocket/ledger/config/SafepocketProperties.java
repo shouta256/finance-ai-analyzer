@@ -52,9 +52,6 @@ public record SafepocketProperties(
             if (clientSecret == null || clientSecret.isBlank()) {
                 throw new IllegalArgumentException("clientSecret must be provided");
             }
-            if (redirectUri == null || redirectUri.isBlank()) {
-                throw new IllegalArgumentException("redirectUri must be provided");
-            }
             if (baseUrl == null || baseUrl.isBlank()) {
                 throw new IllegalArgumentException("baseUrl must be provided");
             }
@@ -62,6 +59,10 @@ public record SafepocketProperties(
                 throw new IllegalArgumentException("environment must be provided");
             }
             // webhookUrl and webhookSecret are optional (may be null) for early sandbox stage
+        }
+
+        public boolean hasRedirectUri() {
+            return redirectUri != null && !redirectUri.isBlank();
         }
     }
 

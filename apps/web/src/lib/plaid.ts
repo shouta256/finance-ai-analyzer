@@ -60,6 +60,7 @@ export function loadPlaidLink(timeoutMs = 30000): Promise<PlaidLinkFactory> {
     const existing = document.getElementById(PLAID_SCRIPT_ID) as HTMLScriptElement | null;
     let script: HTMLScriptElement;
     let timeoutId: number | undefined;
+    let retriedWithoutCors = false;
 
     const cleanup = () => {
       script.removeEventListener("load", handleLoad);
@@ -87,6 +88,28 @@ export function loadPlaidLink(timeoutMs = 30000): Promise<PlaidLinkFactory> {
     };
 
     const handleError = () => {
+      // Some CDNs do not set ACAO; a script tag with crossorigin=anonymous triggers a CORS fetch and can be blocked.
+      // Retry once by injecting a fresh <script> without crossorigin and with a cache-busting query param.
+      if (!retriedWithoutCors) {
+        retriedWithoutCors = true;
+        if (script) {
+          try { script.remove(); } catch {}
+        }
+        const s = document.createElement("script");
+        s.id = PLAID_SCRIPT_ID;
+        s.src = `${PLAID_SCRIPT_SRC}?ts=${Date.now()}`; // bust caches
+        s.async = true;
+        // intentionally DO NOT set s.crossOrigin
+        s.addEventListener("load", handleLoad, { once: true });
+        s.addEventListener("error", () => {
+          cleanup();
+          plaidPromise = null;
+          reject(new Error("Failed to load Plaid Link"));
+        }, { once: true });
+        (document.head ?? document.body).appendChild(s);
+        script = s;
+        return;
+      }
       cleanup();
       plaidPromise = null;
       reject(new Error("Failed to load Plaid Link"));
@@ -94,6 +117,10 @@ export function loadPlaidLink(timeoutMs = 30000): Promise<PlaidLinkFactory> {
 
     if (existing) {
       script = existing;
+      // Remove crossorigin attribute if present to avoid CORS-mode fetch when CDN lacks ACAO
+      if (script.hasAttribute("crossorigin")) {
+        script.removeAttribute("crossorigin");
+      }
       // If script already loaded previously, try resolving immediately or polling.
       const ready = (script as any).readyState;
       if (window.Plaid) {
@@ -116,7 +143,7 @@ export function loadPlaidLink(timeoutMs = 30000): Promise<PlaidLinkFactory> {
       script.id = PLAID_SCRIPT_ID;
       script.src = PLAID_SCRIPT_SRC;
       script.async = true;
-      script.crossOrigin = "anonymous";
+      // IMPORTANT: do not set crossOrigin to avoid CORS-mode fetch; Plaid CDN may not send ACAO
       script.addEventListener("load", handleLoad, { once: true });
       script.addEventListener("error", handleError, { once: true });
   // Prefer <head> to avoid some hydration/ordering quirks

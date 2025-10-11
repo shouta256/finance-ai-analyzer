@@ -1,7 +1,7 @@
 import { env } from "./env";
 import { chatResponseSchema } from "./schemas";
 
-class LedgerApiError extends Error {
+export class LedgerApiError extends Error {
   status: number;
   payload: unknown;
   constructor(message: string, status: number, payload: unknown) {
@@ -15,21 +15,32 @@ const defaultHeaders = {
   "content-type": "application/json",
 };
 
+type LedgerFetchInit = RequestInit & {
+  traceId?: string;
+  parseJson?: boolean;
+  baseUrlOverride?: string;
+};
+
 export async function ledgerFetch<T>(
   path: string,
-  init: RequestInit & { traceId?: string; parseJson?: boolean } = {},
+  init: LedgerFetchInit = {},
 ): Promise<T> {
-  const traceId = init.traceId ?? crypto.randomUUID();
-  const headers = new Headers(init.headers);
+  const {
+    traceId = crypto.randomUUID(),
+    parseJson = true,
+    baseUrlOverride,
+    ...fetchInit
+  } = init;
+  const headers = new Headers(fetchInit.headers);
   headers.set("X-Request-Trace", traceId);
   // Preserve user context if middleware injected it
-  const userId = (init.headers as Headers | Record<string, string> | undefined) instanceof Headers
-    ? (init.headers as Headers).get("x-safepocket-user-id")
-    : (init.headers as Record<string, string> | undefined)?.["x-safepocket-user-id"];
+  const userId = (fetchInit.headers as Headers | Record<string, string> | undefined) instanceof Headers
+    ? (fetchInit.headers as Headers).get("x-safepocket-user-id")
+    : (fetchInit.headers as Record<string, string> | undefined)?.["x-safepocket-user-id"];
   if (userId && !headers.has("x-safepocket-user-id")) {
     headers.set("x-safepocket-user-id", userId);
   }
-  if (!headers.has("content-type") && init.body) {
+  if (!headers.has("content-type") && fetchInit.body) {
     headers.set("content-type", defaultHeaders["content-type"]);
   }
   // Auto-inject Authorization from sp_token cookie if not already present (server-side only)
@@ -43,15 +54,15 @@ export async function ledgerFetch<T>(
       // ignore if not in a Next.js server context
     }
   }
-  const response = await fetch(`${env.LEDGER_SERVICE_URL}${path}`, {
+  const response = await fetch(`${baseUrlOverride ?? env.LEDGER_SERVICE_URL}${path}`, {
     credentials: 'include',
-    ...init,
+    ...fetchInit,
     headers,
   });
   if (!response.ok) {
     throw await buildError(response);
   }
-  if (init.parseJson === false || response.status === 204) {
+  if (parseJson === false || response.status === 204) {
     return undefined as T;
   }
   return (await response.json()) as T;

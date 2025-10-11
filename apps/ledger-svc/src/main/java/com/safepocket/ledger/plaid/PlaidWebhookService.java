@@ -1,12 +1,18 @@
 package com.safepocket.ledger.plaid;
 
-import com.safepocket.ledger.config.SafepocketProperties;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.AlgorithmParameters;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
+import java.security.spec.ECPublicKeySpec;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
@@ -17,12 +23,12 @@ import org.springframework.stereotype.Service;
 public class PlaidWebhookService {
     private static final Logger log = LoggerFactory.getLogger(PlaidWebhookService.class);
 
-    private final SafepocketProperties properties;
     private final Environment environment;
+    private final PlaidClient plaidClient;
 
-    public PlaidWebhookService(SafepocketProperties properties, Environment environment) {
-        this.properties = properties;
+    public PlaidWebhookService(Environment environment, PlaidClient plaidClient) {
         this.environment = environment;
+        this.plaidClient = plaidClient;
     }
 
     /**
@@ -31,52 +37,120 @@ public class PlaidWebhookService {
      * - in prod: reject
      * - in non-prod: allow (logs a warning)
      */
-    public boolean verifySignature(String rawBody, String signatureHeader, String verificationHeader) {
-        String secret = properties.plaid().webhookSecret();
-        // Allow bypass only outside prod when no secret configured
-        if (secret == null || secret.isBlank()) {
+    public boolean verifySignature(String rawBody, String jwtHeader, String unused) {
+        // Plaid-Verification is a JWT signed with ES256; kid is in JWT header
+        if (jwtHeader == null || jwtHeader.isBlank()) {
             if (environment.acceptsProfiles(Profiles.of("prod"))) {
-                log.warn("PLAID_WEBHOOK_SECRET not configured in prod; rejecting webhook");
+                log.warn("Missing Plaid-Verification JWT header (prod)");
                 return false;
             }
-            log.warn("PLAID_WEBHOOK_SECRET not set; accepting webhook without verification (non-prod)");
+            log.warn("Missing Plaid-Verification JWT header; accepting in non-prod");
             return true;
         }
         try {
-            // HMAC-SHA256 over raw body; compare Base64-encoded digest to Plaid-Signature if present
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] digest = mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8));
-            String computed = Base64.getEncoder().encodeToString(digest);
-            if (signatureHeader != null && !signatureHeader.isBlank()) {
-                String presented = signatureHeader.trim();
-                // Support formats like "v1=base64signature[,t=timestamp]"
-                String v1 = null;
-                for (String part : presented.split(",")) {
-                    String p = part.trim();
-                    if (p.startsWith("v1=")) {
-                        v1 = p.substring(3);
-                        break;
-                    }
-                }
-                if (v1 != null) {
-                    presented = v1;
-                }
-                boolean ok = constantTimeEquals(computed, presented);
-                if (!ok) log.warn("Plaid webhook signature mismatch");
-                return ok;
+            String jwt = jwtHeader.trim();
+            String[] parts = jwt.split("\\.");
+            if (parts.length != 3) return false;
+            String headerJson = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
+            Map<?,?> header = new com.fasterxml.jackson.databind.ObjectMapper().readValue(headerJson, Map.class);
+            String kid = String.valueOf(header.get("kid"));
+            if (kid == null || kid.isBlank()) return false;
+
+            var jwkResp = plaidClient.getWebhookVerificationKey(kid);
+            var key = jwkResp.key();
+            if (!"EC".equals(key.kty()) || !"P-256".equals(key.crv())) {
+                log.warn("Unexpected JWK type/crv: {} / {}", key.kty(), key.crv());
+                return false;
             }
-            if (verificationHeader != null && !verificationHeader.isBlank()) {
-                boolean ok = constantTimeEquals(computed, verificationHeader.trim());
-                if (!ok) log.warn("Plaid webhook verification header mismatch");
-                return ok;
+
+            // Build ECPublicKey from x,y (secp256r1)
+            byte[] x = Base64.getUrlDecoder().decode(key.x());
+            byte[] y = Base64.getUrlDecoder().decode(key.y());
+            ECPoint ecPoint = new ECPoint(new BigInteger(1, x), new BigInteger(1, y));
+            ECGenParameterSpec genSpec = new ECGenParameterSpec("secp256r1");
+            AlgorithmParameters ap = AlgorithmParameters.getInstance("EC");
+            ap.init(genSpec);
+            ECParameterSpec ecSpec = ap.getParameterSpec(ECParameterSpec.class);
+            ECPublicKeySpec pubSpec = new ECPublicKeySpec(ecPoint, ecSpec);
+            PublicKey publicKey = KeyFactory.getInstance("EC").generatePublic(pubSpec);
+
+            // Verify ES256 signature over header.payload
+            byte[] signed = (parts[0] + "." + parts[1]).getBytes(StandardCharsets.UTF_8);
+            byte[] jwsSig = Base64.getUrlDecoder().decode(parts[2]);
+            byte[] derSig = jwsEs256ToDer(jwsSig);
+            Signature verifier = Signature.getInstance("SHA256withECDSA");
+            verifier.initVerify(publicKey);
+            verifier.update(signed);
+            if (!verifier.verify(derSig)) {
+                log.warn("Invalid Plaid JWT signature");
+                return false;
             }
-            log.warn("Missing Plaid-Signature header");
-            return false;
+
+            String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            Map<?,?> payload = new com.fasterxml.jackson.databind.ObjectMapper().readValue(payloadJson, Map.class);
+            Number iat = (Number) payload.get("iat");
+            String bodySha256 = (String) payload.get("request_body_sha256");
+            if (iat == null || bodySha256 == null) return false;
+            long now = Instant.now().getEpochSecond();
+            if (now - iat.longValue() > 300) {
+                log.warn("Plaid JWT too old (replay?) iat={}", iat);
+                return false;
+            }
+
+            // Compute SHA-256 of raw body and compare (base16 lowercase expected)
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(rawBody.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            String computed = sb.toString();
+            boolean ok = constantTimeEquals(computed, bodySha256);
+            if (!ok) log.warn("Webhook body hash mismatch");
+            return ok;
         } catch (Exception e) {
-            log.warn("Failed to verify Plaid webhook: {}", e.getMessage());
+            log.warn("Failed JWT verify for Plaid webhook: {}", e.getMessage());
             return false;
         }
+    }
+
+    // Convert JOSE (R||S) signature to ASN.1 DER sequence expected by Java Signature
+    private byte[] jwsEs256ToDer(byte[] jws) {
+        if (jws.length != 64) return jws; // fallback (unexpected length)
+        byte[] r = new byte[32];
+        byte[] s = new byte[32];
+        System.arraycopy(jws, 0, r, 0, 32);
+        System.arraycopy(jws, 32, s, 0, 32);
+        BigInteger rInt = new BigInteger(1, r);
+        BigInteger sInt = new BigInteger(1, s);
+        byte[] rEnc = toDerInteger(rInt);
+        byte[] sEnc = toDerInteger(sInt);
+        int len = 2 + rEnc.length + 2 + sEnc.length;
+        byte[] seq = new byte[2 + len];
+        seq[0] = 0x30;
+        seq[1] = (byte) len;
+        seq[2] = 0x02; seq[3] = (byte) rEnc.length;
+        System.arraycopy(rEnc, 0, seq, 4, rEnc.length);
+        int off = 4 + rEnc.length;
+        seq[off] = 0x02; seq[off+1] = (byte) sEnc.length;
+        System.arraycopy(sEnc, 0, seq, off+2, sEnc.length);
+        return seq;
+    }
+
+    private byte[] toDerInteger(BigInteger v) {
+        byte[] raw = v.toByteArray();
+        if (raw[0] == 0x00 && raw.length > 1) {
+            // remove unnecessary leading zero except when needed for sign bit
+            int i = 0; while (i < raw.length-1 && raw[i] == 0x00) i++;
+            byte[] trimmed = new byte[raw.length - i];
+            System.arraycopy(raw, i, trimmed, 0, trimmed.length);
+            raw = trimmed;
+        }
+        if ((raw[0] & 0x80) != 0) {
+            // add leading zero to force positive
+            byte[] prefixed = new byte[raw.length + 1];
+            System.arraycopy(raw, 0, prefixed, 1, raw.length);
+            raw = prefixed;
+        }
+        return raw;
     }
 
     private boolean constantTimeEquals(String a, String b) {

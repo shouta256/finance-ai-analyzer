@@ -2,12 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { analyticsSummarySchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 const querySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), generateAi: z.string().optional() });
 
 export async function GET(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+  const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+  if (errorResponse) return errorResponse;
   const { searchParams } = new URL(request.url);
   // 2) month 正規化: 2025/08 → 2025-08 などスラッシュをハイフンへ
   const rawMonth = searchParams.get("month") ?? undefined;
@@ -17,7 +20,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("month", query.month);
   if (query.generateAi) url.searchParams.set("generateAi", query.generateAi);
   try {
-    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, { method: "GET", headers: { authorization } });
+    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, { method: "GET", headers: { authorization }, baseUrlOverride });
     const body = analyticsSummarySchema.parse(result);
     return NextResponse.json(body);
   } catch (e) {

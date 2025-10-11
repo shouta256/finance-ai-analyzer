@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { plaidLinkTokenSchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 function mapError(error: unknown): NextResponse {
   const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
@@ -20,9 +21,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   }
   try {
+    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+    if (errorResponse) return errorResponse;
     const result = await ledgerFetch<unknown>("/plaid/link-token", {
       method: "POST",
       headers: { authorization },
+      baseUrlOverride,
     });
     const body = plaidLinkTokenSchema.parse(result);
     return NextResponse.json(body);

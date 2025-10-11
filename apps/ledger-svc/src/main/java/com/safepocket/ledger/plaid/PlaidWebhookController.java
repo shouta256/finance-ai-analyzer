@@ -25,24 +25,20 @@ public class PlaidWebhookController {
     @PostMapping({"/webhook/plaid", "/plaid/webhook"})
     public ResponseEntity<String> handle(
             @RequestBody byte[] rawBody,
-            @RequestHeader(name = "Plaid-Signature", required = false) String signature,
-        @RequestHeader(name = "X-Plaid-Signature", required = false) String xSignature,
             @RequestHeader(name = "Plaid-Verification", required = false) String verificationHeader) {
         if (rawBody == null || rawBody.length == 0) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Empty body");
         }
         String bodyStr = new String(rawBody, StandardCharsets.UTF_8);
-        // Verify signature first; 401 if invalid (when secret configured)
-    // Prefer Plaid-Signature, fallback to X-Plaid-Signature
-    String sig = (signature != null && !signature.isBlank()) ? signature : xSignature;
-    boolean verified = service.verifySignature(bodyStr, sig, verificationHeader);
+        // Verify JWT signature first; 401 if invalid (prod)
+        boolean verified = service.verifySignature(bodyStr, verificationHeader, null);
         if (!verified) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid webhook signature");
         }
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = objectMapper.readValue(bodyStr, Map.class);
-            service.process(payload, signature);
+            service.process(payload, verificationHeader);
         } catch (Exception e) {
             log.warn("Failed to parse Plaid webhook payload: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid JSON");

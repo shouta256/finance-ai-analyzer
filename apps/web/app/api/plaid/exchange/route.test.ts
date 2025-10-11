@@ -20,8 +20,7 @@ describe("/api/plaid/exchange", () => {
 
   it("proxies success", async () => {
     mocked.mockResolvedValue({ itemId: "it", status: "SUCCESS", requestId: "req" });
-    const res = await POST({ headers: new Headers({ authorization: "Bearer t" }), url: "https://x", json: async () => ({ publicToken: "pub" }) } as any);
+    const res = await POST({ headers: new Headers({ authorization: "Bearer t" }), url: "https://x", json: async () => ({ publicToken: "pub1" }) } as any);
     expect(res.status).toBe(200);
   });
 });
-

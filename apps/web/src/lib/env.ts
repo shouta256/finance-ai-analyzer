@@ -1,10 +1,18 @@
 import { z } from "zod";
 
+const normalizeUrl = (url: string) => url.replace(/\/+$/, "");
+
 const schema = z.object({
   LEDGER_SERVICE_URL: z
     .string()
     .url()
+    .transform(normalizeUrl)
     .default("http://localhost:8081"),
+  LEDGER_SERVICE_INTERNAL_URL: z
+    .string()
+    .url()
+    .transform(normalizeUrl)
+    .optional(),
   OPENAI_HIGHLIGHT_ENABLED: z
     .string()
     .optional()
@@ -20,6 +28,7 @@ const schema = z.object({
 
 export const env = schema.parse({
   LEDGER_SERVICE_URL: process.env.LEDGER_SERVICE_URL,
+  LEDGER_SERVICE_INTERNAL_URL: process.env.LEDGER_SERVICE_INTERNAL_URL,
   OPENAI_HIGHLIGHT_ENABLED: process.env.OPENAI_HIGHLIGHT_ENABLED,
   NEXT_PUBLIC_COGNITO_DOMAIN: process.env.NEXT_PUBLIC_COGNITO_DOMAIN,
   NEXT_PUBLIC_COGNITO_CLIENT_ID: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,

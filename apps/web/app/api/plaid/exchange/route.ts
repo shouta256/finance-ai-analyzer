@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { plaidExchangeSchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 const requestSchema = z.object({ publicToken: z.string().min(4) });
 
@@ -23,12 +24,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   }
   try {
+    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+    if (errorResponse) return errorResponse;
     const payload = await request.json();
     const body = requestSchema.parse(payload);
     const result = await ledgerFetch<unknown>("/plaid/exchange", {
       method: "POST",
       headers: { authorization },
       body: JSON.stringify(body),
+      baseUrlOverride,
     });
     const response = plaidExchangeSchema.parse(result);
     return NextResponse.json(response);

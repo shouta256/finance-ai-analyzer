@@ -2,14 +2,12 @@ package com.safepocket.ledger.plaid;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.safepocket.ledger.config.SafepocketProperties;
-import java.time.Instant;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 /**
  * Minimal Plaid API client (Stage1 Sandbox) supporting link token creation and public token exchange.
@@ -80,4 +78,24 @@ public class PlaidClient {
             @JsonProperty("item_id") String itemId,
             @JsonProperty("request_id") String requestId
     ) {}
+
+        // --- Webhook verification key (JWT JWK) ---
+        public record WebhookVerificationKeyResponse(Key key, String requestId) {
+            public record Key(String alg, String crv, String kid, String kty, String use, String x, String y, Long created_at, Long expired_at) {}
+        }
+
+        public WebhookVerificationKeyResponse getWebhookVerificationKey(String keyId) {
+        var body = Map.of(
+                "client_id", properties.plaid().clientId(),
+                "secret", properties.plaid().clientSecret(),
+                "key_id", keyId
+        );
+        return webClient.post().uri("/webhook_verification_key/get")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(WebhookVerificationKeyResponse.class)
+                    .doOnError(e -> log.error("Plaid webhook verification key fetch failed", e))
+                    .block();
+        }
 }

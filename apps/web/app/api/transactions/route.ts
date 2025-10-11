@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { transactionsListSchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 const querySchema = z.object({
   month: z
@@ -13,6 +14,8 @@ const querySchema = z.object({
 export async function GET(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+  const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+  if (errorResponse) return errorResponse;
   const { searchParams } = new URL(request.url);
   const query = querySchema.parse({
     month: searchParams.get("month"),
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
   if (query.accountId) {
     endpoint.searchParams.set("accountId", query.accountId);
   }
-  const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, { method: "GET", headers: { authorization } });
+  const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, { method: "GET", headers: { authorization }, baseUrlOverride });
   const body = transactionsListSchema.parse(result);
   return NextResponse.json(body);
 }

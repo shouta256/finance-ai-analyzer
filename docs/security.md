@@ -9,6 +9,8 @@ Provide a stable, base64-encoded 256-bit key (or integrate with AWS KMS for enve
 - Add `SAFEPOCKET_KMS_DATA_KEY` as a GitHub Actions Secret and inject into ECS similar to other secrets. The value must be a base64-encoded 256-bit key.
 - Rotate the key via KMS and store only the ciphertext (if integrating KMS).
 
-### Plaid Webhook Signature
-- The Plaid webhook endpoint is `/webhook/plaid` and now enforces signature verification when `PLAID_WEBHOOK_SECRET` is set. In production, if the secret is missing, webhooks are rejected (401). In non-prod, verification is bypassed with a warning to ease local testing.
+### Plaid Webhook Verification (JWT)
+- The Plaid webhook endpoint is `/webhook/plaid`.
+- Webhooks are verified using Plaid's JWT-based verification: we read `Plaid-Verification` (JWT), fetch the JWK via `/webhook_verification_key/get` using our Plaid credentials, verify ES256 signature, ensure `iat` is within 5 minutes, and compare `request_body_sha256` with the SHA-256 of the raw request body.
+- In production, missing/invalid JWT will be rejected (401). In non-prod, absence of the header bypasses verification with a warning to ease local testing.
 - Add a startup check to fail fast if `SAFEPOCKET_USE_COGNITO=true` (production mode) and the data key is missing.

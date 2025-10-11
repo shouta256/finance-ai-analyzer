@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { chatResponseSchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 const authErrorBody = { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } } as const;
 
@@ -66,6 +67,9 @@ export async function GET(request: NextRequest) {
   if (authorization instanceof NextResponse) return authorization;
 
   try {
+    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
     const query = chatQuerySchema.parse({
       conversationId: searchParams.get("conversationId") ?? undefined,
@@ -77,6 +81,7 @@ export async function GET(request: NextRequest) {
     const result = await ledgerFetch(endpoint.pathname + endpoint.search, {
       method: "GET",
       headers: { authorization },
+      baseUrlOverride,
     });
     const body = chatResponseSchema.parse(result);
     return NextResponse.json(body);
@@ -90,12 +95,16 @@ export async function POST(request: NextRequest) {
   if (authorization instanceof NextResponse) return authorization;
 
   try {
+    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+    if (errorResponse) return errorResponse;
+
     const raw = await request.json();
     const body = chatRequestSchema.parse(raw);
     const result = await ledgerFetch("/ai/chat", {
       method: "POST",
       headers: { authorization, "content-type": "application/json" },
       body: JSON.stringify(body),
+      baseUrlOverride,
     });
     const response = chatResponseSchema.parse(result);
     return NextResponse.json(response);

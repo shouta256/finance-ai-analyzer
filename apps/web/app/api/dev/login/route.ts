@@ -7,10 +7,19 @@ const DEV_USER_ID = '0f08d2b9-28b3-4b28-bd33-41a36161e9ab';
 const PRIMARY_COOKIE = 'sp_token';
 const ONE_HOUR_SECONDS = 60 * 60;
 
-function shouldUseSecureCookie() {
+function shouldUseSecureCookie(req: NextRequest) {
   const envFlag = process.env.SAFEPOCKET_DEV_COOKIE_SECURE;
   if (envFlag === 'true') return true;
   if (envFlag === 'false') return false;
+
+  const forwardedProto = req.headers.get('x-forwarded-proto');
+  if (forwardedProto === 'https') return true;
+  if (forwardedProto === 'http') return false;
+
+  const protocol = req.nextUrl.protocol.replace(':', '');
+  if (protocol === 'https') return true;
+  if (protocol === 'http') return false;
+
   return process.env.NODE_ENV === 'production';
 }
 
@@ -53,7 +62,7 @@ export async function GET(req: NextRequest) {
           : NextResponse.json({ ok: true, mode: 'backend' });
         const cookieInit = {
           httpOnly: true,
-          secure: shouldUseSecureCookie(),
+          secure: shouldUseSecureCookie(req),
           path: '/',
           sameSite: 'lax' as const,
           maxAge: ttl,
@@ -95,7 +104,7 @@ export async function GET(req: NextRequest) {
     : NextResponse.json({ ok: true, mode: 'local-fallback' }, { status: 200, headers: { 'x-dev-login-warning': 'backend-login-failed; ensure both apps share SAFEPOCKET_DEV_JWT_SECRET' } });
   const cookieInit = {
     httpOnly: true,
-    secure: shouldUseSecureCookie(),
+    secure: shouldUseSecureCookie(req),
     path: '/',
     sameSite: 'lax' as const,
     maxAge: ONE_HOUR_SECONDS,

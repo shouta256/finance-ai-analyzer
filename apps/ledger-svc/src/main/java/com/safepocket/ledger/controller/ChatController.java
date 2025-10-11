@@ -1,6 +1,9 @@
 package com.safepocket.ledger.controller;
 
 import com.safepocket.ledger.chat.ChatService;
+import com.safepocket.ledger.user.UserService;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,9 +18,11 @@ import java.util.UUID;
 public class ChatController {
 
     private final ChatService chatService;
+    private final UserService userService;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, UserService userService) {
         this.chatService = chatService;
+        this.userService = userService;
     }
 
     public record ChatRequest(UUID conversationId, @NotBlank String message, UUID truncateFromMessageId) {}
@@ -31,7 +36,20 @@ public class ChatController {
         if (auth != null && auth.getName() != null) {
             try { userId = UUID.fromString(auth.getName()); } catch (Exception ignored) {}
         }
-        var res = chatService.getConversation(userId, conversationId);
+        // Ensure user row exists for FK constraints
+        String email = null;
+        String fullName = null;
+        if (auth instanceof JwtAuthenticationToken jat) {
+            Object e = jat.getTokenAttributes().get("email");
+            Object n = jat.getTokenAttributes().get("name");
+            email = e != null ? String.valueOf(e) : null;
+            fullName = n != null ? String.valueOf(n) : null;
+        } else if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
+            email = jwt.getClaimAsString("email");
+            fullName = jwt.getClaimAsString("name");
+        }
+        userService.ensureUserExists(userId, email, fullName);
+    var res = chatService.getConversation(userId, conversationId);
         var dto = new ChatResponseDto(res.conversationId(),
                 res.messages().stream().map(m -> new ChatMessageDto(m.id(), m.role(), m.content(), m.createdAt())).toList(),
                 res.traceId());
@@ -44,7 +62,19 @@ public class ChatController {
         if (auth != null && auth.getName() != null) {
             try { userId = UUID.fromString(auth.getName()); } catch (Exception ignored) {}
         }
-        var res = chatService.sendMessage(userId, request.conversationId(), request.message(), request.truncateFromMessageId());
+        String email = null;
+        String fullName = null;
+        if (auth instanceof JwtAuthenticationToken jat) {
+            Object e = jat.getTokenAttributes().get("email");
+            Object n = jat.getTokenAttributes().get("name");
+            email = e != null ? String.valueOf(e) : null;
+            fullName = n != null ? String.valueOf(n) : null;
+        } else if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
+            email = jwt.getClaimAsString("email");
+            fullName = jwt.getClaimAsString("name");
+        }
+        userService.ensureUserExists(userId, email, fullName);
+    var res = chatService.sendMessage(userId, request.conversationId(), request.message(), request.truncateFromMessageId());
         var dto = new ChatResponseDto(res.conversationId(), res.messages().stream().map(m -> new ChatMessageDto(m.id(), m.role(), m.content(), m.createdAt())).toList(), res.traceId());
         return ResponseEntity.ok(dto);
     }

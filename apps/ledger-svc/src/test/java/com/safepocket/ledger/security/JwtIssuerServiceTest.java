@@ -12,11 +12,12 @@ import static org.junit.jupiter.api.Assertions.*;
 public class JwtIssuerServiceTest {
 
     private JwtIssuerService newService(String secret) {
-    SafepocketProperties props = new SafepocketProperties(
+        SafepocketProperties props = new SafepocketProperties(
                 new SafepocketProperties.Cognito("https://example.com/issuer","aud", false),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null),
-        new SafepocketProperties.Security(secret)
+                new SafepocketProperties.Security(secret),
+                new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536)
         );
         return new JwtIssuerService(props);
     }
@@ -38,11 +39,12 @@ public class JwtIssuerServiceTest {
 
     @Test
     void decoderAcceptsDevToken() {
-    SafepocketProperties props = new SafepocketProperties(
+        SafepocketProperties props = new SafepocketProperties(
                 new SafepocketProperties.Cognito("https://example.com/issuer","aud", false),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null),
-        new SafepocketProperties.Security("12345678901234567890123456789012")
+                new SafepocketProperties.Security("12345678901234567890123456789012"),
+                new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536)
         );
         JwtIssuerService issuer = new JwtIssuerService(props);
         String token = issuer.issue(UUID.fromString("0f08d2b9-28b3-4b28-bd33-41a36161e9ab"), 60);

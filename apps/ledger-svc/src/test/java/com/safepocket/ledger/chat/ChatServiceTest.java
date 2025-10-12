@@ -68,6 +68,6 @@ class ChatServiceTest {
         assertThat(response.messages()).hasSize(2);
         String assistantContent = response.messages().getLast().content();
         assertThat(assistantContent).contains("traceId=test-trace");
-        assertThat(assistantContent).contains("応答を生成できませんでした");
+        assertThat(assistantContent).contains("Please share traceId");
     }
 }

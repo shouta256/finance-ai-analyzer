@@ -35,7 +35,13 @@ public class StartupDiagnostics {
         String model = ai.snapshotOrDefault();
         boolean hasKey = ai.apiKey() != null && !ai.apiKey().isBlank()
                 || ("gemini".equals(provider) ? System.getenv("GEMINI_API_KEY") != null : System.getenv("OPENAI_API_KEY") != null);
-        log.info("AI config: provider='{}', model='{}', endpoint='{}', apiKeyPresent={} (env override: provider='{}')",
-                provider, model, ai.endpoint(), hasKey, System.getenv("SAFEPOCKET_AI_PROVIDER"));
+        if ("gemini".equalsIgnoreCase(provider)) {
+            // Endpoint is ignored for Gemini; we switch to Google default if it still points to OpenAI.
+            log.info("AI config: provider='{}', model='{}', geminiEndpoint='{} (effective)', apiKeyPresent={} (env override: provider='{}')",
+                    provider, model, "https://generativelanguage.googleapis.com/v1beta", hasKey, System.getenv("SAFEPOCKET_AI_PROVIDER"));
+        } else {
+            log.info("AI config: provider='{}', model='{}', endpoint='{}', apiKeyPresent={} (env override: provider='{}')",
+                    provider, model, ai.endpoint(), hasKey, System.getenv("SAFEPOCKET_AI_PROVIDER"));
+        }
     }
 }

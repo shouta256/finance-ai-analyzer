@@ -16,7 +16,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </span>
             <span className="text-lg font-semibold">Financial Trust Dashboard</span>
           </div>
-          <div className="text-sm text-slate-500">Secure | AI assisted</div>
               <div className="flex items-center gap-3">
                 <Link href="/chat" className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-blue-500 transition">AI Chat</Link>
               </div>

@@ -1,55 +1,55 @@
 # Safepocket
 
-## ヘルスチェック / Health Checks
+## Health checks
 
 ### Backend (ledger-svc)
-- Primary (ALB Target Group): `GET /actuator/health`  
-  - Spring Boot aggregate health. DB ダウン時は `DOWN` / 503 を返し ALB から外れる想定。
+- Primary (ALB target group): `GET /actuator/health`  
+  - Spring Boot aggregate health. When the database is down it returns `DOWN` / 503 so the ALB removes the task.
 - Liveness (container internal / debug): `GET /actuator/health/liveness`  
-  - DB 未接続でも `UP`。プロセス稼働確認用。
+  - Returns `UP` even when the database is not ready. Used to confirm the process is alive.
 - Readiness: `GET /actuator/health/readiness`  
-  - 依存リソース込み判定。
+  - Includes external dependencies.
 
 ### Frontend (web)
-- Simple Health: `GET /api/healthz`  
-  - 軽量 JSON: `{ "status": "ok" }`  
-  - ALB Target Group / 外形監視に利用。
+- Simple health: `GET /api/healthz`  
+  - Lightweight JSON: `{ "status": "ok" }`  
+  - Used by the ALB target group and external monitoring.
 
 ## Runtime Ports
 - Frontend: 3000 (0.0.0.0 bind)
 - Backend: 8081 (0.0.0.0 bind)
 
 ## Docker HEALTHCHECK
-`apps/ledger-svc/Dockerfile` は ALB と合わせ `/actuator/health` を利用:
+`apps/ledger-svc/Dockerfile` also checks `/actuator/health` so it matches the ALB:
 ```
 HEALTHCHECK --start-period=45s --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost:8081/actuator/health || exit 1
 ```
 
-## 環境変数 (DB Credentials / Connection)
-Backend の `application.yml` は以下の環境変数で上書き可能:
+## Environment variables (database)
+You can override the backend `application.yml` with these variables:
 - `SPRING_DATASOURCE_URL` (default: `jdbc:postgresql://localhost:5432/safepocket`)
 - `SPRING_DATASOURCE_USERNAME` (default: `safepocket`)
 - `SPRING_DATASOURCE_PASSWORD` (default: `safepocket`)
 
-ECS ではこれらを Secrets Manager / SSM からタスク定義環境変数として注入。
+On ECS we inject them from Secrets Manager or SSM as task environment variables.
 
-## ローカル起動メモ (抜粋)
-1. Infra (DB / Redis) 起動: `docker compose -f infra/compose/docker-compose.yml up -d`
+## Local start (quick list)
+1. Start infra (PostgreSQL / Redis): `docker compose -f infra/compose/docker-compose.yml up -d`
 2. Backend: `./apps/ledger-svc/gradlew -p apps/ledger-svc bootRun`
 3. Frontend: `pnpm -C apps/web dev`
 
-## RAG デモ (家計データの最小パイプライン)
-- `pnpm demo` または `make demo` を実行すると、以下の流れをローカルで再現できます:
-  1. `examples/rag-demo-input.csv` を読み込み
-  2. 簡易ベクトル化 → カテゴリ/店舗の集計要約を生成（`examples/rag-demo-summary.json`）
-  3. サンプル質問に対する検索結果を生成（`examples/rag-demo-qa.json`）
-- 実行ログはコンソールに出力され、生成物は `examples/` 配下に保存されます。
-- デモは全てローカルで完結し、本番サービスや外部APIには接続しません。
+## RAG demo (simple family budget sample)
+- Run `pnpm demo` or `make demo` to replay the flow locally:
+  1. Read `examples/rag-demo-input.csv`
+  2. Build simple vectors and create category / merchant summaries (`examples/rag-demo-summary.json`)
+  3. Produce sample Q&A search output (`examples/rag-demo-qa.json`)
+- Logs print to the console and the files are stored under `examples/`.
+- The demo is local only and does not touch production services or external APIs.
 
-## 変更概要 (Health Feature)
-- Actuator probes 有効化 (`management.endpoint.health.probes.enabled=true`).
-- liveness/readiness 導入。liveness は DB 非依存。
-- Datasource を環境変数化し、初期失敗で停止しない設定。
-- Backend Dockerfile に `HEALTHCHECK` 追加。
-- Frontend に `/api/healthz` 追加。
-- `next start` を明示的に `0.0.0.0:3000` へバインドするようスクリプト調整。
+## Health feature summary
+- Enable Actuator probes (`management.endpoint.health.probes.enabled=true`).
+- Add liveness/readiness. Liveness does not depend on the database.
+- Control datasource with environment variables so the service does not stop on first failure.
+- Add `HEALTHCHECK` to the backend Dockerfile.
+- Add `/api/healthz` on the frontend.
+- Bind `next start` to `0.0.0.0:3000` explicitly.

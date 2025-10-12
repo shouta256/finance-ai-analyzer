@@ -175,11 +175,11 @@ async function handleSubmitEdit(event: React.FormEvent) {
       <div className="rounded border border-slate-200 bg-white p-4 shadow-sm">
         <div ref={scrollAreaRef} className="mb-4 h-80 overflow-y-auto space-y-3 pr-1">
           {initializing && (
-            <p className="text-sm text-slate-500">読み込み中...</p>
+            <p className="text-sm text-slate-500">Loading...</p>
           )}
           {!initializing && messages.length === 0 && (
             <p className="text-sm text-slate-500">
-              メッセージを入力してください。支出やカテゴリについて質問できます。
+              Please type a message. You can ask about spending or categories.
             </p>
           )}
           {messages.map((m, idx) => {
@@ -209,14 +209,14 @@ async function handleSubmitEdit(event: React.FormEvent) {
                         disabled={editingLoading}
                         className="rounded border border-white/30 px-3 py-1 text-xs font-medium text-white/80 hover:text-white"
                       >
-                        キャンセルする
+                        Cancel
                       </button>
                       <button
                         type="submit"
                         disabled={editingLoading || editingDraft.trim().length === 0}
                         className="rounded bg-white px-3 py-1 text-xs font-medium text-blue-600 disabled:opacity-50"
                       >
-                        送信する
+                        Save
                       </button>
                     </div>
                   </form>
@@ -232,14 +232,14 @@ async function handleSubmitEdit(event: React.FormEvent) {
                           onClick={() => copyToClipboard(m.content)}
                           className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:text-blue-600 focus-visible:outline-none focus-visible:ring focus-visible:ring-blue-200"
                         >
-                          <Copy className="h-3.5 w-3.5" aria-hidden /> コピー
+                          <Copy className="h-3.5 w-3.5" aria-hidden /> Copy
                         </button>
                         <button
                           type="button"
                           onClick={() => handleStartEdit(m)}
                           className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:text-blue-600 focus-visible:outline-none focus-visible:ring focus-visible:ring-blue-200"
                         >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden /> 編集
+                          <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
                         </button>
                       </div>
                     )}
@@ -251,7 +251,7 @@ async function handleSubmitEdit(event: React.FormEvent) {
           {(loading || editingLoading) && (
             <div className="text-left">
               <div className="inline-block rounded bg-slate-100 px-3 py-2 text-sm text-slate-600">
-                アシスタントが返信を生成しています…
+                The assistant is writing a reply...
               </div>
             </div>
           )}
@@ -259,7 +259,7 @@ async function handleSubmitEdit(event: React.FormEvent) {
         <form onSubmit={handleSend} className="flex gap-2">
           <input
             className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            placeholder="例: 先月の飲食カテゴリーはどれくらい?"
+            placeholder="Example: How much did I spend on dining last month?"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
@@ -268,14 +268,14 @@ async function handleSubmitEdit(event: React.FormEvent) {
             type="submit"
             disabled={disabled}
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >{loading ? "送信中" : "送信"}</button>
+          >{loading ? "Sending..." : "Send"}</button>
           {editingMessage && (
             <button
               type="button"
               onClick={handleCancelEdit}
               className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
               disabled={loading}
-            >キャンセル</button>
+            >Cancel</button>
           )}
         </form>
       </div>

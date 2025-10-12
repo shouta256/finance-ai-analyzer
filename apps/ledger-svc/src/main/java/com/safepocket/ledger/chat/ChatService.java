@@ -25,8 +25,8 @@ public class ChatService {
 
     private volatile boolean apiKeyWarned = false;
 
-    private static final String SYSTEM_PROMPT = "You are Safepocket's financial assistant. Use the provided account "
-            + "summaries as context, cite concrete amounts and dates when available, and never fabricate data.";
+    private static final String SYSTEM_PROMPT = "You are Safepocket's financial helper. Use the account summary "
+            + "data as simple context, give amounts in US dollars, mention clear dates, and never invent facts.";
 
     // Heuristics to avoid provider truncation: cap context and history message sizes
     private static final int MAX_CONTEXT_CHARS = 8000;  // ~8KB
@@ -86,7 +86,7 @@ public class ChatService {
             String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
                     .orElseGet(() -> UUID.randomUUID().toString());
             log.error("AI chat: failed to generate reply for conversation {} user {} traceId {}", convId, userId, traceId, ex);
-            assistantContent = "(Fallback) 応答を生成できませんでした。サポートに連絡し、traceId=" + traceId + " を共有してください。";
+            assistantContent = "(Fallback) I cannot create a reply now. Please contact support and share traceId=" + traceId + ".";
         }
         ChatMessageEntity assistantMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.ASSISTANT, assistantContent, Instant.now());
         repository.save(assistantMsg);
@@ -103,10 +103,10 @@ public class ChatService {
         try {
             if (!openAiClient.hasCredentials()) {
                 if (!apiKeyWarned) {
-                    log.warn("AI chat: OPENAI_API_KEY が設定されていないため fallback 応答を使用します (以後同警告抑制)" );
+                    log.warn("AI chat: OPENAI_API_KEY missing, using fallback (this warning is printed once)" );
                     apiKeyWarned = true;
                 }
-                return "(Fallback) 了解しました。現在はサンドボックスモードです — メッセージ: " + latestUserMessage;
+                return "(Fallback) I understand. The assistant runs in sandbox mode now. Your message: " + latestUserMessage;
             }
 
             String context = chatContextService.buildContext(userId, conversationId, latestUserMessage);
@@ -146,14 +146,14 @@ public class ChatService {
             if (aiReply.isPresent()) {
                 return aiReply.get();
             }
-            log.warn("AI chat: OpenAI 応答が取得できなかったため fallback 表示");
-            return "(Fallback) 応答を生成できませんでしたがメッセージは保存されました。";
+            log.warn("AI chat: model did not return content, using fallback");
+            return "(Fallback) I could not create a reply, but your message is saved.";
         } catch (Exception ex) {
             String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
                     .orElseGet(() -> UUID.randomUUID().toString());
             log.error("AI chat: unexpected failure building reply traceId {}", traceId, ex);
             // Use phrasing consistent with outer fallback for test stability and UX
-            return "(Fallback) 応答を生成できませんでした。traceId=" + traceId + " をサポートへお伝えください。";
+            return "(Fallback) I could not create a reply. Please share traceId=" + traceId + " with support.";
         }
     }
 

@@ -41,7 +41,7 @@ public class TransactionSyncService {
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
             TransactionEmbeddingService transactionEmbeddingService,
-        PlaidService plaidService,
+            PlaidService plaidService,
             @org.springframework.beans.factory.annotation.Value("${safepocket.demo.seed:false}") boolean demoSeedEnabled
     ) {
         this.transactionRepository = transactionRepository;
@@ -53,15 +53,17 @@ public class TransactionSyncService {
         this.demoSeedEnabled = demoSeedEnabled;
     }
 
-    public SyncResult triggerSync(boolean forceFullSync, String traceId) {
+    public SyncResult triggerSync(boolean forceFullSync, boolean demoSeedRequested, String traceId) {
         UUID userId = authenticatedUserProvider.requireCurrentUserId();
         rlsGuard.setAppsecUser(userId);
         Instant lastSync = userSyncCursor.get(userId);
-        boolean needsSeed = forceFullSync || lastSync == null;
+        boolean needsSeed = forceFullSync || lastSync == null || demoSeedRequested;
+        boolean useDemoSeed = demoSeedRequested || demoSeedEnabled;
         int synced = 0;
         if (needsSeed) {
             List<Transaction> toInsert = List.of();
-            if (demoSeedEnabled) {
+            if (useDemoSeed) {
+                ensureDemoAccounts(userId);
                 toInsert = seedTransactions(userId);
             } else {
                 // Fetch recent real transactions from Plaid
@@ -75,24 +77,44 @@ public class TransactionSyncService {
         }
         userSyncCursor.put(userId, Instant.now());
         // If demo seeding is disabled, there is no backlog to process.
-        int pending = demoSeedEnabled ? Math.max(0, 50 - synced) : 0;
+        int pending = useDemoSeed ? Math.max(0, 50 - synced) : 0;
         return new SyncResult("STARTED", synced, pending, traceId);
+    }
+
+    private void ensureDemoAccounts(UUID userId) {
+        List<AccountEntity> existing = jpaAccountRepository.findByUserId(userId);
+        Instant now = Instant.now();
+        boolean hasChecking = existing.stream().anyMatch(acc -> acc.getName().equalsIgnoreCase("Demo Checking Account"));
+        boolean hasSavings = existing.stream().anyMatch(acc -> acc.getName().equalsIgnoreCase("Demo Savings Account"));
+        boolean hasCredit = existing.stream().anyMatch(acc -> acc.getName().equalsIgnoreCase("Demo Credit Card"));
+
+        List<AccountEntity> toCreate = new ArrayList<>();
+        if (!hasChecking) {
+            toCreate.add(new AccountEntity(UUID.randomUUID(), userId, "Demo Checking Account", "Safepocket Demo Bank", now));
+        }
+        if (!hasSavings) {
+            toCreate.add(new AccountEntity(UUID.randomUUID(), userId, "Demo Savings Account", "Safepocket Demo Bank", now));
+        }
+        if (!hasCredit) {
+            toCreate.add(new AccountEntity(UUID.randomUUID(), userId, "Demo Credit Card", "Safepocket Demo Bank", now));
+        }
+        if (!toCreate.isEmpty()) {
+            jpaAccountRepository.saveAll(toCreate);
+        }
     }
 
     private List<Transaction> seedTransactions(UUID userId) {
         List<Transaction> transactions = new ArrayList<>();
-        
-        // Get actual accounts from database
+
         List<AccountEntity> userAccounts = jpaAccountRepository.findByUserId(userId);
         if (userAccounts.isEmpty()) {
-            return transactions; // No accounts found, return empty list
+            return transactions;
         }
-        
-        // Use actual account IDs from database
+
         UUID checkingAccount = null;
         UUID savingsAccount = null;
         UUID creditAccount = null;
-        
+
         for (AccountEntity account : userAccounts) {
             String accountName = account.getName().toLowerCase();
             if (accountName.contains("checking") || accountName.contains("primary")) {

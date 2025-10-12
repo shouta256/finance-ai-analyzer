@@ -73,11 +73,6 @@ safepocket:
   security:
     # Must match frontend middleware fallback (ensure consistent default for local dev)
     dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}
-  rag:
-    vector-provider: ${VECTOR_PROVIDER:pgvector}
-    embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
-    max-rows: ${RAG_MAX_ROWS:20}
-    embed-dimension: ${RAG_EMBED_DIM:1536}
   db:
     bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}
   demo:

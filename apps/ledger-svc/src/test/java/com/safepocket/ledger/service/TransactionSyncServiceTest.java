@@ -70,7 +70,7 @@ class TransactionSyncServiceTest {
     @Test
     void seedsTransactionsOnFirstSync() {
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
-        var result = transactionSyncService.triggerSync(false, "trace-1");
+        var result = transactionSyncService.triggerSync(false, false, "trace-1");
 
         assertThat(result.syncedCount()).isGreaterThan(0);
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
@@ -97,11 +97,36 @@ class TransactionSyncServiceTest {
         );
 
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
-        var result = transactionSyncService.triggerSync(false, "trace-2");
-
+        var result = transactionSyncService.triggerSync(false, false, "trace-2");
         assertThat(result.syncedCount()).isZero();
         assertThat(result.pendingCount()).isZero();
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
         assertThat(transactionRepository.findByUserIdAndMonth(userId, current)).isEmpty();
+    }
+
+    @Test
+    void seedsWhenRequestedEvenIfDisabled() {
+        transactionSyncService = new TransactionSyncService(
+            transactionRepository,
+            jpaAccountRepository,
+            authenticatedUserProvider,
+            rlsGuard,
+            transactionEmbeddingService,
+            plaidService,
+            false
+        );
+
+        when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
+        var result = transactionSyncService.triggerSync(false, true, "trace-3");
+
+        assertThat(result.syncedCount()).isGreaterThan(0);
+        YearMonth current = YearMonth.now(ZoneOffset.UTC);
+        var seeded = transactionRepository.findByUserIdAndMonth(userId, current);
+        if (!seeded.isEmpty()) {
+            assertThat(seeded).isNotEmpty();
+        } else {
+            YearMonth previous = current.minusMonths(1);
+            assertThat(transactionRepository.findByUserIdAndMonth(userId, previous)).isNotEmpty();
+        }
     }
 }

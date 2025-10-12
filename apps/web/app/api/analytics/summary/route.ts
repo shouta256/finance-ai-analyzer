@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
   if (errorResponse) return errorResponse;
   const { searchParams } = new URL(request.url);
-  // 2) month 正規化: 2025/08 → 2025-08 などスラッシュをハイフンへ
+  // Normalize month: change 2025/08 into 2025-08 (slash to hyphen)
   const rawMonth = searchParams.get("month") ?? undefined;
   const normalizedMonth = rawMonth ? rawMonth.replace(/\//g, "-") : undefined;
   const query = querySchema.parse({ month: normalizedMonth, generateAi: searchParams.get("generateAi") ?? undefined });

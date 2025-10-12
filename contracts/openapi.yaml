@@ -308,6 +308,10 @@ components:
           type: boolean
           default: false
           description: Force a full backfill of transactions
+        demoSeed:
+          type: boolean
+          default: false
+          description: When true, load demo accounts and sample transactions instead of calling Plaid
     TransactionsSyncResponse:
       type: object
       required:

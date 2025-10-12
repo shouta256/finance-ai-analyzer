@@ -15,6 +15,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
 
     ChatMessageEntity findFirstByUserIdOrderByCreatedAtDesc(UUID userId);
 
+    List<ChatMessageEntity> findByConversationIdAndUserIdOrderByCreatedAtAsc(UUID conversationId, UUID userId);
+
+    boolean existsByConversationIdAndUserId(UUID conversationId, UUID userId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from ChatMessageEntity m where m.createdAt < :threshold")
     int deleteOlderThan(@Param("threshold") Instant threshold);

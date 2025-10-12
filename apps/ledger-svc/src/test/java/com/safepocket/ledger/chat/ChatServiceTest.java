@@ -57,7 +57,7 @@ class ChatServiceTest {
             saved.add(entity);
             return entity;
         });
-        when(repository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class)))
+        when(repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(any(UUID.class), any(UUID.class)))
                 .thenAnswer(invocation -> new ArrayList<>(saved));
         when(chatContextService.buildContext(any(UUID.class), any(UUID.class), anyString()))
                 .thenThrow(new RuntimeException("boom"));

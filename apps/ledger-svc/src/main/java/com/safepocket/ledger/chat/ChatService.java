@@ -71,6 +71,10 @@ public class ChatService {
             }
         }
 
+        if (userMsg == null && convId != null && !repository.existsByConversationIdAndUserId(convId, userId)) {
+            convId = null;
+        }
+
         boolean newConversation = convId == null;
         convId = newConversation ? UUID.randomUUID() : convId;
 
@@ -92,7 +96,7 @@ public class ChatService {
         repository.save(assistantMsg);
 
         Instant cutoff = retentionManager.currentCutoff();
-        List<ChatMessageDto> msgs = repository.findByConversationIdOrderByCreatedAtAsc(convId).stream()
+        List<ChatMessageDto> msgs = repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(convId, userId).stream()
                 .filter(e -> !e.getCreatedAt().isBefore(cutoff))
                 .map(e -> new ChatMessageDto(e.getId(), e.getRole().name(), e.getContent(), e.getCreatedAt()))
                 .collect(Collectors.toList());
@@ -122,7 +126,7 @@ public class ChatService {
             // Include recent conversation history so the assistant can respond with context
             // Keep within retention window and a small sliding window to control tokens
             Instant cutoff = retentionManager.currentCutoff();
-            List<ChatMessageEntity> history = repository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+            List<ChatMessageEntity> history = repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(conversationId, userId)
                     .stream()
                     .filter(e -> !e.getCreatedAt().isBefore(cutoff))
                     .toList();
@@ -163,12 +167,12 @@ public class ChatService {
         List<ChatMessageEntity> history;
         UUID resolvedConversationId = conversationId;
         if (conversationId != null) {
-            history = repository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+            history = repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(conversationId, userId);
         } else {
             ChatMessageEntity latest = repository.findFirstByUserIdOrderByCreatedAtDesc(userId);
             if (latest != null) {
                 resolvedConversationId = latest.getConversationId();
-                history = repository.findByConversationIdOrderByCreatedAtAsc(resolvedConversationId);
+                history = repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(resolvedConversationId, userId);
             } else {
                 history = List.of();
             }

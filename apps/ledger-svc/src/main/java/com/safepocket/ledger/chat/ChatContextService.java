@@ -130,11 +130,11 @@ public class ChatContextService {
             return false;
         }
         String normalized = message.toLowerCase();
-        return normalized.matches(".*(明細|見せ|detail|show|list|取引|transactions?).*")
-                || normalized.matches(".*(昨日|today|yesterday|先週|specific).*")
-                || normalized.matches(".*\\d{1,2}\\s*(日|th|st|nd|rd).*")
-                || normalized.contains("追加")
-                || normalized.contains("more");
+        return normalized.matches(".*(detail|show|list|transaction|transactions?).*")
+                || normalized.matches(".*(today|yesterday|last week|specific).*")
+                || normalized.matches(".*\\b\\d{1,2}(th|st|nd|rd)\\b.*")
+                || normalized.contains("more")
+                || normalized.contains("add ");
     }
 
     private boolean requiresAggregate(String message) {
@@ -142,7 +142,7 @@ public class ChatContextService {
             return false;
         }
         String normalized = message.toLowerCase();
-        return normalized.matches(".*(平均|trend|推移|per category|by category| breakdown |比較|compare|トレンド|一番|top|most|最大|ランキング).*");
+        return normalized.matches(".*(average|trend|per category|by category|breakdown|compare|top|most|largest|highest|ranking|spend).*");
     }
 
     private String inferGranularity(String message) {
@@ -150,10 +150,10 @@ public class ChatContextService {
             return "category";
         }
         String normalized = message.toLowerCase();
-        if (normalized.matches(".*(merchant|店舗|店).*")) {
+        if (normalized.matches(".*(merchant|store|shop).*")) {
             return "merchant";
         }
-        if (normalized.matches(".*(month|推移|月次|trend).*")) {
+        if (normalized.matches(".*(month|trend).*")) {
             return "month";
         }
         return "category";
@@ -174,17 +174,17 @@ public class ChatContextService {
             }
         }
 
-        if (containsAny(normalized, "six month", "6 month", "last half", "半年", "半年前", "過去半年")) {
+        if (containsAny(normalized, "six month", "6 month", "last half", "past half year")) {
             addRecentMonths(months, current, 6);
-        } else if (containsAny(normalized, "three month", "3 month", "quarter", "三か月", "三ヶ月", "3ヶ月")) {
+        } else if (containsAny(normalized, "three month", "3 month", "quarter")) {
             addRecentMonths(months, current, 3);
         }
 
-        if (containsAny(normalized, "last month", "previous month", "先月")) {
+        if (containsAny(normalized, "last month", "previous month")) {
             months.add(current.minusMonths(1));
         }
 
-        if (containsAny(normalized, "this month", "今月", "current month")) {
+        if (containsAny(normalized, "this month", "current month")) {
             months.add(current);
         }
 

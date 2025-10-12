@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema } from "./schemas";
+import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema, ragAggregateResponseSchema, ragSearchResponseSchema, ragSummariesResponseSchema } from "./schemas";
 
 export type AnalyticsSummary = z.infer<typeof analyticsSummarySchema>;
 export type TransactionsList = z.infer<typeof transactionsListSchema>;
@@ -34,7 +34,6 @@ export async function getAnalyticsSummary(month: string, options?: { generateAi?
   url.searchParams.set("month", month);
   if (options?.generateAi) url.searchParams.set("generateAi", "true");
   if (process.env.NEXT_PUBLIC_DEBUG_API === 'true') {
-    // eslint-disable-next-line no-console
     console.debug('[client-api] getAnalyticsSummary ->', url.toString());
   }
   const res = await fetch(url.toString(), { cache: "no-store" });
@@ -84,4 +83,40 @@ export async function exchangePlaidPublicToken(publicToken: string) {
     body: JSON.stringify({ publicToken }),
   });
   return handleJson(res, plaidExchangeSchema);
+}
+
+// RAG client helpers
+export interface RagSearchOptions {
+  q?: string;
+  from?: string; // YYYY-MM-DD
+  to?: string;   // YYYY-MM-DD
+  categories?: string[];
+  amountMin?: number;
+  amountMax?: number;
+  topK?: number;
+}
+
+export async function ragSearch(options: RagSearchOptions) {
+  const res = await fetch(`/api/rag/search`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(options),
+  });
+  return handleJson(res, ragSearchResponseSchema);
+}
+
+export async function ragSummaries(month: string) {
+  const url = new URL(`/api/rag/summaries`, window.location.origin);
+  url.searchParams.set("month", month);
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  return handleJson(res, ragSummariesResponseSchema);
+}
+
+export async function ragAggregate(body: { from?: string; to?: string; granularity: "category" | "merchant" | "month"; }) {
+  const res = await fetch(`/api/rag/aggregate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleJson(res, ragAggregateResponseSchema);
 }

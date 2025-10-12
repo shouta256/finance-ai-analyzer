@@ -1,0 +1,16 @@
+{
+  "extends": ["biome:recommended"],
+  "files": {
+    "ignore": [
+      "node_modules",
+      ".next",
+      "dist"
+    ]
+  },
+  "formatter": {
+    "enabled": true
+  },
+  "linter": {
+    "enabled": true
+  }
+}

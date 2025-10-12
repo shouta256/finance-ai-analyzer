@@ -85,12 +85,12 @@ function LoginForm() {
     window.location.href = authorizeUrl;
   };
 
-  // Auto redirect to Cognito in production when enabled and dev login not explicitly allowed
+  // Auto redirect to Cognito in production when enabled and dev login not explicitly allowed.
+  // handleCognito is intentionally excluded from deps to avoid infinite redirect loops.
   useEffect(() => {
     if (cognitoEnabled && showCognito) {
       handleCognito();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cognitoEnabled, showCognito]);
 
   return (

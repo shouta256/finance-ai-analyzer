@@ -62,9 +62,10 @@ safepocket:
     webhook-url: ${PLAID_WEBHOOK_URL:}
     webhook-secret: ${PLAID_WEBHOOK_SECRET:}
   ai:
+    provider: ${SAFEPOCKET_AI_PROVIDER:openai}
     model: ${SAFEPOCKET_AI_MODEL:gpt-4o-mini}
     snapshot: ${SAFEPOCKET_AI_MODEL_SNAPSHOT:}
-    endpoint: https://api.openai.com/v1/responses
+    endpoint: ${SAFEPOCKET_AI_ENDPOINT:https://api.openai.com/v1/responses}
     api-key: ${OPENAI_API_KEY:}
   chat:
     retention-days: ${SAFEPOCKET_CHAT_RETENTION_DAYS:30}

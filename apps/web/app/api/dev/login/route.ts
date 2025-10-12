@@ -8,9 +8,16 @@ const PRIMARY_COOKIE = 'sp_token';
 const ONE_HOUR_SECONDS = 60 * 60;
 
 function shouldUseSecureCookie(req: NextRequest) {
+  // In all non-production environments, prefer non-secure cookies to ensure local HTTP works
+  if (process.env.NODE_ENV !== 'production') return false;
+
   const envFlag = process.env.SAFEPOCKET_DEV_COOKIE_SECURE;
   if (envFlag === 'true') return true;
   if (envFlag === 'false') return false;
+
+  const hostHeader = req.headers.get('host') || '';
+  const hostname = (hostHeader.split(':')[0] || req.nextUrl.hostname || '').toLowerCase();
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname.endsWith('.local');
 
   const forwardedProto = req.headers.get('x-forwarded-proto');
   if (forwardedProto === 'https') return true;
@@ -20,7 +27,8 @@ function shouldUseSecureCookie(req: NextRequest) {
   if (protocol === 'https') return true;
   if (protocol === 'http') return false;
 
-  return process.env.NODE_ENV === 'production';
+  // Default secure in production for non-local hosts
+  return !isLocalHost;
 }
 
 function devLoginEnabled(): boolean {

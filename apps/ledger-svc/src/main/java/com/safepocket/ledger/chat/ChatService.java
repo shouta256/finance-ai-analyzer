@@ -28,6 +28,11 @@ public class ChatService {
     private static final String SYSTEM_PROMPT = "You are Safepocket's financial assistant. Use the provided account "
             + "summaries as context, cite concrete amounts and dates when available, and never fabricate data.";
 
+    // Heuristics to avoid provider truncation: cap context and history message sizes
+    private static final int MAX_CONTEXT_CHARS = 8000;  // ~8KB
+    private static final int MAX_HISTORY_MSG_CHARS = 1200;
+    private static final int MAX_HISTORY_MESSAGES = 3;   // keep it short to reduce token usage
+
     public ChatService(ChatMessageRepository repository,
                        OpenAiResponsesClient openAiClient,
                        ChatContextService chatContextService,
@@ -105,6 +110,9 @@ public class ChatService {
             }
 
             String context = chatContextService.buildContext(userId, conversationId, latestUserMessage);
+            if (context != null && context.length() > MAX_CONTEXT_CHARS) {
+                context = context.substring(0, MAX_CONTEXT_CHARS) + "\n[...context truncated...]";
+            }
             List<OpenAiResponsesClient.Message> messages = new ArrayList<>();
             messages.add(new OpenAiResponsesClient.Message("system", SYSTEM_PROMPT));
             if (!context.isBlank()) {
@@ -120,15 +128,20 @@ public class ChatService {
                     .toList();
 
             // Keep only the last N messages
-            final int maxMessages = 20; // roughly ~10 turns
+            final int maxMessages = MAX_HISTORY_MESSAGES; // roughly ~1-2 turns
             int start = Math.max(0, history.size() - maxMessages);
             for (int i = start; i < history.size(); i++) {
                 ChatMessageEntity e = history.get(i);
                 String role = e.getRole() == ChatMessageEntity.Role.ASSISTANT ? "assistant" : "user";
-                messages.add(new OpenAiResponsesClient.Message(role, e.getContent()));
+                String content = e.getContent();
+                if (content != null && content.length() > MAX_HISTORY_MSG_CHARS) {
+                    content = content.substring(0, MAX_HISTORY_MSG_CHARS) + "\n[...truncated...]";
+                }
+                messages.add(new OpenAiResponsesClient.Message(role, content));
             }
 
-            Optional<String> aiReply = openAiClient.generateText(messages, 400);
+            // Use a higher cap to reduce truncation (Gemini may end with MAX_TOKENS otherwise)
+            Optional<String> aiReply = openAiClient.generateText(messages, 1200);
 
             if (aiReply.isPresent()) {
                 return aiReply.get();

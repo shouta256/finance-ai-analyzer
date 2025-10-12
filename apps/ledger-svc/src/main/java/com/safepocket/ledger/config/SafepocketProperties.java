@@ -66,8 +66,9 @@ public record SafepocketProperties(
         }
     }
 
-    public record Ai(String model, String endpoint, String apiKey, String snapshot) {
+    public record Ai(String provider, String model, String endpoint, String apiKey, String snapshot) {
         public Ai {
+            // provider optional; defaults to openai
             if (model == null || model.isBlank()) {
                 throw new IllegalArgumentException("model must be provided");
             }
@@ -76,6 +77,10 @@ public record SafepocketProperties(
             }
             // apiKey may be null/blank; when absent the app will use a deterministic fallback (no external calls)
             // snapshot is optional: used when primary alias (model) requires explicit snapshot access (e.g. gpt-5-nano-YYYY-MM-DD)
+        }
+
+        public String providerOrDefault() {
+            return (provider != null && !provider.isBlank()) ? provider.toLowerCase() : "openai";
         }
 
         public String snapshotOrDefault() {

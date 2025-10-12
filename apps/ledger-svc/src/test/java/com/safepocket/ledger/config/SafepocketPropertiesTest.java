@@ -11,7 +11,7 @@ class SafepocketPropertiesTest {
         SafepocketProperties props = new SafepocketProperties(
                 new SafepocketProperties.Cognito("https://example.com","aud", false),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
-                new SafepocketProperties.Ai("model","https://api.example.com",null,null),
+                new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null),
                 new SafepocketProperties.Security("12345678901234567890123456789012"),
                 new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536)
         );

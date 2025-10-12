@@ -30,12 +30,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [aiReady, setAiReady] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<{ code: string; traceId?: string; details?: string } | null>(null);
   const [linking, setLinking] = useState<boolean>(false);
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [generatingAi, setGeneratingAi] = useState<boolean>(false);
 
   const anomalies = state.summary.anomalies;
   const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
   const sentimentTone = useMemo(() => state.summary.aiHighlight.sentiment, [state.summary.aiHighlight.sentiment]);
 
   async function handleSync() {
+    if (syncing || generatingAi || linking) return;
+    setSyncing(true);
+    setMessage("Syncing transactions…");
     startTransition(async () => {
       try {
         await triggerTransactionSync();
@@ -44,6 +49,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       } catch (error) {
         console.error(error);
         setMessage((error as Error).message ?? "Sync failed");
+      } finally {
+        setSyncing(false);
       }
     });
   }
@@ -142,6 +149,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   async function handleGenerateAi() {
+    if (generatingAi || syncing || linking) return;
+    setGeneratingAi(true);
+    setMessage("Generating AI summary…");
     startTransition(async () => {
       try {
         const summary = await getAnalyticsSummary(month, { generateAi: true });
@@ -151,6 +161,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       } catch (err) {
         console.error(err);
         setMessage((err as Error).message ?? "AI summary failed");
+      } finally {
+        setGeneratingAi(false);
       }
     });
   }
@@ -186,23 +198,23 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         <button
           onClick={handleLink}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:opacity-50"
-          disabled={isPending || linking}
+          disabled={isPending || linking || syncing || generatingAi}
         >
           Link Accounts with Plaid
         </button>
         <button
           onClick={handleSync}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
-          disabled={isPending}
+          disabled={isPending || linking || generatingAi || syncing}
         >
-          Sync Transactions
+          {syncing ? "Syncing…" : "Sync Transactions"}
         </button>
         <button
           onClick={handleGenerateAi}
           className="rounded-md border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
-          disabled={isPending}
+          disabled={isPending || linking || syncing || generatingAi}
         >
-          Generate AI Summary
+          {generatingAi ? "Generating…" : "Generate AI Summary"}
         </button>
         {message ? <span className="text-sm text-slate-600">{message}</span> : null}
       </div>

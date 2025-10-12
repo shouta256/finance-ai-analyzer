@@ -99,6 +99,10 @@ public class AiHighlightService {
             };
             return new AnalyticsSummary.AiHighlight(title, summary, aiSentiment, recommendations);
         } catch (Exception ex) {
+            AnalyticsSummary.AiHighlight loose = tryLooseParse(normalized, totalIncome, totalSpend, topAnomaly, sentiment);
+            if (loose != null) {
+                return loose;
+            }
             log.warn("AI highlight: failed to parse response '{}', falling back", normalized);
             return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
         }
@@ -108,6 +112,92 @@ public class AiHighlightService {
         if (recObj instanceof List<?> list) {
             return list.stream().map(String::valueOf).toList();
         }
+        return List.of();
+    }
+
+    private AnalyticsSummary.AiHighlight tryLooseParse(
+            String text,
+            BigDecimal totalIncome,
+            BigDecimal totalSpend,
+            AnalyticsSummary.AnomalyInsight topAnomaly,
+            AnalyticsSummary.AiHighlight.Sentiment defaultSentiment) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String s = text.trim();
+        if (s.startsWith("```")) {
+            int firstNl = s.indexOf('\n');
+            if (firstNl > 0) s = s.substring(firstNl + 1);
+            int fence = s.lastIndexOf("```");
+            if (fence > 0) s = s.substring(0, fence);
+            s = s.trim();
+        }
+        int firstBrace = s.indexOf('{');
+        int lastBrace = s.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            String candidate = s.substring(firstBrace, lastBrace + 1);
+            try {
+                Map<String, Object> ai = objectMapper.readValue(candidate, new TypeReference<Map<String, Object>>() {});
+                String title = ai.get("title") != null ? String.valueOf(ai.get("title")) : "Monthly financial health";
+                String summary = ai.get("summary") != null ? String.valueOf(ai.get("summary")) : "";
+                String sentimentStr = ai.get("sentiment") != null ? String.valueOf(ai.get("sentiment")) : defaultSentiment.name();
+                List<String> recommendations = extractRecommendations(ai.get("recommendations"));
+                AnalyticsSummary.AiHighlight.Sentiment aiSentiment = switch (sentimentStr.toUpperCase()) {
+                    case "POSITIVE" -> AnalyticsSummary.AiHighlight.Sentiment.POSITIVE;
+                    case "NEGATIVE" -> AnalyticsSummary.AiHighlight.Sentiment.NEGATIVE;
+                    default -> defaultSentiment;
+                };
+                return new AnalyticsSummary.AiHighlight(title, summary, aiSentiment, recommendations);
+            } catch (Exception ignore) {
+                // fall through to regex-based salvage
+            }
+        }
+        String title = matchFirstGroup(s, "\\\"title\\\"\\s*:\\s*\\\"(.*?)\\\"");
+        String summary = matchFirstGroup(s, "\\\"summary\\\"\\s*:\\s*\\\"(.*?)\\\"");
+        String sentimentStr = matchFirstGroup(s, "\\\"sentiment\\\"\\s*:\\s*\\\"(POSITIVE|NEUTRAL|NEGATIVE)\\\"");
+        List<String> recs = matchAllGroups(s, "\\\"recommendations\\\"[\\s\\S]*?\\[(.*?)\\]", "\\\"(.*?)\\\"");
+        if (title != null || summary != null || sentimentStr != null || !recs.isEmpty()) {
+            AnalyticsSummary.AiHighlight.Sentiment aiSentiment = switch (sentimentStr != null ? sentimentStr.toUpperCase() : "") {
+                case "POSITIVE" -> AnalyticsSummary.AiHighlight.Sentiment.POSITIVE;
+                case "NEGATIVE" -> AnalyticsSummary.AiHighlight.Sentiment.NEGATIVE;
+                case "NEUTRAL" -> AnalyticsSummary.AiHighlight.Sentiment.NEUTRAL;
+                default -> defaultSentiment;
+            };
+            return new AnalyticsSummary.AiHighlight(
+                    title != null ? title : "Monthly financial health",
+                    summary != null ? summary : "",
+                    aiSentiment,
+                    recs.isEmpty() ? List.of() : recs
+            );
+        }
+        return null;
+    }
+
+    private String matchFirstGroup(String text, String pattern) {
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher m = p.matcher(text);
+            if (m.find()) return m.group(1);
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private List<String> matchAllGroups(String text, String outerPattern, String innerQuotedPattern) {
+        try {
+            java.util.regex.Pattern outer = java.util.regex.Pattern.compile(outerPattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher mo = outer.matcher(text);
+            if (mo.find()) {
+                String inside = mo.group(1);
+                java.util.regex.Pattern inner = java.util.regex.Pattern.compile(innerQuotedPattern);
+                java.util.regex.Matcher mi = inner.matcher(inside);
+                List<String> out = new ArrayList<>();
+                while (mi.find()) {
+                    out.add(mi.group(1));
+                    if (out.size() >= 8) break;
+                }
+                return out;
+            }
+        } catch (Exception ignored) {}
         return List.of();
     }
 

@@ -161,8 +161,9 @@ public class OpenAiResponsesClient {
             ArrayNode parts = c.putArray("parts");
             parts.addObject().put("text", m.content());
         }
-        ObjectNode gen = root.putObject("generationConfig");
-        gen.put("maxOutputTokens", Optional.ofNullable(maxOutputTokens).filter(v -> v > 0).orElse(400));
+    ObjectNode gen = root.putObject("generationConfig");
+    int requestedMax = Optional.ofNullable(maxOutputTokens).filter(v -> v > 0).orElse(400);
+    gen.put("maxOutputTokens", requestedMax);
         // Hint Gemini to return plain text (avoids tool/function responses for simple Q&A)
         gen.put("responseMimeType", "text/plain");
 
@@ -177,7 +178,67 @@ public class OpenAiResponsesClient {
             if (response == null) return Optional.empty();
 
             String text = extractGeminiText(response);
+            String finishPrimary = null;
+            JsonNode candidatesPrimary = response.get("candidates");
+            if (candidatesPrimary != null && candidatesPrimary.isArray() && candidatesPrimary.size() > 0) {
+                JsonNode cand0 = candidatesPrimary.get(0);
+                JsonNode fr0 = cand0.get("finishReason");
+                if (fr0 != null && fr0.isTextual()) finishPrimary = fr0.asText();
+            }
             if (text != null && !text.isBlank()) {
+                // If the model stopped due to token limit, attempt a one-time continuation
+                if ("MAX_TOKENS".equalsIgnoreCase(finishPrimary) && requestedMax < 2048) {
+                    try {
+                        // Build a follow-up request that asks to continue exactly where it cut off
+                        ObjectNode root2 = objectMapper.createObjectNode();
+                        // carry forward any system instructions
+                        if (root.has("systemInstruction")) {
+                            root2.set("systemInstruction", root.get("systemInstruction"));
+                        }
+                        ArrayNode contents2 = root2.putArray("contents");
+                        // original non-system messages (history up to this turn)
+                        for (Message m : inputMessages) {
+                            if ("system".equalsIgnoreCase(m.role())) continue;
+                            ObjectNode c = contents2.addObject();
+                            String mapped = "user";
+                            if ("assistant".equalsIgnoreCase(m.role())) mapped = "model";
+                            c.put("role", mapped);
+                            ArrayNode parts = c.putArray("parts");
+                            parts.addObject().put("text", m.content());
+                        }
+                        // include the just-produced partial assistant text so the model can continue seamlessly
+                        if (text != null && !text.isBlank()) {
+                            ObjectNode lastModel = contents2.addObject();
+                            lastModel.put("role", "model");
+                            ArrayNode lastParts = lastModel.putArray("parts");
+                            lastParts.addObject().put("text", text);
+                        }
+                        // add an explicit continue instruction
+                        ObjectNode cont = contents2.addObject();
+                        cont.put("role", "user");
+                        ArrayNode contParts = cont.putArray("parts");
+                        contParts.addObject().put("text", "Continue the assistant's previous response. Continue exactly where it was cut off. Do not repeat sentences already given.");
+
+                        ObjectNode gen2 = root2.putObject("generationConfig");
+                        int followMax = Math.min(Math.max(requestedMax, 600), 2048);
+                        gen2.put("maxOutputTokens", followMax);
+                        gen2.put("responseMimeType", "text/plain");
+
+                        JsonNode response2 = restClient.post()
+                                .uri(url)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .headers(h -> h.set("x-goog-api-key", apiKey.get()))
+                                .body(root2)
+                                .retrieve()
+                                .body(JsonNode.class);
+                        String tail = extractGeminiText(response2);
+                        if (tail != null && !tail.isBlank()) {
+                            return Optional.of(text + (text.endsWith(" ") ? "" : " ") + tail);
+                        }
+                    } catch (Exception ex2) {
+                        log.warn("Gemini continuation attempt failed: {}", ex2.getMessage());
+                    }
+                }
                 return Optional.of(text);
             }
 
@@ -190,12 +251,12 @@ public class OpenAiResponsesClient {
                     blockReason = br.asText();
                 }
             }
-            String finish = null;
-            JsonNode candidates = response.get("candidates");
-            if (candidates != null && candidates.isArray() && candidates.size() > 0) {
-                JsonNode cand0 = candidates.get(0);
-                JsonNode fr = cand0.get("finishReason");
-                if (fr != null && fr.isTextual()) finish = fr.asText();
+            String finish = finishPrimary;
+            // If truncated due to max tokens, perform a one-time retry with a higher cap
+            if ("MAX_TOKENS".equalsIgnoreCase(finish) && requestedMax < 2048) {
+                int bumped = Math.min(Math.max(requestedMax * 2, requestedMax + 400), 2048);
+                log.warn("Gemini finishReason=MAX_TOKENS with no text; retrying once with maxOutputTokens={}", bumped);
+                return generateTextGemini(inputMessages, bumped, model);
             }
             if (blockReason != null || finish != null) {
                 String msg = "(AI) Response unavailable" +

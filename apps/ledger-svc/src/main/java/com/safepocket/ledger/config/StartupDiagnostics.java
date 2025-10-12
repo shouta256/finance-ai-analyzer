@@ -29,5 +29,13 @@ public class StartupDiagnostics {
                 ? plaid.clientId().substring(plaid.clientId().length() - 4) : "";
         log.info("Plaid config: env='{}', baseUrl='{}', clientId='***{}', redirectUriPresent={}",
                 plaid.environment(), plaid.baseUrl(), clientIdTail, plaid.redirectUri() != null && !plaid.redirectUri().isBlank());
+
+        var ai = props.ai();
+        String provider = ai.providerOrDefault();
+        String model = ai.snapshotOrDefault();
+        boolean hasKey = ai.apiKey() != null && !ai.apiKey().isBlank()
+                || ("gemini".equals(provider) ? System.getenv("GEMINI_API_KEY") != null : System.getenv("OPENAI_API_KEY") != null);
+        log.info("AI config: provider='{}', model='{}', endpoint='{}', apiKeyPresent={} (env override: provider='{}')",
+                provider, model, ai.endpoint(), hasKey, System.getenv("SAFEPOCKET_AI_PROVIDER"));
     }
 }

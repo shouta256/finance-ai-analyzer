@@ -24,16 +24,16 @@ export interface RagRouterResult {
 
 function needsSearch(query: string): boolean {
   const lowered = query.toLowerCase();
-  return /(明細|見せ|detail|show|list|取引|transactions?)/i.test(lowered)
-    || /(昨日|today|yesterday|先週|specific)/i.test(lowered)
-    || /\d{1,2}\s*(日|th|st|nd|rd)/i.test(lowered)
-    || lowered.includes("追加")
-    || lowered.includes("more");
+  return /(detail|show|list|transaction|transactions?)/i.test(lowered)
+    || /(today|yesterday|last week|specific)/i.test(lowered)
+    || /\b\d{1,2}(th|st|nd|rd)\b/i.test(lowered)
+    || lowered.includes("more")
+    || lowered.includes("add ");
 }
 
 function needsAggregate(query: string): boolean {
   const lowered = query.toLowerCase();
-  return /(平均|trend|推移|per category|by category| breakdown |比較|compare)/i.test(lowered);
+  return /(average|trend|per category|by category|breakdown|compare|top|most|largest|highest|ranking|spend)/i.test(lowered);
 }
 
 function cleanseSearchResult(result: RagSearchResponse, seen: Set<string>) {
@@ -105,9 +105,9 @@ export function createRagRouter(options: RagRouterOptions) {
     const shouldAggregate = needsAggregate(query);
 
     if (shouldAggregate) {
-      const granularity = /(merchant|店舗|店)/i.test(query)
+      const granularity = /(merchant|store|shop)/i.test(query)
         ? "merchant"
-        : /(month|推移|月次|trend)/i.test(query)
+        : /(month|trend)/i.test(query)
           ? "month"
           : options.aggregateDefaults?.granularity ?? "category";
       const aggregateRequest: RagAggregateRequest = {

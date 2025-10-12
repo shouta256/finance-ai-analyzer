@@ -8,6 +8,7 @@ import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
 import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.plaid.PlaidService;
+import com.safepocket.ledger.user.UserService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -32,6 +33,7 @@ public class TransactionSyncService {
     private final RlsGuard rlsGuard;
     private final TransactionEmbeddingService transactionEmbeddingService;
     private final PlaidService plaidService;
+    private final UserService userService;
     private final boolean demoSeedEnabled;
     private final Map<UUID, Instant> userSyncCursor = new ConcurrentHashMap<>();
 
@@ -42,6 +44,7 @@ public class TransactionSyncService {
             RlsGuard rlsGuard,
             TransactionEmbeddingService transactionEmbeddingService,
             PlaidService plaidService,
+            UserService userService,
             @org.springframework.beans.factory.annotation.Value("${safepocket.demo.seed:false}") boolean demoSeedEnabled
     ) {
         this.transactionRepository = transactionRepository;
@@ -50,6 +53,7 @@ public class TransactionSyncService {
         this.rlsGuard = rlsGuard;
         this.transactionEmbeddingService = transactionEmbeddingService;
         this.plaidService = plaidService;
+        this.userService = userService;
         this.demoSeedEnabled = demoSeedEnabled;
     }
 
@@ -83,6 +87,7 @@ public class TransactionSyncService {
 
     private void ensureDemoAccounts(UUID userId) {
         List<AccountEntity> existing = jpaAccountRepository.findByUserId(userId);
+        userService.ensureUserExists(userId, null, null);
         Instant now = Instant.now();
         boolean hasChecking = existing.stream().anyMatch(acc -> acc.getName().equalsIgnoreCase("Demo Checking Account"));
         boolean hasSavings = existing.stream().anyMatch(acc -> acc.getName().equalsIgnoreCase("Demo Savings Account"));

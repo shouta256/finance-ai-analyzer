@@ -107,3 +107,74 @@ export const chatResponseSchema = z.object({
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatResponse = z.infer<typeof chatResponseSchema>;
+
+// RAG schemas
+export const ragSearchResponseSchema = z.object({
+  rowsCsv: z.string(),
+  dict: z.object({
+    merchants: z.record(z.string()),
+    categories: z.record(z.string()),
+  }),
+  stats: z.object({
+    count: z.number(),
+    sum: z.number(),
+    avg: z.number(),
+  }),
+  traceId: z.string().nullable().optional(),
+  chatId: z.string(),
+});
+
+export const ragSummariesResponseSchema = z.object({
+  month: z.string(),
+  totals: z.object({
+    income: z.number(),
+    expense: z.number(),
+    net: z.number(),
+  }),
+  categories: z.array(
+    z.object({
+      code: z.string(),
+      label: z.string(),
+      count: z.number(),
+      sum: z.number(),
+      avg: z.number(),
+    }),
+  ),
+  merchants: z.array(
+    z.object({
+      merchantId: z.string(),
+      label: z.string(),
+      count: z.number(),
+      sum: z.number(),
+    }),
+  ),
+  traceId: z.string().nullable().optional(),
+});
+
+export const ragAggregateResponseSchema = z.object({
+  granularity: z.enum(["category", "merchant", "month"]),
+  from: z.string().nullable().optional(),
+  to: z.string().nullable().optional(),
+  buckets: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      count: z.number(),
+      sum: z.number(),
+      avg: z.number(),
+    }),
+  ),
+  timeline: z.array(
+    z.object({
+      bucket: z.string(),
+      count: z.number(),
+      sum: z.number(),
+    }),
+  ),
+  traceId: z.string().nullable().optional(),
+  chatId: z.string(),
+});
+
+export type RagSearchResponse = z.infer<typeof ragSearchResponseSchema>;
+export type RagSummariesResponse = z.infer<typeof ragSummariesResponseSchema>;
+export type RagAggregateResponse = z.infer<typeof ragAggregateResponseSchema>;

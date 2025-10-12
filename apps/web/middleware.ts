@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-// --- 公開パス定義（ここは完全素通し） ---
+// --- Public paths (no auth check) ---
 function isPublicPath(pathname: string) {
   return (
     pathname === '/' ||
@@ -20,15 +20,15 @@ function isPublicPath(pathname: string) {
   );
 }
 
-// --- レートリミット対象にしたいものだけ true ---
+// --- Rate limit only protected paths ---
 function shouldRateLimit(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (isPublicPath(pathname) || req.method === 'OPTIONS') return false;
-  if (pathname.startsWith('/api/')) return true; // すべての API は対象
-  return true; // その他=保護ページ想定
+  if (pathname.startsWith('/api/')) return true; // all API routes are protected
+  return true; // other pages are protected too
 }
 
-// --- 単純な固定ウィンドウ（必要ならKV等に置換） ---
+// --- Simple fixed-window rate limiter (swap with KV if needed) ---
 const hits = new Map<string, { count: number; resetAt: number }>();
 function takeTicket(key: string, limit = 60, windowSec = 60) {
   const now = Date.now();
@@ -44,19 +44,19 @@ function takeTicket(key: string, limit = 60, windowSec = 60) {
   return { ok: false, retryAfter: Math.ceil((rec.resetAt - now) / 1000) };
 }
 
-// --- JWT 検証（Cognito 自動組立 + 既存ロジック） ---
-// 優先順位: 明示的な COGNITO_ISSUER / _JWKS_URL / _AUDIENCE → region + user pool id から組み立て → dev secret fallback
+// --- JWT validation (Cognito first, then dev fallback) ---
+// Priority: explicit COGNITO_* values → build from region + pool id → dev secret fallback
 const REGION = process.env.COGNITO_REGION;
-const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID; // 例: us-east-1_abc123
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID; // Example: us-east-1_abc123
 const EXPLICIT_ISSUER = process.env.COGNITO_ISSUER;
 const EXPLICIT_JWKS = process.env.COGNITO_JWKS_URL;
-const EXPLICIT_AUDIENCE = process.env.COGNITO_AUDIENCE; // 任意: クライアントIDと異なる場合のみ
+const EXPLICIT_AUDIENCE = process.env.COGNITO_AUDIENCE; // Optional: use only when it differs from the client ID
 const CLIENT_ID = process.env.COGNITO_CLIENT_ID; // Cognito App Client ID
 
 let derivedIssuer = EXPLICIT_ISSUER || ((REGION && USER_POOL_ID) ? `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}` : undefined);
 let issuer = derivedIssuer;
 let jwksUri = EXPLICIT_JWKS || (issuer ? `${issuer}/.well-known/jwks.json` : undefined);
-let audience = EXPLICIT_AUDIENCE || CLIENT_ID; // 通常 audience=client_id
+let audience = EXPLICIT_AUDIENCE || CLIENT_ID; // default audience equals client_id
 
 const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
@@ -72,7 +72,7 @@ function isHttpUrl(value?: string) {
 }
 
 async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string; mode: string }> {
-  // 動的フォールバック: まだ issuer/audience 未決定ならヘッダ部を decode して iss/aud 推定
+  // Dynamic fallback: if issuer or audience is missing, decode header to guess iss/aud
   if (!issuer || !audience) {
     try {
       const [, payloadB64] = token.split('.');
@@ -97,13 +97,13 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
         const verified = await jwtVerify(token, remoteJwks, { issuer, audience });
         return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks+audi' };
       } catch (e: any) {
-        // Audience mismatch fallback: retry with issuer only (prevents infinite login loop when audience secret not injected yet)
+        // Audience mismatch fallback: retry with issuer only (avoids loops when audience is not set yet)
         if (e?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' || e?.message?.includes('audience')) {
           try {
             const verified2 = await jwtVerify(token, remoteJwks, { issuer });
             return { sub: verified2.payload.sub as string | undefined, iss: verified2.payload.iss as string | undefined, aud: (verified2.payload.aud as any), mode: 'jwks-issuer-only' };
           } catch (inner) {
-            // Non-production fallback: try dev shared secret to avoid blocking local flows when Cognito not configured
+            // Non-production fallback: try dev shared secret to keep local flows working when Cognito is not ready
             if (process.env.NODE_ENV !== 'production') {
               try {
                 const verifiedDev = await jwtVerify(token, new TextEncoder().encode(devSharedSecret));
@@ -115,7 +115,7 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
             throw inner; // propagate
           }
         }
-        // Non-production fallback: try dev shared secret on any signature/verification error
+        // Non-production fallback: try dev shared secret on other verify errors
         if (process.env.NODE_ENV !== 'production') {
           try {
             const verifiedDev = await jwtVerify(token, new TextEncoder().encode(devSharedSecret));
@@ -127,7 +127,7 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
         throw e;
       }
     } else {
-      // Audience unset → verify only issuer
+      // Audience is empty → verify issuer only
       try {
         const verified = await jwtVerify(token, remoteJwks, { issuer });
         return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks-no-aud' };
@@ -144,7 +144,7 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
       }
     }
   }
-  // dev fallback (署名なし検証用 shared secret)
+  // Dev fallback: verify with shared secret (no JWK)
   const encoder = new TextEncoder();
   const verified = await jwtVerify(token, encoder.encode(devSharedSecret));
   return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'dev-shared-secret' };
@@ -153,7 +153,7 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
 function extractToken(req: NextRequest): string | null {
   const auth = req.headers.get('authorization');
   if (auth?.startsWith('Bearer ')) return auth.slice('Bearer '.length);
-  // 強制移行: legacy safepocket_token は一時的に無視して再ログインを誘発
+  // Force migration: ignore legacy safepocket_token to trigger a fresh login
   const sp = req.cookies.get('sp_token')?.value;
   if (sp) return sp;
   return null;
@@ -162,13 +162,13 @@ function extractToken(req: NextRequest): string | null {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1) プリフライトは無条件通過
+  // 1) Allow preflight requests
   if (req.method === 'OPTIONS') return NextResponse.next();
 
-  // 2) 公開パスも無条件通過（ここで return！）
+  // 2) Allow public paths without checks
   if (isPublicPath(pathname)) return NextResponse.next();
 
-  // 3) レートリミット（対象のみ）
+  // 3) Apply rate limit when needed
   if (shouldRateLimit(req)) {
     const fwd = req.headers.get('x-forwarded-for') ?? '';
     const clientIp = fwd.split(',')[0].trim() || (req as any).ip || 'unknown';
@@ -181,7 +181,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // 4) Cookie / Authorization ヘッダで判定
+  // 4) Resolve token from Authorization header or cookie
   const token = extractToken(req);
   if (!token) {
     if (pathname.startsWith('/api/')) {
@@ -191,7 +191,7 @@ export async function middleware(req: NextRequest) {
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname || '/dashboard');
     const r = NextResponse.redirect(url);
-    // 直前の callback で secure cookie がブラウザに保存されなかった場合の調査用
+    // Debug hint when secure cookie failed due to http proto
     if (req.headers.get('x-forwarded-proto') === 'http') {
       r.headers.set('x-auth-hint', 'missing-token-proto-http');
     }
@@ -221,7 +221,7 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname);
-    // デバッグ用ヘッダ (本番で機微なし) – 末尾 1回の失敗理由を可視化
+    // Debug headers (safe for production) show the last failure reason
     const res = NextResponse.redirect(url);
     res.headers.set('x-auth-error', (e as Error).message);
     res.headers.set('x-auth-issuer', issuer || '');
@@ -231,7 +231,7 @@ export async function middleware(req: NextRequest) {
   }
 }
 
-// 静的は最初から matcher で外しておく（安全網）
+// Exclude static files via matcher for safety
 export const config = {
   matcher: [
     '/((?!_next/|favicon\\.ico|robots\\.txt|api/healthz|api/actuator/health/liveness).*)',

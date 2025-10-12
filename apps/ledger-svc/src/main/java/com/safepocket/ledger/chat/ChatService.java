@@ -25,8 +25,11 @@ public class ChatService {
 
     private volatile boolean apiKeyWarned = false;
 
-    private static final String SYSTEM_PROMPT = "You are Safepocket's financial helper. Use the account summary "
-            + "data as simple context, give amounts in US dollars, mention clear dates, and never invent facts.";
+    private static final String SYSTEM_PROMPT = "You are Safepocket's financial helper. Use the provided context to answer. "
+        + "Context JSON has two parts: 'summary' (month totals, top categories/merchants) and 'retrieved' (rowsCsv + dict). "
+        + "If 'retrieved.rowsCsv' is present, treat it as compact CSV with headers: tx,occurredOn,merchant,amountCents,category. "
+        + "Use 'retrieved.dict.merchants' and 'retrieved.dict.categories' to map short codes to masked labels. "
+        + "Report amounts in US dollars with sign-aware formatting, cite dates explicitly, and never invent facts beyond the context.";
 
     // Heuristics to avoid provider truncation: cap context and history message sizes
     private static final int MAX_CONTEXT_CHARS = 8000;  // ~8KB

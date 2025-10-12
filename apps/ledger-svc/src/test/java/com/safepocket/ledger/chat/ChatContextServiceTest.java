@@ -54,7 +54,7 @@ class ChatContextServiceTest {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
 
-        String context = chatContextService.buildContext(userId, conversationId, "今月の状況を教えて");
+        String context = chatContextService.buildContext(userId, conversationId, "Please tell me about this month");
         assertThat(context).isNotBlank();
         assertThat(context).contains("months");
         assertThat(context).doesNotContain("transactionsCsv");
@@ -77,7 +77,7 @@ class ChatContextServiceTest {
         );
         when(ragService.searchForUser(any(UUID.class), any(), any())).thenReturn(searchResponse);
 
-        String context = chatContextService.buildContext(userId, conversationId, "スタバの明細を見せて");
+        String context = chatContextService.buildContext(userId, conversationId, "Show the Starbucks transactions");
         assertThat(context).contains("transactionsCsv");
         verify(ragService).searchForUser(any(), any(), Mockito.eq(conversationId.toString()));
     }
@@ -97,7 +97,7 @@ class ChatContextServiceTest {
         );
         when(ragService.aggregateForUser(any(UUID.class), any(AggregateRequest.class))).thenReturn(aggregateResponse);
 
-        String context = chatContextService.buildContext(userId, conversationId, "カテゴリ別の平均推移を教えて");
+        String context = chatContextService.buildContext(userId, conversationId, "Tell me the average trend by category");
         assertThat(context).isNotBlank();
         assertThat(context.contains("\"aggregate\"")).as("context=%s", context).isTrue();
 
@@ -122,7 +122,7 @@ class ChatContextServiceTest {
         );
         when(ragService.aggregateForUser(any(UUID.class), any(AggregateRequest.class))).thenReturn(aggregateResponse);
 
-        String context = chatContextService.buildContext(userId, conversationId, "一番お金を使っているカテゴリは何？");
+        String context = chatContextService.buildContext(userId, conversationId, "Which category has the highest spend?");
         assertThat(context).isNotBlank();
         assertThat(context).contains("\"aggregate\"");
 

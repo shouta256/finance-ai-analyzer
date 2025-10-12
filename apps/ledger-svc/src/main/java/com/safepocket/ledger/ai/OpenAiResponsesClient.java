@@ -168,13 +168,12 @@ public class OpenAiResponsesClient {
         gen.put("responseMimeType", "text/plain");
 
         try {
-            JsonNode response = restClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .headers(h -> h.set("x-goog-api-key", apiKey.get()))
-                    .body(root)
-                    .retrieve()
-                    .body(JsonNode.class);
+        JsonNode response = restClient.post()
+            .uri(url)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(root)
+            .retrieve()
+            .body(JsonNode.class);
             if (response == null) return Optional.empty();
 
             String text = extractGeminiText(response);
@@ -224,13 +223,12 @@ public class OpenAiResponsesClient {
                         gen2.put("maxOutputTokens", followMax);
                         gen2.put("responseMimeType", "text/plain");
 
-                        JsonNode response2 = restClient.post()
-                                .uri(url)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .headers(h -> h.set("x-goog-api-key", apiKey.get()))
-                                .body(root2)
-                                .retrieve()
-                                .body(JsonNode.class);
+            JsonNode response2 = restClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(root2)
+                .retrieve()
+                .body(JsonNode.class);
                         String tail = extractGeminiText(response2);
                         if (tail != null && !tail.isBlank()) {
                             return Optional.of(text + (text.endsWith(" ") ? "" : " ") + tail);
@@ -267,7 +265,7 @@ public class OpenAiResponsesClient {
                 return Optional.of(msg);
             }
 
-            log.warn("Gemini returned no text content. Raw keys: {}", response.fieldNames().hasNext());
+            log.warn("Gemini returned no text content. Keys: {}", describeKeys(response, 8));
             return Optional.empty();
         } catch (RestClientResponseException ex) {
             String body = ex.getResponseBodyAsString();
@@ -306,6 +304,19 @@ public class OpenAiResponsesClient {
         if (s == null) return null;
         if (s.length() <= max) return s;
         return s.substring(0, Math.max(0, max)) + "…";
+    }
+
+    private String describeKeys(JsonNode node, int maxKeys) {
+        if (node == null || !node.isObject()) return "";
+        java.util.Iterator<String> it = node.fieldNames();
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        int i = 0;
+        while (it.hasNext() && i < Math.max(1, maxKeys)) {
+            keys.add(it.next());
+            i++;
+        }
+        String suffix = it.hasNext() ? ", …" : "";
+        return String.join(", ", keys) + suffix;
     }
 
     private Optional<String> resolveApiKey() {

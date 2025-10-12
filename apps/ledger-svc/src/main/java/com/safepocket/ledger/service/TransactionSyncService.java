@@ -8,6 +8,7 @@ import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
 import com.safepocket.ledger.plaid.PlaidService;
 import com.safepocket.ledger.user.UserService;
+import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -32,6 +33,7 @@ public class TransactionSyncService {
     private final RlsGuard rlsGuard;
     private final PlaidService plaidService;
     private final UserService userService;
+    private final TransactionEmbeddingService transactionEmbeddingService;
     private final boolean demoSeedEnabled;
     private final Map<UUID, Instant> userSyncCursor = new ConcurrentHashMap<>();
 
@@ -42,6 +44,7 @@ public class TransactionSyncService {
             RlsGuard rlsGuard,
             PlaidService plaidService,
             UserService userService,
+            TransactionEmbeddingService transactionEmbeddingService,
             @org.springframework.beans.factory.annotation.Value("${safepocket.demo.seed:false}") boolean demoSeedEnabled
     ) {
         this.transactionRepository = transactionRepository;
@@ -50,6 +53,7 @@ public class TransactionSyncService {
         this.rlsGuard = rlsGuard;
         this.plaidService = plaidService;
         this.userService = userService;
+        this.transactionEmbeddingService = transactionEmbeddingService;
         this.demoSeedEnabled = demoSeedEnabled;
     }
 
@@ -72,7 +76,8 @@ public class TransactionSyncService {
             if (!toInsert.isEmpty()) {
                 toInsert.forEach(transactionRepository::save);
                 synced = toInsert.size();
-                // Embedding updates removed as RAG is deprecated
+                List<UUID> txIds = toInsert.stream().map(Transaction::id).toList();
+                transactionEmbeddingService.upsertEmbeddings(userId, txIds);
             }
         }
         userSyncCursor.put(userId, Instant.now());

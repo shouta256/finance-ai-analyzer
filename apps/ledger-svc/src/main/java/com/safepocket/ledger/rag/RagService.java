@@ -89,16 +89,21 @@ public class RagService {
 
     public SearchResponse searchForUser(UUID userId, SearchRequest request, String chatId) {
         rlsGuard.setAppsecUser(userId);
-        int limit = Math.min(
-                Optional.ofNullable(request.topK()).orElse(properties.rag().maxRows()),
-                100
-        );
-        float[] queryVector = Optional.ofNullable(request.q())
-                .filter(s -> !s.isBlank())
-                .map(embeddingService::embedDeterministic)
-                .orElse(null);
+    int limit = Math.min(
+        Optional.ofNullable(request.topK()).orElse(properties.rag().maxRows()),
+        100
+    );
+    float[] queryVector = Optional.ofNullable(request.q())
+        .filter(s -> !s.isBlank())
+        .map(embeddingService::embed)
+        .orElse(null);
 
-        List<TxEmbeddingRepository.EmbeddingMatch> matches = txEmbeddingRepository.findNearest(
+    // When a query is present, widen the candidate pool so we can score by cosine similarity properly.
+    int candidateLimit = (queryVector != null && queryVector.length > 0)
+        ? Math.min(500, Math.max(limit * 10, properties.rag().maxRows() * 10))
+        : limit;
+
+    List<TxEmbeddingRepository.EmbeddingMatch> matches = txEmbeddingRepository.findNearest(
                 userId,
                 queryVector,
                 request.from(),
@@ -106,7 +111,7 @@ public class RagService {
                 request.categories(),
                 request.amountMin(),
                 request.amountMax(),
-                limit
+        candidateLimit
         );
 
         boolean requiresReindex = matches.isEmpty() || matches.stream().anyMatch(match -> match.embedding().length == 0);
@@ -122,7 +127,7 @@ public class RagService {
             );
             if (!candidates.isEmpty()) {
                 transactionEmbeddingService.upsertEmbeddings(userId, candidates.stream().map(RagRepository.TransactionSlice::transactionId).toList());
-                matches = txEmbeddingRepository.findNearest(
+        matches = txEmbeddingRepository.findNearest(
                         userId,
                         queryVector,
                         request.from(),
@@ -130,7 +135,7 @@ public class RagService {
                         request.categories(),
                         request.amountMin(),
                         request.amountMax(),
-                        limit
+            candidateLimit
                 );
             }
         }

@@ -47,7 +47,7 @@ public class TransactionEmbeddingService {
         List<TxEmbeddingRepository.EmbeddingRecord> records = slices.stream()
                 .map(slice -> {
                     YearMonth month = YearMonth.from(slice.occurredOn());
-                    float[] embedding = embeddingService.embedDeterministic(buildText(slice));
+            float[] embedding = embeddingService.embed(buildText(slice));
                     return new TxEmbeddingRepository.EmbeddingRecord(
                             slice.transactionId(),
                             userId,

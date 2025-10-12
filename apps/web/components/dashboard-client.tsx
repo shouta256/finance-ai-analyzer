@@ -30,6 +30,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [aiReady, setAiReady] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<{ code: string; traceId?: string; details?: string } | null>(null);
   const [linking, setLinking] = useState<boolean>(false);
+  const [sandboxLoading, setSandboxLoading] = useState<boolean>(false);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [generatingAi, setGeneratingAi] = useState<boolean>(false);
 
@@ -38,9 +39,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const sentimentTone = useMemo(() => state.summary.aiHighlight.sentiment, [state.summary.aiHighlight.sentiment]);
 
   async function handleSync() {
-    if (syncing || generatingAi || linking) return;
+    if (syncing || generatingAi || linking || sandboxLoading) return;
     setSyncing(true);
-    setMessage("Syncing transactions…");
+    setMessage("Syncing transactions...");
     startTransition(async () => {
       try {
         await triggerTransactionSync();
@@ -149,9 +150,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   async function handleGenerateAi() {
-    if (generatingAi || syncing || linking) return;
+    if (generatingAi || syncing || linking || sandboxLoading) return;
     setGeneratingAi(true);
-    setMessage("Generating AI summary…");
+    setMessage("Generating AI summary...");
     startTransition(async () => {
       try {
         const summary = await getAnalyticsSummary(month, { generateAi: true });
@@ -163,6 +164,25 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setMessage((err as Error).message ?? "AI summary failed");
       } finally {
         setGeneratingAi(false);
+      }
+    });
+  }
+
+  async function handleSandboxDemo() {
+    if (sandboxLoading || syncing || generatingAi || linking) return;
+    setSandboxLoading(true);
+    setMessage("Loading demo data...");
+  startTransition(async () => {
+      try {
+        await triggerTransactionSync({ forceFullSync: true, demoSeed: true });
+        await refreshData();
+        setMessage("Demo data loaded");
+        setAiReady(true);
+      } catch (error) {
+        console.error(error);
+        setMessage((error as Error).message ?? "Demo load failed");
+      } finally {
+        setSandboxLoading(false);
       }
     });
   }
@@ -198,23 +218,30 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         <button
           onClick={handleLink}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:opacity-50"
-          disabled={isPending || linking || syncing || generatingAi}
+          disabled={isPending || linking || syncing || generatingAi || sandboxLoading}
         >
           Link Accounts with Plaid
         </button>
         <button
+          onClick={handleSandboxDemo}
+          className="rounded-md border border-green-300 px-4 py-2 text-sm font-semibold text-green-700 shadow-sm hover:bg-green-50"
+          disabled={isPending || sandboxLoading || syncing || generatingAi || linking}
+        >
+          {sandboxLoading ? "Loading demo..." : "Try Demo Data"}
+        </button>
+        <button
           onClick={handleSync}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
-          disabled={isPending || linking || generatingAi || syncing}
+          disabled={isPending || linking || generatingAi || syncing || sandboxLoading}
         >
-          {syncing ? "Syncing…" : "Sync Transactions"}
+          {syncing ? "Syncing..." : "Sync Transactions"}
         </button>
         <button
           onClick={handleGenerateAi}
           className="rounded-md border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
-          disabled={isPending || linking || syncing || generatingAi}
+          disabled={isPending || linking || syncing || generatingAi || sandboxLoading}
         >
-          {generatingAi ? "Generating…" : "Generate AI Summary"}
+          {generatingAi ? "Generating..." : "Generate AI Summary"}
         </button>
         {message ? <span className="text-sm text-slate-600">{message}</span> : null}
       </div>

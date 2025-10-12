@@ -21,7 +21,7 @@ public class JwtIssuerService {
         this.enabled = properties.cognito().enabledFlag() == false && properties.security().hasDevJwtSecret();
         if (enabled) {
             byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
-            if (bytes.length < 32) { // HS256 最低 256bit 推奨
+            if (bytes.length < 32) { // HS256 needs at least 256-bit secret
                 throw new IllegalStateException("devJwtSecret must be at least 32 bytes");
             }
             this.key = Keys.hmacShaKeyFor(bytes);

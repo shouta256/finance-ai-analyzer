@@ -5,22 +5,28 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.safepocket.ledger.config.SafepocketProperties;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import java.time.Duration;
 
 @Component
 public class OpenAiResponsesClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiResponsesClient.class);
+    private static final String GEMINI_DEFAULT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
+    private static final int OPENAI_DEFAULT_MAX_TOKENS = 400;
+    private static final int GEMINI_DEFAULT_MAX_TOKENS = 400;
+    private static final int GEMINI_MAX_TOKENS = 2048;
+
+    private enum Provider { OPENAI, GEMINI }
 
     private final SafepocketProperties properties;
     private final RestClient restClient;
@@ -30,61 +36,68 @@ public class OpenAiResponsesClient {
 
     public record OpenAiResponsesRequest(String model, List<Message> input, Integer max_output_tokens) {}
 
+    private record GeminiRequestContext(
+            List<Message> messages,
+            String systemInstruction,
+            String endpoint,
+            String apiKey,
+            String model) {}
+
+    private record GeminiResult(String text, String finishReason, String blockReason, JsonNode raw) {
+        boolean hasText() {
+            return text != null && !text.isBlank();
+        }
+    }
+
     public OpenAiResponsesClient(SafepocketProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        SimpleClientHttpRequestFactory rf = new SimpleClientHttpRequestFactory();
-        int readMs = resolveTimeoutMillis();
-        rf.setConnectTimeout(Duration.ofSeconds(12));
-        rf.setReadTimeout(Duration.ofMillis(readMs));
-        this.restClient = RestClient.builder().requestFactory(rf).build();
-        log.info("AI HTTP client configured: readTimeoutMs={} (env SAFEPOCKET_AI_TIMEOUT_MS)", readMs);
-    }
 
-    private int resolveTimeoutMillis() {
-        try {
-            String env = System.getenv("SAFEPOCKET_AI_TIMEOUT_MS");
-            if (env != null && !env.isBlank()) {
-                int v = Integer.parseInt(env.trim());
-                if (v > 0) {
-                    int cap = 600_000; // cap at 10 minutes
-                    return Math.min(v, cap);
-                }
-            }
-        } catch (Exception ignored) {}
-        return 90_000; // default 90s to allow slower provider responses
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        int readTimeoutMs = resolveTimeoutMillis();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(12));
+        requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
+
+        this.restClient = RestClient.builder().requestFactory(requestFactory).build();
+        log.info("AI HTTP client configured: readTimeoutMs={} (env SAFEPOCKET_AI_TIMEOUT_MS)", readTimeoutMs);
     }
 
     public Optional<String> generateText(List<Message> inputMessages, Integer maxOutputTokens) {
-        String provider = properties.ai().providerOrDefault();
-        if ("gemini".equalsIgnoreCase(provider)) {
-            return generateTextGemini(inputMessages, maxOutputTokens, properties.ai().snapshotOrDefault());
-        }
-        // Default: OpenAI Responses
         String preferredModel = properties.ai().snapshotOrDefault();
-        return generateText(inputMessages, maxOutputTokens, preferredModel, true);
+        return generateTextInternal(provider(), inputMessages, maxOutputTokens, preferredModel, true);
     }
 
     public Optional<String> generateText(List<Message> inputMessages, Integer maxOutputTokens, String overrideModel) {
-        String provider = properties.ai().providerOrDefault();
-        if ("gemini".equalsIgnoreCase(provider)) {
-            return generateTextGemini(inputMessages, maxOutputTokens, overrideModel);
-        }
-        return generateText(inputMessages, maxOutputTokens, overrideModel, true);
+        return generateTextInternal(provider(), inputMessages, maxOutputTokens, overrideModel, true);
     }
 
     public boolean hasCredentials() {
-        return resolveApiKey().isPresent();
+        return resolveApiKey(provider()).isPresent();
     }
 
-    private Optional<String> generateText(
-            List<Message> inputMessages, Integer maxOutputTokens, String model, boolean allowFallback) {
-        Optional<String> apiKey = resolveApiKey();
+    private Optional<String> generateTextInternal(
+            Provider provider,
+            List<Message> inputMessages,
+            Integer maxOutputTokens,
+            String model,
+            boolean allowFallback) {
+        return switch (provider) {
+            case GEMINI -> generateGemini(inputMessages, maxOutputTokens, model);
+            case OPENAI -> generateOpenAi(inputMessages, maxOutputTokens, model, allowFallback);
+        };
+    }
+
+    private Optional<String> generateOpenAi(
+            List<Message> inputMessages,
+            Integer maxOutputTokens,
+            String model,
+            boolean allowFallback) {
+        Optional<String> apiKey = resolveApiKey(Provider.OPENAI);
         if (apiKey.isEmpty()) {
             return Optional.empty();
         }
 
-        Integer maxTokens = Optional.ofNullable(maxOutputTokens).filter(v -> v > 0).orElse(400);
+        int maxTokens = sanitizePositive(maxOutputTokens, OPENAI_DEFAULT_MAX_TOKENS, Integer.MAX_VALUE);
         OpenAiResponsesRequest requestBody = new OpenAiResponsesRequest(model, inputMessages, maxTokens);
 
         try {
@@ -109,9 +122,8 @@ public class OpenAiResponsesClient {
             if (allowFallback && ex.getStatusCode().value() == 421) {
                 String snapshot = properties.ai().snapshotOrDefault();
                 if (snapshot != null && !snapshot.isBlank() && !Objects.equals(snapshot, model)) {
-                    log.warn("OpenAI Responses model '{}' locked ({}). Retrying with snapshot '{}'.",
-                            model, ex.getStatusCode(), snapshot);
-                    return generateText(inputMessages, maxOutputTokens, snapshot, false);
+                    log.warn("OpenAI Responses model '{}' locked ({}). Retrying with snapshot '{}'.", model, ex.getStatusCode(), snapshot);
+                    return generateOpenAi(inputMessages, maxOutputTokens, snapshot, false);
                 }
             }
             log.warn("OpenAI Responses call failed (status {}): {}", ex.getStatusCode(), ex.getMessage());
@@ -121,152 +133,102 @@ public class OpenAiResponsesClient {
         return Optional.empty();
     }
 
-    private Optional<String> generateTextGemini(List<Message> inputMessages, Integer maxOutputTokens, String model) {
-        Optional<String> apiKey = resolveApiKey();
+    private Optional<String> generateGemini(List<Message> inputMessages, Integer maxOutputTokens, String model) {
+        Optional<String> apiKey = resolveApiKey(Provider.GEMINI);
         if (apiKey.isEmpty()) {
             return Optional.empty();
         }
-        String base = properties.ai().endpoint();
-        // If endpoint is still the OpenAI default, swap to Gemini default
-        if (base == null || base.isBlank() || base.contains("api.openai.com")) {
-            base = "https://generativelanguage.googleapis.com/v1beta";
-        }
-        // Prefer query param for API key (header is also set for compatibility)
-        String url = String.format("%s/models/%s:generateContent?key=%s", base, model, apiKey.get());
 
-        ObjectNode root = objectMapper.createObjectNode();
-        // Merge system messages into a single systemInstruction
-        StringBuilder sys = new StringBuilder();
-        for (Message m : inputMessages) {
-            if ("system".equalsIgnoreCase(m.role()) && m.content() != null && !m.content().isBlank()) {
-                if (!sys.isEmpty()) sys.append("\n\n");
-                sys.append(m.content());
+        GeminiRequestContext context = new GeminiRequestContext(
+                inputMessages,
+                collectSystemInstruction(inputMessages),
+                geminiEndpoint(model),
+                apiKey.get(),
+                model
+        );
+        int sanitizedTokens = sanitizePositive(maxOutputTokens, GEMINI_DEFAULT_MAX_TOKENS, GEMINI_MAX_TOKENS);
+        return generateGemini(context, sanitizedTokens, true);
+    }
+
+    private Optional<String> generateGemini(GeminiRequestContext context, int maxTokens, boolean allowExpand) {
+        ObjectNode payload = buildGeminiPayload(context, maxTokens, null, false);
+        Optional<GeminiResult> initialResult = executeGeminiCall(context, payload);
+        if (initialResult.isEmpty()) {
+            return Optional.empty();
+        }
+
+        GeminiResult result = initialResult.get();
+        if (result.hasText()) {
+            if (allowExpand && "MAX_TOKENS".equalsIgnoreCase(result.finishReason()) && maxTokens < GEMINI_MAX_TOKENS) {
+                Optional<String> continuation = attemptGeminiContinuation(context, result.text(), maxTokens);
+                if (continuation.isPresent()) {
+                    return continuation;
+                }
             }
-        }
-        if (!sys.isEmpty()) {
-            ObjectNode si = root.putObject("systemInstruction");
-            si.put("role", "system");
-            ArrayNode parts = si.putArray("parts");
-            parts.addObject().put("text", sys.toString());
+            return Optional.of(result.text());
         }
 
-        ArrayNode contents = root.putArray("contents");
-        for (Message m : inputMessages) {
-            String role = m.role();
-            if ("system".equalsIgnoreCase(role)) continue;
-            String mapped = "user";
-            if ("assistant".equalsIgnoreCase(role)) mapped = "model";
-            ObjectNode c = contents.addObject();
-            c.put("role", mapped);
-            ArrayNode parts = c.putArray("parts");
-            parts.addObject().put("text", m.content());
+        if (allowExpand && "MAX_TOKENS".equalsIgnoreCase(result.finishReason()) && maxTokens < GEMINI_MAX_TOKENS) {
+            int bumped = Math.min(Math.max(maxTokens * 2, maxTokens + 400), GEMINI_MAX_TOKENS);
+            log.warn("Gemini finishReason=MAX_TOKENS with no text; retrying once with maxOutputTokens={}", bumped);
+            return generateGemini(context, bumped, false);
         }
-    ObjectNode gen = root.putObject("generationConfig");
-    int requestedMax = Optional.ofNullable(maxOutputTokens).filter(v -> v > 0).orElse(400);
-    gen.put("maxOutputTokens", requestedMax);
-        // Hint Gemini to return plain text (avoids tool/function responses for simple Q&A)
-        gen.put("responseMimeType", "text/plain");
 
+        if (result.blockReason() != null || result.finishReason() != null) {
+            log.warn("Gemini returned no text. finishReason={}, blockReason={}", result.finishReason(), result.blockReason());
+            String message = "(AI) Response unavailable" +
+                    (result.finishReason() != null ? ", finishReason=" + result.finishReason() : "") +
+                    (result.blockReason() != null ? ", blockReason=" + result.blockReason() : "") +
+                    ". Please rephrase and try again.";
+            return Optional.of(message);
+        }
+
+        log.warn("Gemini returned no text content. Keys: {}", describeKeys(result.raw(), 8));
+        return Optional.empty();
+    }
+
+    private Optional<String> attemptGeminiContinuation(GeminiRequestContext context, String partialText, int previousTokens) {
+        if (partialText == null || partialText.isBlank()) {
+            return Optional.empty();
+        }
+
+        int followUpTokens = Math.min(Math.max(previousTokens, 600), GEMINI_MAX_TOKENS);
+        ObjectNode continuationPayload = buildGeminiPayload(context, followUpTokens, partialText, true);
+        Optional<GeminiResult> continuationResult = executeGeminiCall(context, continuationPayload);
+        if (continuationResult.isEmpty()) {
+            return Optional.empty();
+        }
+
+        GeminiResult result = continuationResult.get();
+        if (result.hasText()) {
+            String tail = result.text();
+            boolean needsSpace = !partialText.endsWith(" ") && !tail.startsWith(" ");
+            return Optional.of(partialText + (needsSpace ? " " : "") + tail);
+        }
+
+        if (result.blockReason() != null || result.finishReason() != null) {
+            log.warn("Gemini continuation returned no text. finishReason={}, blockReason={}", result.finishReason(), result.blockReason());
+        }
+        return Optional.empty();
+    }
+
+    private Optional<GeminiResult> executeGeminiCall(GeminiRequestContext context, ObjectNode payload) {
         try {
-        JsonNode response = restClient.post()
-            .uri(url)
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(root)
-            .retrieve()
-            .body(JsonNode.class);
-            if (response == null) return Optional.empty();
+            JsonNode response = restClient.post()
+                    .uri(context.endpoint())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .headers(headers -> headers.set("x-goog-api-key", context.apiKey()))
+                    .body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+            if (response == null) {
+                return Optional.empty();
+            }
 
             String text = extractGeminiText(response);
-            String finishPrimary = null;
-            JsonNode candidatesPrimary = response.get("candidates");
-            if (candidatesPrimary != null && candidatesPrimary.isArray() && candidatesPrimary.size() > 0) {
-                JsonNode cand0 = candidatesPrimary.get(0);
-                JsonNode fr0 = cand0.get("finishReason");
-                if (fr0 != null && fr0.isTextual()) finishPrimary = fr0.asText();
-            }
-            if (text != null && !text.isBlank()) {
-                // If the model stopped due to token limit, attempt a one-time continuation
-                if ("MAX_TOKENS".equalsIgnoreCase(finishPrimary) && requestedMax < 2048) {
-                    try {
-                        // Build a follow-up request that asks to continue exactly where it cut off
-                        ObjectNode root2 = objectMapper.createObjectNode();
-                        // carry forward any system instructions
-                        if (root.has("systemInstruction")) {
-                            root2.set("systemInstruction", root.get("systemInstruction"));
-                        }
-                        ArrayNode contents2 = root2.putArray("contents");
-                        // original non-system messages (history up to this turn)
-                        for (Message m : inputMessages) {
-                            if ("system".equalsIgnoreCase(m.role())) continue;
-                            ObjectNode c = contents2.addObject();
-                            String mapped = "user";
-                            if ("assistant".equalsIgnoreCase(m.role())) mapped = "model";
-                            c.put("role", mapped);
-                            ArrayNode parts = c.putArray("parts");
-                            parts.addObject().put("text", m.content());
-                        }
-                        // include the just-produced partial assistant text so the model can continue seamlessly
-                        if (text != null && !text.isBlank()) {
-                            ObjectNode lastModel = contents2.addObject();
-                            lastModel.put("role", "model");
-                            ArrayNode lastParts = lastModel.putArray("parts");
-                            lastParts.addObject().put("text", text);
-                        }
-                        // add an explicit continue instruction
-                        ObjectNode cont = contents2.addObject();
-                        cont.put("role", "user");
-                        ArrayNode contParts = cont.putArray("parts");
-                        contParts.addObject().put("text", "Continue the assistant's previous response. Continue exactly where it was cut off. Do not repeat sentences already given.");
-
-                        ObjectNode gen2 = root2.putObject("generationConfig");
-                        int followMax = Math.min(Math.max(requestedMax, 600), 2048);
-                        gen2.put("maxOutputTokens", followMax);
-                        gen2.put("responseMimeType", "text/plain");
-
-            JsonNode response2 = restClient.post()
-                .uri(url)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(root2)
-                .retrieve()
-                .body(JsonNode.class);
-                        String tail = extractGeminiText(response2);
-                        if (tail != null && !tail.isBlank()) {
-                            return Optional.of(text + (text.endsWith(" ") ? "" : " ") + tail);
-                        }
-                    } catch (Exception ex2) {
-                        log.warn("Gemini continuation attempt failed: {}", ex2.getMessage());
-                    }
-                }
-                return Optional.of(text);
-            }
-
-            // If no text extracted, try to surface a helpful reason instead of silent fallback
-            String blockReason = null;
-            JsonNode pf = response.get("promptFeedback");
-            if (pf != null) {
-                JsonNode br = pf.get("blockReason");
-                if (br != null && br.isTextual()) {
-                    blockReason = br.asText();
-                }
-            }
-            String finish = finishPrimary;
-            // If truncated due to max tokens, perform a one-time retry with a higher cap
-            if ("MAX_TOKENS".equalsIgnoreCase(finish) && requestedMax < 2048) {
-                int bumped = Math.min(Math.max(requestedMax * 2, requestedMax + 400), 2048);
-                log.warn("Gemini finishReason=MAX_TOKENS with no text; retrying once with maxOutputTokens={}", bumped);
-                return generateTextGemini(inputMessages, bumped, model);
-            }
-            if (blockReason != null || finish != null) {
-                String msg = "(AI) Response unavailable" +
-                        (finish != null ? ", finishReason=" + finish : "") +
-                        (blockReason != null ? ", blockReason=" + blockReason : "") +
-                        ". Please rephrase and try again.";
-                log.warn("Gemini returned no text. finishReason={}, blockReason={}", finish, blockReason);
-                return Optional.of(msg);
-            }
-
-            log.warn("Gemini returned no text content. Keys: {}", describeKeys(response, 8));
-            return Optional.empty();
+            String finishReason = readFinishReason(response);
+            String blockReason = readBlockReason(response);
+            return Optional.of(new GeminiResult(text, finishReason, blockReason, response));
         } catch (RestClientResponseException ex) {
             String body = ex.getResponseBodyAsString();
             log.warn("Gemini call failed (status {}): {}{}", ex.getStatusCode(), ex.getMessage(),
@@ -277,68 +239,202 @@ public class OpenAiResponsesClient {
         return Optional.empty();
     }
 
+    private ObjectNode buildGeminiPayload(
+            GeminiRequestContext context,
+            int maxTokens,
+            String partialAssistantText,
+            boolean addContinuationInstruction) {
+        ObjectNode root = objectMapper.createObjectNode();
+
+        if (context.systemInstruction() != null && !context.systemInstruction().isBlank()) {
+            ObjectNode si = root.putObject("systemInstruction");
+            si.put("role", "system");
+            ArrayNode parts = si.putArray("parts");
+            parts.addObject().put("text", context.systemInstruction());
+        }
+
+        ArrayNode contents = root.putArray("contents");
+        appendGeminiMessages(context.messages(), contents);
+
+        if (partialAssistantText != null && !partialAssistantText.isBlank()) {
+            ObjectNode partial = contents.addObject();
+            partial.put("role", "model");
+            partial.putArray("parts").addObject().put("text", partialAssistantText);
+        }
+
+        if (addContinuationInstruction) {
+            ObjectNode cont = contents.addObject();
+            cont.put("role", "user");
+            cont.putArray("parts")
+                    .addObject()
+                    .put("text", "Continue the assistant's previous response. Continue exactly where it was cut off. Do not repeat sentences already given.");
+        }
+
+        ObjectNode generationConfig = root.putObject("generationConfig");
+        generationConfig.put("maxOutputTokens", maxTokens);
+        generationConfig.put("responseMimeType", "text/plain");
+        return root;
+    }
+
+    private void appendGeminiMessages(List<Message> messages, ArrayNode target) {
+        for (Message message : messages) {
+            if (message == null || message.role() == null || message.content() == null) {
+                continue;
+            }
+            if ("system".equalsIgnoreCase(message.role())) {
+                continue;
+            }
+            String mappedRole = "assistant".equalsIgnoreCase(message.role()) ? "model" : "user";
+            ObjectNode content = target.addObject();
+            content.put("role", mappedRole);
+            content.putArray("parts").addObject().put("text", message.content());
+        }
+    }
+
+    private String collectSystemInstruction(List<Message> messages) {
+        StringBuilder builder = new StringBuilder();
+        for (Message message : messages) {
+            if (message != null && "system".equalsIgnoreCase(message.role()) && message.content() != null && !message.content().isBlank()) {
+                if (builder.length() > 0) {
+                    builder.append("\n\n");
+                }
+                builder.append(message.content());
+            }
+        }
+        return builder.length() == 0 ? null : builder.toString();
+    }
+
+    private String geminiEndpoint(String model) {
+        String base = properties.ai().endpoint();
+        if (base == null || base.isBlank() || base.contains("api.openai.com")) {
+            base = GEMINI_DEFAULT_ENDPOINT;
+        }
+        if (!base.endsWith("/")) {
+            base = base + "/";
+        }
+        return base + "models/" + model + ":generateContent";
+    }
+
+    private Optional<String> resolveApiKey(Provider provider) {
+        SafepocketProperties.Ai ai = properties.ai();
+
+        if (provider == Provider.GEMINI) {
+            String envKey = System.getenv("GEMINI_API_KEY");
+            if (envKey != null && !envKey.isBlank()) {
+                return Optional.of(envKey);
+            }
+            String configured = ai.apiKey();
+            if (configured != null && !configured.isBlank()) {
+                return Optional.of(configured);
+            }
+            return Optional.empty();
+        }
+
+        String configured = ai.apiKey();
+        if (configured != null && !configured.isBlank()) {
+            return Optional.of(configured);
+        }
+        String envKey = System.getenv("OPENAI_API_KEY");
+        if (envKey != null && !envKey.isBlank()) {
+            return Optional.of(envKey);
+        }
+        return Optional.empty();
+    }
+
+    private Provider provider() {
+        return "gemini".equalsIgnoreCase(properties.ai().providerOrDefault()) ? Provider.GEMINI : Provider.OPENAI;
+    }
+
+    private int resolveTimeoutMillis() {
+        try {
+            String env = System.getenv("SAFEPOCKET_AI_TIMEOUT_MS");
+            if (env != null && !env.isBlank()) {
+                int value = Integer.parseInt(env.trim());
+                if (value > 0) {
+                    return Math.min(value, 600_000); // cap at 10 minutes
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return 90_000;
+    }
+
+    private int sanitizePositive(Integer requested, int defaultValue, int maxValue) {
+        int value = Optional.ofNullable(requested).filter(v -> v > 0).orElse(defaultValue);
+        value = Math.max(1, value);
+        return Math.min(value, maxValue);
+    }
+
+    private String readFinishReason(JsonNode response) {
+        JsonNode candidates = response != null ? response.get("candidates") : null;
+        if (candidates != null && candidates.isArray() && candidates.size() > 0) {
+            JsonNode finish = candidates.get(0).get("finishReason");
+            if (finish != null && finish.isTextual()) {
+                return finish.asText();
+            }
+        }
+        return null;
+    }
+
+    private String readBlockReason(JsonNode response) {
+        JsonNode feedback = response != null ? response.get("promptFeedback") : null;
+        if (feedback != null) {
+            JsonNode block = feedback.get("blockReason");
+            if (block != null && block.isTextual()) {
+                return block.asText();
+            }
+        }
+        return null;
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null || value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, max)) + "...";
+    }
+
+    private String describeKeys(JsonNode node, int maxKeys) {
+        if (node == null || !node.isObject()) {
+            return "";
+        }
+        java.util.Iterator<String> names = node.fieldNames();
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        int count = 0;
+        while (names.hasNext() && count < Math.max(1, maxKeys)) {
+            keys.add(names.next());
+            count++;
+        }
+        String suffix = names.hasNext() ? ", ..." : "";
+        return String.join(", ", keys) + suffix;
+    }
+
     private String extractGeminiText(JsonNode node) {
-        if (node == null) return null;
+        if (node == null) {
+            return null;
+        }
         JsonNode candidates = node.get("candidates");
         if (candidates != null && candidates.isArray()) {
-            for (JsonNode cand : candidates) {
-                JsonNode content = cand.get("content");
+            for (JsonNode candidate : candidates) {
+                JsonNode content = candidate.get("content");
                 if (content != null) {
                     JsonNode parts = content.get("parts");
                     if (parts != null && parts.isArray()) {
                         for (JsonNode part : parts) {
-                            String t = extractText(part.get("text"));
-                            if (t != null && !t.isBlank()) return t;
-                            // Some responses may put text directly at top level of part
+                            String text = extractText(part.get("text"));
+                            if (text != null && !text.isBlank()) {
+                                return text;
+                            }
                             String direct = extractText(part);
-                            if (direct != null && !direct.isBlank()) return direct;
+                            if (direct != null && !direct.isBlank()) {
+                                return direct;
+                            }
                         }
                     }
                 }
             }
         }
         return null;
-    }
-
-    private String truncate(String s, int max) {
-        if (s == null) return null;
-        if (s.length() <= max) return s;
-        return s.substring(0, Math.max(0, max)) + "…";
-    }
-
-    private String describeKeys(JsonNode node, int maxKeys) {
-        if (node == null || !node.isObject()) return "";
-        java.util.Iterator<String> it = node.fieldNames();
-        java.util.List<String> keys = new java.util.ArrayList<>();
-        int i = 0;
-        while (it.hasNext() && i < Math.max(1, maxKeys)) {
-            keys.add(it.next());
-            i++;
-        }
-        String suffix = it.hasNext() ? ", …" : "";
-        return String.join(", ", keys) + suffix;
-    }
-
-    private Optional<String> resolveApiKey() {
-        String provider = properties.ai().providerOrDefault();
-
-        // Prefer provider-specific environment variables first to avoid cross-provider misuse
-        if ("gemini".equalsIgnoreCase(provider)) {
-            String env = System.getenv("GEMINI_API_KEY");
-            if (env != null && !env.isBlank()) return Optional.of(env);
-            // Do NOT fall back to ai.apiKey when it is wired to OPENAI_API_KEY in config.
-            // Only use explicit ai.apiKey if caller overrides it with a Gemini key.
-            String configured = properties.ai().apiKey();
-            if (configured != null && !configured.isBlank()) return Optional.of(configured);
-            return Optional.empty();
-        }
-
-        // openai default
-        String configured = properties.ai().apiKey();
-        if (configured != null && !configured.isBlank()) return Optional.of(configured);
-        String env = System.getenv("OPENAI_API_KEY");
-        if (env != null && !env.isBlank()) return Optional.of(env);
-        return Optional.empty();
     }
 
     private String extractText(JsonNode node) {

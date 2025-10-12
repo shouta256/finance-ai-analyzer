@@ -30,7 +30,7 @@ function resolveRedirectUri(): string {
       if (prodLike && looksLocal) {
         return `${window.location.origin}/auth/callback`;
       }
-      // 3. If we are still on localhost but configured is prod (逆方向) は許容: 開発で本番 URL を使うと mismatch になるので current origin に正規化
+  // 3. If we are on localhost and the value points to production we fall back to the current origin.
       if (!prodLike && !looksLocal) {
         return `${window.location.origin}/auth/callback`;
       }
@@ -98,11 +98,11 @@ function LoginForm() {
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
         <div className="mb-6 text-center">
           <p className="text-xs uppercase tracking-wide text-slate-500">Safepocket</p>
-          <h1 className="text-2xl font-semibold text-slate-800">ログイン</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Log in</h1>
           {showDevLogin ? (
-            <p className="mt-2 text-sm text-slate-500">デモユーザーでダッシュボードを確認できます。本番環境では Cognito を有効化してください。</p>
+            <p className="mt-2 text-sm text-slate-500">You can check the dashboard with the demo user. Please enable Cognito in production.</p>
           ) : (
-            <p className="mt-2 text-sm text-slate-500">Cognito アカウントでサインインしてください。</p>
+            <p className="mt-2 text-sm text-slate-500">Please sign in with your Cognito account.</p>
           )}
         </div>
         {showCognito && cognitoEnabled && (
@@ -111,7 +111,7 @@ function LoginForm() {
             onClick={handleCognito}
             className="mb-3 w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            Cognito でサインイン
+            Sign in with Cognito
           </button>
         )}
         {authDebug && showCognito && (
@@ -154,8 +154,8 @@ function LoginForm() {
         )}
         {showCognito && !cognitoEnabled && (
           <p className="mb-3 rounded bg-amber-50 p-3 text-xs text-amber-700">
-            Cognito が無効です。以下の環境変数を設定してください:<br />
-            未設定: { !cognitoStatic.domain && 'NEXT_PUBLIC_COGNITO_DOMAIN '}{ !cognitoStatic.clientId && 'NEXT_PUBLIC_COGNITO_CLIENT_ID '}
+            Cognito is disabled. Please set these variables:<br />
+            Missing: { !cognitoStatic.domain && 'NEXT_PUBLIC_COGNITO_DOMAIN '}{ !cognitoStatic.clientId && 'NEXT_PUBLIC_COGNITO_CLIENT_ID '}
           </p>
         )}
         {showDevLogin && (
@@ -166,10 +166,10 @@ function LoginForm() {
               disabled={isPending}
               className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {isPending ? "ログイン中..." : "デモユーザーでログイン"}
+              {isPending ? "Signing in..." : "Log in as demo user"}
             </button>
             <p className="mt-4 text-xs text-slate-500">
-              開発環境: dev secret が無い場合は /api/dev/login で 403 になります。
+              Note: in local development /api/dev/login returns 403 if the dev secret is missing.
             </p>
           </>
         )}
@@ -181,7 +181,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-center text-slate-500">Loading…</div>}>
+    <Suspense fallback={<div className="p-6 text-center text-slate-500">Loading...</div>}>
       <LoginForm />
     </Suspense>
   );

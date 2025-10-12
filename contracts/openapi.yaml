@@ -152,7 +152,72 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnalyticsSummaryResponse'
+          $ref: '#/components/schemas/AnalyticsSummaryResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /rag/search:
+    post:
+      summary: Search transactions with structured filters and semantic ranking
+      operationId: ragSearch
+      tags:
+        - RAG
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagSearchRequest'
+      responses:
+        '200':
+          description: Compressed transaction slice for conversational RAG
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagSearchResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /rag/summaries:
+    get:
+      summary: Retrieve lightweight month, category, and merchant summaries
+      operationId: ragSummaries
+      tags:
+        - RAG
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: string
+            pattern: '^\\d{4}-\\d{2}$'
+          description: Month window to inspect (YYYY-MM)
+      responses:
+        '200':
+          description: Summary payload optimised for LLM consumption
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagSummariesResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /rag/aggregate:
+    post:
+      summary: Aggregate transactions for a custom window and granularity
+      operationId: ragAggregate
+      tags:
+        - RAG
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagAggregateRequest'
+      responses:
+        '200':
+          description: Aggregated totals and timeline series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagAggregateResponse'
         default:
           $ref: '#/components/responses/ErrorResponse'
   /ai/chat:
@@ -581,3 +646,272 @@ components:
             $ref: '#/components/schemas/AiChatMessage'
         traceId:
           type: string
+    RagSearchRequest:
+      type: object
+      properties:
+        q:
+          type: string
+          description: Natural language query for semantic embedding search
+        from:
+          type: string
+          format: date
+          description: Inclusive start date filter (YYYY-MM-DD)
+        to:
+          type: string
+          format: date
+          description: Inclusive end date filter (YYYY-MM-DD)
+        categories:
+          type: array
+          items:
+            type: string
+          description: Optional list of category names to include
+        amountMin:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Minimum amount in cents
+        amountMax:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Maximum amount in cents
+        topK:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          description: Maximum number of candidate rows to evaluate before compression
+        fields:
+          type: array
+          items:
+            type: string
+          description: Reserved for future selective field inclusion
+    RagSearchResponse:
+      type: object
+      required:
+        - rowsCsv
+        - dict
+        - stats
+        - chatId
+      properties:
+        rowsCsv:
+          type: string
+          description: Up to 20 CSV rows (no header) using compact aliases (t*, m*, category codes)
+        dict:
+          type: object
+          required:
+            - merchants
+            - categories
+          properties:
+            merchants:
+              type: object
+              additionalProperties:
+                type: string
+              description: Maps merchant short codes (m1..) to display names
+            categories:
+              type: object
+              additionalProperties:
+                type: string
+              description: Maps category short codes to canonical labels
+        stats:
+          $ref: '#/components/schemas/RagSearchStats'
+        traceId:
+          type: string
+          description: Correlation identifier echoed from TraceIdFilter
+        chatId:
+          type: string
+          description: Session identifier to reuse for follow-up delta queries
+    RagSearchStats:
+      type: object
+      required:
+        - count
+        - sum
+        - avg
+      properties:
+        count:
+          type: integer
+          format: int32
+          description: Number of rows included in rowsCsv
+        sum:
+          type: integer
+          format: int64
+          description: Total amount (cents) across returned rows
+        avg:
+          type: integer
+          format: int64
+          description: Average amount (cents) across returned rows
+    RagSummariesResponse:
+      type: object
+      required:
+        - month
+        - totals
+        - categories
+        - merchants
+      properties:
+        month:
+          type: string
+          description: Month window represented (YYYY-MM)
+        totals:
+          $ref: '#/components/schemas/RagTotals'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagCategoryBreakdown'
+        merchants:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagMerchantBreakdown'
+        traceId:
+          type: string
+          description: Correlation identifier for auditing
+    RagTotals:
+      type: object
+      required:
+        - income
+        - expense
+        - net
+      properties:
+        income:
+          type: integer
+          format: int64
+          description: Total inflow in cents
+        expense:
+          type: integer
+          format: int64
+          description: Total outflow in cents (negative)
+        net:
+          type: integer
+          format: int64
+          description: Net income-expense in cents
+    RagCategoryBreakdown:
+      type: object
+      required:
+        - code
+        - label
+        - count
+        - sum
+        - avg
+      properties:
+        code:
+          type: string
+          description: Short category alias (eo, gr, etc.)
+        label:
+          type: string
+        count:
+          type: integer
+          format: int32
+        sum:
+          type: integer
+          format: int64
+        avg:
+          type: integer
+          format: int64
+    RagMerchantBreakdown:
+      type: object
+      required:
+        - merchantId
+        - label
+        - count
+        - sum
+      properties:
+        merchantId:
+          type: string
+          description: Merchant identifier (UUID as string)
+        label:
+          type: string
+        count:
+          type: integer
+          format: int32
+        sum:
+          type: integer
+          format: int64
+    RagAggregateRequest:
+      type: object
+      required:
+        - granularity
+      properties:
+        from:
+          type: string
+          format: date
+          description: Inclusive lower bound (optional)
+        to:
+          type: string
+          format: date
+          description: Inclusive upper bound (optional)
+        granularity:
+          type: string
+          enum:
+            - category
+            - merchant
+            - month
+          description: Grouping dimension for aggregation
+    RagAggregateResponse:
+      type: object
+      required:
+        - granularity
+        - buckets
+        - chatId
+      properties:
+        granularity:
+          type: string
+          description: Echoed grouping dimension
+        from:
+          type: string
+          format: date
+          nullable: true
+        to:
+          type: string
+          format: date
+          nullable: true
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagAggregateBucket'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagTimelinePoint'
+        traceId:
+          type: string
+          description: Correlation identifier
+        chatId:
+          type: string
+          description: Session identifier reused across aggregate/search requests
+    RagAggregateBucket:
+      type: object
+      required:
+        - key
+        - label
+        - count
+        - sum
+        - avg
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        count:
+          type: integer
+          format: int32
+        sum:
+          type: integer
+          format: int64
+        avg:
+          type: integer
+          format: int64
+    RagTimelinePoint:
+      type: object
+      required:
+        - bucket
+        - count
+        - sum
+      properties:
+        bucket:
+          type: string
+          description: Aggregation bucket label (YYYY-MM)
+        count:
+          type: integer
+          format: int32
+        sum:
+          type: integer
+          format: int64

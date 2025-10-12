@@ -48,8 +48,18 @@ export async function listTransactions(month: string): Promise<TransactionsList>
   return handleJson(res, transactionsListSchema);
 }
 
-export async function triggerTransactionSync(): Promise<void> {
-  const res = await fetch(`/api/transactions/sync`, { method: "POST" });
+export interface TriggerSyncOptions {
+  forceFullSync?: boolean;
+  demoSeed?: boolean;
+}
+
+export async function triggerTransactionSync(options: TriggerSyncOptions = {}): Promise<void> {
+  const body = Object.keys(options).length > 0 ? JSON.stringify(options) : undefined;
+  const res = await fetch(`/api/transactions/sync`, {
+    method: "POST",
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body,
+  });
   if (!res.ok) {
     let payload: unknown = null;
     try {

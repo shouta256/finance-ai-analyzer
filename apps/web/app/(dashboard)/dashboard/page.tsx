@@ -26,7 +26,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             Secure financial intelligence with Plaid sandbox connectivity.
           </p>
         </header>
-        <Suspense fallback={<p className="text-sm text-slate-500">Loading dashboard…</p>}>
+        <Suspense fallback={<p className="text-sm text-slate-500">Loading dashboard...</p>}>
           <DashboardClient month={month} initialSummary={summary} initialTransactions={transactions} />
         </Suspense>
       </main>

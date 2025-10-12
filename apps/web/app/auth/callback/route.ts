@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
 
     const redirectTarget = safeRedirectPath(state);
 
-    // Detect protocol to decide secure flag (NODE_ENV だけで判定すると、HTTPS 終端が ALB でアプリ本体が HTTP の場合に cookie が落ちないケースがある)
+    // Detect protocol to decide secure flag. NODE_ENV alone fails when HTTPS ends at the ALB but the app serves HTTP.
     const forwardedProto = req.headers.get('x-forwarded-proto');
     const proto = forwardedProto || (req.nextUrl.protocol.replace(':', '')) || 'https';
     const secureCookie = proto === 'https';

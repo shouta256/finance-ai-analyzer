@@ -69,7 +69,7 @@ public class AiHighlightService {
                         700)
                 .map(response -> buildHighlightFromResponse(response, totalIncome, totalSpend, topAnomaly, sentiment))
                 .orElseGet(() -> {
-                    log.warn("AI highlight: OpenAI 応答が取得できなかったため fallback 表示");
+                    log.warn("AI highlight: OpenAI response missing, using fallback");
                     return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
                 });
     }
@@ -210,9 +210,9 @@ public class AiHighlightService {
         StringBuilder summary = new StringBuilder();
         summary.append("Income $")
                 .append(totalIncome)
-                .append(" vs spend $")
+                .append(" and spend $")
                 .append(totalSpend)
-                .append(" → net $")
+                .append(" give net $")
                 .append(net)
                 .append(". ");
         if (topAnomaly != null) {
@@ -228,16 +228,16 @@ public class AiHighlightService {
 
         List<String> recs = new ArrayList<>();
         if (net.compareTo(BigDecimal.ZERO) < 0) {
-            recs.add("Net negative this month — review top 3 expense categories and defer non-essentials next cycle");
+            recs.add("Net negative this month. Review the top three expense categories and delay optional costs.");
         } else if (net.compareTo(BigDecimal.ZERO) > 0) {
-            recs.add("Net positive — consider allocating 10–20% to savings or paying down debt");
+            recs.add("Net positive. Move 10-20% to savings or pay extra on debt.");
         } else {
-            recs.add("Balanced inflow/outflow — monitor upcoming recurring charges");
+            recs.add("Inflow and outflow are balanced. Check upcoming recurring bills.");
         }
         if (topAnomaly != null && topAnomaly.amount().abs().compareTo(new BigDecimal("500")) > 0) {
-            recs.add("Validate the large charge at " + topAnomaly.merchantName() + " and set a spending alert");
+            recs.add("Check the large charge at " + topAnomaly.merchantName() + " and set a spending alert.");
         }
-        recs.add("Schedule a budget review and update category limits");
+        recs.add("Plan a budget review and adjust category limits.");
 
         return new AnalyticsSummary.AiHighlight(
                 "Monthly financial health",
@@ -254,28 +254,28 @@ public class AiHighlightService {
             AnalyticsSummary.AnomalyInsight topAnomaly) {
         DateTimeFormatter dtf = DateTimeFormatter.ISO_INSTANT;
         StringBuilder sb = new StringBuilder();
-        sb.append("You are a concise financial assistant. Return ONLY compact JSON with keys: title, summary, sentiment (POSITIVE|NEUTRAL|NEGATIVE), recommendations (array of strings).\n");
-        sb.append("The 'summary' should be 3-6 sentences, actionable, and reference net flow, notable spikes, and any savings/debt guidance.\n");
-        sb.append("Base facts: totalIncome=").append(totalIncome)
-                .append(", totalSpend=").append(totalSpend)
-                .append(", net=").append(totalIncome.subtract(totalSpend)).append(".\n");
+        sb.append("You are a simple money helper. Reply with compact JSON. Keys: title, summary, sentiment (POSITIVE|NEUTRAL|NEGATIVE), recommendations (list of strings).\n");
+        sb.append("Use easy English with US dollars. Summary must mention net cash flow, big spikes, and one or two tips.\n");
+        sb.append("Base facts (USD): income=$").append(totalIncome)
+                .append(", spend=$").append(totalSpend)
+                .append(", net=$").append(totalIncome.subtract(totalSpend)).append(".\n");
         if (topAnomaly != null) {
-            sb.append("Top anomaly: ").append(topAnomaly.merchantName()).append(", amount=")
+            sb.append("Top anomaly: ").append(topAnomaly.merchantName()).append(", amount=$")
                     .append(topAnomaly.amount().abs()).append(".\n");
         }
-        sb.append("Transactions (truncated to 20):\n");
+        sb.append("Transactions (max 20 lines):\n");
         transactions.stream().limit(20).forEach(t -> sb.append("- ")
                 .append(dtf.format(t.occurredAt())).append(" ")
                 .append(t.merchantName()).append(": ")
-                .append(t.amount()).append(" ")
+                .append("$").append(t.amount()).append(" ")
                 .append(t.category()).append("\n"));
         sb.append("Anomalies (top 5):\n");
         anomalies.stream().limit(5).forEach(a -> sb.append("- ")
                 .append(a.merchantName()).append(": ")
-                .append(a.amount()).append(", delta=")
+                .append("$").append(a.amount()).append(", delta=$")
                 .append(Optional.ofNullable(a.deltaAmount()).orElse(BigDecimal.ZERO)).append(", budgetImpact=")
                 .append(Optional.ofNullable(a.budgetImpactPercent()).orElse(BigDecimal.ZERO)).append("%\n"));
-        sb.append("Respond ONLY with compact JSON, no markdown.");
+        sb.append("Answer with compact JSON only. Do not use markdown.");
         return sb.toString();
     }
 }

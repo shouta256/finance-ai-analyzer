@@ -4,17 +4,23 @@ import { ledgerFetch } from "@/src/lib/api-client";
 import { transactionsSyncSchema } from "@/src/lib/schemas";
 import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
-const requestSchema = z.object({ cursor: z.string().optional(), forceFullSync: z.boolean().optional() });
+const requestSchema = z.object({
+  cursor: z.string().optional(),
+  forceFullSync: z.boolean().optional(),
+  demoSeed: z.boolean().optional(),
+});
 
 export async function POST(request: NextRequest) {
   const authorization = request.headers.get("authorization");
   if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
   if (errorResponse) return errorResponse;
-  const body = request.headers.get("content-length") === "0" ? undefined : requestSchema.parse(await request.json());
+  const body = request.headers.get("content-length") === "0" || request.headers.get("content-length") === null
+    ? undefined
+    : requestSchema.parse(await request.json());
   const result = await ledgerFetch<unknown>("/transactions/sync", {
     method: "POST",
-    headers: { authorization },
+    headers: { authorization, ...(body ? { "content-type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
     baseUrlOverride,
   });

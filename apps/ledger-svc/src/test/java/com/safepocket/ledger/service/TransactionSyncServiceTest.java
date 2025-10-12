@@ -11,6 +11,7 @@ import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
 import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.plaid.PlaidService;
+import com.safepocket.ledger.user.UserService;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
@@ -38,6 +39,9 @@ class TransactionSyncServiceTest {
     @Mock
     private PlaidService plaidService;
 
+    @Mock
+    private UserService userService;
+
     private TransactionRepository transactionRepository;
 
     private TransactionSyncService transactionSyncService;
@@ -56,15 +60,16 @@ class TransactionSyncServiceTest {
     );
     when(jpaAccountRepository.findByUserId(userId)).thenReturn(accounts);
 
-    transactionSyncService = new TransactionSyncService(
-        transactionRepository,
-        jpaAccountRepository,
-        authenticatedUserProvider,
-        rlsGuard,
-        transactionEmbeddingService,
-        plaidService,
-        true
-    );
+        transactionSyncService = new TransactionSyncService(
+            transactionRepository,
+            jpaAccountRepository,
+            authenticatedUserProvider,
+            rlsGuard,
+            transactionEmbeddingService,
+            plaidService,
+            userService,
+            true
+        );
     }
 
     @Test
@@ -93,6 +98,7 @@ class TransactionSyncServiceTest {
             rlsGuard,
             transactionEmbeddingService,
             plaidService,
+            userService,
             false
         );
 
@@ -113,6 +119,7 @@ class TransactionSyncServiceTest {
             rlsGuard,
             transactionEmbeddingService,
             plaidService,
+            userService,
             false
         );
 

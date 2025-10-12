@@ -1,12 +1,14 @@
 package com.safepocket.ledger.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.safepocket.ledger.entity.AccountEntity;
 import com.safepocket.ledger.repository.InMemoryTransactionRepository;
 import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.repository.TransactionRepository;
+import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
 import com.safepocket.ledger.plaid.PlaidService;
@@ -32,7 +34,8 @@ class TransactionSyncServiceTest {
     @Mock
     private JpaAccountRepository jpaAccountRepository;
 
-    // RAG embedding is deprecated; no embedding service dependency
+    @Mock
+    private TransactionEmbeddingService transactionEmbeddingService;
 
     @Mock
     private PlaidService plaidService;
@@ -65,6 +68,7 @@ class TransactionSyncServiceTest {
             rlsGuard,
             plaidService,
             userService,
+            transactionEmbeddingService,
             true
         );
     }
@@ -79,6 +83,11 @@ class TransactionSyncServiceTest {
         var currentMonthTransactions = transactionRepository.findByUserIdAndMonth(userId, current);
         if (!currentMonthTransactions.isEmpty()) {
             assertThat(currentMonthTransactions).isNotEmpty();
+            // embeddings should be updated for newly inserted transactions
+            verify(transactionEmbeddingService).upsertEmbeddings(
+                org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.anyList()
+            );
             return;
         }
         YearMonth previous = current.minusMonths(1);
@@ -95,6 +104,7 @@ class TransactionSyncServiceTest {
             rlsGuard,
             plaidService,
             userService,
+            transactionEmbeddingService,
             false
         );
 
@@ -115,6 +125,7 @@ class TransactionSyncServiceTest {
             rlsGuard,
             plaidService,
             userService,
+            transactionEmbeddingService,
             false
         );
 

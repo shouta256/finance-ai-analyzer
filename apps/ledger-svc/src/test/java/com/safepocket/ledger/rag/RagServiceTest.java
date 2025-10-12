@@ -83,7 +83,7 @@ class RagServiceTest {
     void searchReturnsCsvAndDictionary() {
         YearMonth month = YearMonth.of(2025, 9);
         when(txEmbeddingRepository.findNearest(eq(userId), any(), any(), any(), any(), any(), any(), anyInt()))
-                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embedDeterministic("Starbucks latte"), month, 460, "EatingOut")));
+                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embed("Starbucks latte"), month, 460, "EatingOut")));
         when(ragRepository.fetchTransactions(eq(userId), any()))
                 .thenReturn(List.of(new RagRepository.TransactionSlice(transactionId, LocalDate.of(2025, 9, 15), 460, "EatingOut", "Starbucks latte", merchantId, "Starbucks")));
 
@@ -103,7 +103,7 @@ class RagServiceTest {
     void searchSkipsPreviouslySentTransactions() {
         YearMonth month = YearMonth.of(2025, 9);
         when(txEmbeddingRepository.findNearest(eq(userId), any(), any(), any(), any(), any(), any(), anyInt()))
-                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embedDeterministic("Coffee"), month, 500, "EatingOut")));
+                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embed("Coffee"), month, 500, "EatingOut")));
         when(ragRepository.fetchTransactions(eq(userId), any()))
                 .thenReturn(List.of(new RagRepository.TransactionSlice(transactionId, LocalDate.of(2025, 9, 15), 500, "EatingOut", "Coffee", merchantId, "Blue Bottle")));
 

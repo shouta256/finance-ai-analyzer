@@ -85,6 +85,11 @@ export interface components {
        * @default false
        */
       forceFullSync?: boolean;
+      /**
+       * @description When true, load demo accounts and sample transactions instead of calling Plaid
+       * @default false
+       */
+      demoSeed?: boolean;
     };
     TransactionsSyncResponse: {
       /** @enum {string} */

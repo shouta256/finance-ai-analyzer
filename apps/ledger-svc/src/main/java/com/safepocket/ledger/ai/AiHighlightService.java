@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,13 +24,17 @@ public class AiHighlightService {
 
     private final OpenAiResponsesClient openAiClient;
     private final ObjectMapper objectMapper;
+    private final AiHighlightRepository highlightRepository;
 
-    public AiHighlightService(OpenAiResponsesClient openAiClient, ObjectMapper objectMapper) {
+    public AiHighlightService(OpenAiResponsesClient openAiClient, ObjectMapper objectMapper, AiHighlightRepository highlightRepository) {
         this.openAiClient = openAiClient;
         this.objectMapper = objectMapper;
+        this.highlightRepository = highlightRepository;
     }
 
     public AnalyticsSummary.AiHighlight generateHighlight(
+            UUID userId,
+            java.time.YearMonth month,
             List<Transaction> transactions,
             List<AnalyticsSummary.AnomalyInsight> anomalies,
             boolean generateAi) {
@@ -60,11 +65,12 @@ public class AiHighlightService {
                 : AnalyticsSummary.AiHighlight.Sentiment.NEUTRAL;
 
         if (!generateAi || !openAiClient.hasCredentials()) {
-            return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
+            return loadStoredHighlight(userId, month)
+                    .orElseGet(() -> fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment));
         }
 
         String prompt = buildPrompt(transactions, anomalies, totalIncome, totalSpend, topAnomaly);
-        return openAiClient.generateText(
+        AnalyticsSummary.AiHighlight highlight = openAiClient.generateText(
                         List.of(new OpenAiResponsesClient.Message("user", prompt)),
                         700)
                 .map(response -> buildHighlightFromResponse(response, totalIncome, totalSpend, topAnomaly, sentiment))
@@ -72,6 +78,8 @@ public class AiHighlightService {
                     log.warn("AI highlight: OpenAI response missing, using fallback");
                     return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
                 });
+        saveHighlight(userId, month, highlight);
+        return highlight;
     }
 
     private AnalyticsSummary.AiHighlight buildHighlightFromResponse(
@@ -106,6 +114,35 @@ public class AiHighlightService {
             log.warn("AI highlight: failed to parse response '{}', falling back", normalized);
             return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
         }
+    }
+
+    private void saveHighlight(UUID userId, java.time.YearMonth month, AnalyticsSummary.AiHighlight highlight) {
+        String recommendations = String.join("\n", highlight.recommendations());
+        AiMonthlyHighlightEntity entity = highlightRepository.findById(userId)
+                .orElse(new AiMonthlyHighlightEntity(userId, month.toString(), highlight.title(), highlight.summary(), highlight.sentiment().name(), recommendations));
+        entity.setMonth(month.toString());
+        entity.setTitle(highlight.title());
+        entity.setSummary(highlight.summary());
+        entity.setSentiment(highlight.sentiment().name());
+        entity.setRecommendations(recommendations);
+        highlightRepository.save(entity);
+    }
+
+    private java.util.Optional<AnalyticsSummary.AiHighlight> loadStoredHighlight(UUID userId, java.time.YearMonth month) {
+        return highlightRepository.findById(userId)
+                .filter(entity -> month.toString().equals(entity.getMonth()))
+                .map(entity -> new AnalyticsSummary.AiHighlight(
+                        entity.getTitle(),
+                        entity.getSummary(),
+                        AnalyticsSummary.AiHighlight.Sentiment.valueOf(entity.getSentiment()),
+                        parseRecommendations(entity.getRecommendations())));
+    }
+
+    private List<String> parseRecommendations(String stored) {
+        if (stored == null || stored.isBlank()) {
+            return List.of();
+        }
+        return List.of(stored.split("\n"));
     }
 
     private List<String> extractRecommendations(Object recObj) {

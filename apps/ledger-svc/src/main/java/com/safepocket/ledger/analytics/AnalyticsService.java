@@ -58,7 +58,7 @@ public class AnalyticsService {
         RequestContextHolder.setUserId(userId);
         List<Transaction> transactions = transactionRepository.findByUserIdAndMonth(userId, month);
         List<AnalyticsSummary.AnomalyInsight> anomalies = anomalyDetectionService.detectAnomalies(transactions);
-        AnalyticsSummary.AiHighlight highlight = aiHighlightService.generateHighlight(transactions, anomalies, generateAi);
+        AnalyticsSummary.AiHighlight highlight = aiHighlightService.generateHighlight(userId, month, transactions, anomalies, generateAi);
         AnalyticsSummary.Totals totals = calculateTotals(transactions);
         List<AnalyticsSummary.CategoryBreakdown> categories = calculateCategoryBreakdown(transactions);
         List<AnalyticsSummary.MerchantBreakdown> merchants = calculateTopMerchants(transactions);

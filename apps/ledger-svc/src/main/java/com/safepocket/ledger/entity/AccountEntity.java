@@ -23,10 +23,8 @@ public class AccountEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    // Default constructor for JPA
     public AccountEntity() {}
 
-    // Constructor
     public AccountEntity(UUID id, UUID userId, String name, String institution, Instant createdAt) {
         this.id = id;
         this.userId = userId;
@@ -35,7 +33,6 @@ public class AccountEntity {
         this.createdAt = createdAt;
     }
 
-    // Getters and setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 

@@ -45,10 +45,8 @@ public class TransactionEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    // Default constructor for JPA
     public TransactionEntity() {}
 
-    // Constructor
     public TransactionEntity(UUID id, UUID userId, UUID accountId, UUID merchantId, 
                            BigDecimal amount, String currency, Instant occurredAt, 
                            Instant authorizedAt, String category, String description, 
@@ -67,7 +65,6 @@ public class TransactionEntity {
         this.createdAt = createdAt;
     }
 
-    // Getters and setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 

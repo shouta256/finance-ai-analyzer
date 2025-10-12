@@ -9,7 +9,7 @@ import java.util.UUID;
 public class PlaidItemEntity {
     @Id
     @Column(name = "user_id")
-    private UUID userId; // one item per user for now (future: change to composite key)
+    private UUID userId;
 
     @Column(name = "item_id", nullable = false, unique = true)
     private String itemId;

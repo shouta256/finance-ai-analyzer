@@ -7,8 +7,18 @@ apps/web/.next
 apps/web/out
 apps/web/node_modules
 apps/web/coverage
+apps/web/.next/cache
+apps/web/.turbo
+apps/web/.vercel
+apps/web/dist
+apps/web/.swc
 apps/ledger-svc/.gradle
 apps/ledger-svc/build
+apps/ledger-svc/out
+apps/ledger-svc/bin
+apps/ledger-svc/.classpath
+apps/ledger-svc/.project
+apps/ledger-svc/.settings
 apps/ledger-svc/gradle-app.setting
 apps/ledger-svc/*.log
 
@@ -19,3 +29,18 @@ apps/ledger-svc/*.log
 examples/*
 apps/web/.env
 apps/web/.env.local
+apps/web/.env.*.local
+
+# OS & editor
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+*.iml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

@@ -17,17 +17,14 @@ public class MerchantEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    // Default constructor for JPA
     public MerchantEntity() {}
 
-    // Constructor
     public MerchantEntity(UUID id, String name, Instant createdAt) {
         this.id = id;
         this.name = name;
         this.createdAt = createdAt;
     }
 
-    // Getters and setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 

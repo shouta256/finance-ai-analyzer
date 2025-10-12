@@ -14,8 +14,8 @@ import java.io.IOException;
 import java.util.Arrays;
 
 /**
- * 開発/ローカル用: dev cookie (sp_token) に格納された JWT を Authorization: Bearer に昇格させる。
- * 既に Authorization ヘッダが存在する場合は何もしない (明示優先)。
+ * Development helper: upgrade the dev cookie (sp_token) into an Authorization: Bearer header.
+ * If the request already has Authorization, we keep it untouched.
  */
 public class CookieBearerTokenFilter extends OncePerRequestFilter {
     public static final String PRIMARY_COOKIE = "sp_token";

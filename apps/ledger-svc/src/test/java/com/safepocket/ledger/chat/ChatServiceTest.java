@@ -2,7 +2,6 @@ package com.safepocket.ledger.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -35,7 +34,7 @@ class ChatServiceTest {
 
     @BeforeEach
     void setUp() {
-        chatService = new ChatService(repository, openAiClient, chatContextService, retentionManager);
+    chatService = new ChatService(repository, openAiClient, chatContextService, retentionManager);
         RequestContextHolder.set(RequestContextHolder.RequestContext.builder()
                 .userId(UUID.randomUUID())
                 .traceId("test-trace")

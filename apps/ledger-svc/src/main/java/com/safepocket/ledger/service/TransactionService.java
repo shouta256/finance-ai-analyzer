@@ -1,7 +1,6 @@
 package com.safepocket.ledger.service;
 
 import com.safepocket.ledger.analytics.AnomalyDetectionService;
-import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.model.AnalyticsSummary;
 import com.safepocket.ledger.model.AnomalyScore;
 import com.safepocket.ledger.model.Transaction;
@@ -12,7 +11,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.YearMonth;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -26,20 +24,17 @@ public class TransactionService {
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
     private final AnomalyDetectionService anomalyDetectionService;
-    private final TransactionEmbeddingService transactionEmbeddingService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
-            AnomalyDetectionService anomalyDetectionService,
-            TransactionEmbeddingService transactionEmbeddingService
+        AnomalyDetectionService anomalyDetectionService
     ) {
         this.transactionRepository = transactionRepository;
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
         this.anomalyDetectionService = anomalyDetectionService;
-        this.transactionEmbeddingService = transactionEmbeddingService;
     }
 
     @Transactional(readOnly = true)
@@ -71,7 +66,6 @@ public class TransactionService {
             updated = updated.withNotes(notes.get());
         }
         Transaction saved = transactionRepository.save(updated);
-        transactionEmbeddingService.upsertEmbeddings(userId, List.of(saved.id()));
         return saved;
     }
 

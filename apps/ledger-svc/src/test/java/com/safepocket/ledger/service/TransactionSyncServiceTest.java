@@ -9,7 +9,6 @@ import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.repository.TransactionRepository;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
-import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.plaid.PlaidService;
 import com.safepocket.ledger.user.UserService;
 import java.time.Instant;
@@ -33,8 +32,7 @@ class TransactionSyncServiceTest {
     @Mock
     private JpaAccountRepository jpaAccountRepository;
 
-    @Mock
-    private TransactionEmbeddingService transactionEmbeddingService;
+    // RAG embedding is deprecated; no embedding service dependency
 
     @Mock
     private PlaidService plaidService;
@@ -65,7 +63,6 @@ class TransactionSyncServiceTest {
             jpaAccountRepository,
             authenticatedUserProvider,
             rlsGuard,
-            transactionEmbeddingService,
             plaidService,
             userService,
             true
@@ -96,7 +93,6 @@ class TransactionSyncServiceTest {
             jpaAccountRepository,
             authenticatedUserProvider,
             rlsGuard,
-            transactionEmbeddingService,
             plaidService,
             userService,
             false
@@ -117,7 +113,6 @@ class TransactionSyncServiceTest {
             jpaAccountRepository,
             authenticatedUserProvider,
             rlsGuard,
-            transactionEmbeddingService,
             plaidService,
             userService,
             false

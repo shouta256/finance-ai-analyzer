@@ -6,7 +6,6 @@ import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.repository.TransactionRepository;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
-import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import com.safepocket.ledger.plaid.PlaidService;
 import com.safepocket.ledger.user.UserService;
 import java.math.BigDecimal;
@@ -31,7 +30,6 @@ public class TransactionSyncService {
     private final JpaAccountRepository jpaAccountRepository;
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
-    private final TransactionEmbeddingService transactionEmbeddingService;
     private final PlaidService plaidService;
     private final UserService userService;
     private final boolean demoSeedEnabled;
@@ -42,7 +40,6 @@ public class TransactionSyncService {
             JpaAccountRepository jpaAccountRepository,
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
-            TransactionEmbeddingService transactionEmbeddingService,
             PlaidService plaidService,
             UserService userService,
             @org.springframework.beans.factory.annotation.Value("${safepocket.demo.seed:false}") boolean demoSeedEnabled
@@ -51,7 +48,6 @@ public class TransactionSyncService {
         this.jpaAccountRepository = jpaAccountRepository;
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
-        this.transactionEmbeddingService = transactionEmbeddingService;
         this.plaidService = plaidService;
         this.userService = userService;
         this.demoSeedEnabled = demoSeedEnabled;
@@ -76,7 +72,7 @@ public class TransactionSyncService {
             if (!toInsert.isEmpty()) {
                 toInsert.forEach(transactionRepository::save);
                 synced = toInsert.size();
-                transactionEmbeddingService.upsertEmbeddings(userId, toInsert.stream().map(Transaction::id).toList());
+                // Embedding updates removed as RAG is deprecated
             }
         }
         userSyncCursor.put(userId, Instant.now());

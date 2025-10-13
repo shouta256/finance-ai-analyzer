@@ -44,4 +44,9 @@ public class InMemoryTransactionRepository implements TransactionRepository {
     public Optional<Transaction> findById(UUID transactionId) {
         return Optional.ofNullable(storage.get(transactionId));
     }
+
+    @Override
+    public void deleteByUserId(UUID userId) {
+        storage.entrySet().removeIf(entry -> entry.getValue().userId().equals(userId));
+    }
 }

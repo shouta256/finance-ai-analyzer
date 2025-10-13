@@ -135,6 +135,10 @@ public class TransactionSyncService {
         return transaction.accountId() + "|" + merchant + "|" + amount + "|" + occurred + "|" + pending;
     }
 
+    public void clearUserSyncState(UUID userId) {
+        userSyncCursor.remove(userId);
+    }
+
     private void ensureDemoAccounts(UUID userId) {
         List<AccountEntity> existing = jpaAccountRepository.findByUserId(userId);
         userService.ensureUserExists(userId, null, null);

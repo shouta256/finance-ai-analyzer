@@ -14,4 +14,6 @@ public interface TransactionRepository {
     List<Transaction> findByUserIdAndMonthAndAccount(UUID userId, YearMonth month, UUID accountId);
 
     Optional<Transaction> findById(UUID transactionId);
+
+    void deleteByUserId(UUID userId);
 }

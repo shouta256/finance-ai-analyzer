@@ -1,14 +1,14 @@
 package com.safepocket.ledger.repository;
 
 import com.safepocket.ledger.entity.TransactionEntity;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
-
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public interface JpaTransactionRepository extends JpaRepository<TransactionEntity, UUID> {
@@ -23,4 +23,8 @@ public interface JpaTransactionRepository extends JpaRepository<TransactionEntit
                                                            @Param("startOfMonth") Instant startOfMonth,
                                                            @Param("startOfNextMonth") Instant startOfNextMonth,
                                                            @Param("accountId") UUID accountId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM TransactionEntity t WHERE t.userId = :userId")
+    int deleteByUserId(@Param("userId") UUID userId);
 }

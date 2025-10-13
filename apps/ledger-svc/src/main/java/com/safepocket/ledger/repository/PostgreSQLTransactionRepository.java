@@ -59,6 +59,11 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
                 .map(this::toModel);
     }
 
+    @Override
+    public void deleteByUserId(UUID userId) {
+        jpaTransactionRepository.deleteByUserId(userId);
+    }
+
     private List<Transaction> convertToModels(List<TransactionEntity> entities) {
         if (entities.isEmpty()) {
             return List.of();

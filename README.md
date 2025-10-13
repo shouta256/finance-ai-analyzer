@@ -1,90 +1,84 @@
-# 💰 Safepocket - AI-Powered Personal Finance Dashboard
+# Safepocket - AI-Powered Personal Finance Dashboard
 
-**Smart financial management to improve your financial literacy**
+Smart financial management to improve your financial literacy
 
 [![Build Status](https://github.com/shouta256/finance-ai-analyzer/actions/workflows/main.yml/badge.svg)](https://github.com/shouta256/finance-ai-analyzer/actions)
 [![Security](https://img.shields.io/badge/Security-Enterprise%20Grade-green)](https://github.com/shouta256/finance-ai-analyzer)
 [![Tech Stack](https://img.shields.io/badge/Stack-Spring%20Boot%20%7C%20Next.js%20%7C%20AWS-blue)](#technology-stack)
 
-## 🚀 Deployment
+## Deployment
 
-**Live Demo:** [https://app.shota256.me] (Demo Environment)
+Live Demo: [https://app.shota256.me] (Demo Environment)
 
 The production environment runs on AWS ECS Fargate with automated deployment through CI/CD pipelines.
 
-## 📈 Overview (Elevator Pitch)
+## Overview
 
-Safepocket is a next-generation personal finance management platform that combines **AI technology with enterprise-grade security**.
+Safepocket is a next-generation personal finance management platform that combines AI technology with enterprise-grade security.
 
-It automatically collects transaction data through secure bank account integration and provides intelligent spending analysis using machine learning anomaly detection and RAG (Retrieval-Augmented Generation) technology. This is not just a simple budgeting app, but a FinTech solution that supports **data-driven financial decisions**.
+It automatically collects transaction data through bank account integration and provides intelligent spending analysis using machine learning anomaly detection and RAG (Retrieval-Augmented Generation) technology.
 
-### 🎯 Problems We Solve
-- Time-consuming manual financial management
-- Difficulty integrating scattered financial data
-- Poor visualization of spending patterns
-- Missing unusual transactions
+## Key Features
 
-## ✨ Key Features
-
-### 🔗 Bank Integration & Auto-Sync
-- Secure bank account connection via **Plaid API**
+### Bank Integration & Auto-Sync
+- Secure bank account connection via Plaid API
 - Real-time transaction data synchronization
 - Unified management of multiple financial institutions
 
-### 🤖 AI-Powered Analysis
-- Spending pattern analysis using **RAG technology**
+### AI-Powered Analysis
+- Spending pattern analysis using RAG technology
 - Intelligent summaries powered by GPT-4/Gemini API
 - Machine learning anomaly detection (Z-Score & IQR methods)
 
-### 📊 Interactive Dashboard
+### Interactive Dashboard
 - Category-based spending analysis
 - Monthly and yearly trend visualization
 - Top merchant analysis
 - Budget setting and tracking
 
-### 💬 AI Chat Assistant
+### AI Chat Assistant
 - Natural language spending queries
 - Personalized financial advice
 - Spending habit improvement suggestions
 
-## 🛠 Technology Stack
+## Technology Stack
 
 ### Frontend
-- **Next.js 14** (App Router) - Full-stack React framework
-- **TypeScript** - Type-safe development
-- **Tailwind CSS** - Modern UI design
-- **React Query** - Efficient data fetching
-- **Zod** - Runtime type validation
+- Next.js 14 (App Router) - Full-stack React framework
+- TypeScript - Type-safe development
+- Tailwind CSS - Modern UI design
+- React Query - Efficient data fetching
+- Zod - Runtime type validation
 
 ### Backend
-- **Spring Boot 3.2** - Enterprise Java framework
-- **Java 21** - Latest LTS version of Java
-- **Spring Security** - Authentication & authorization
-- **JPA/Hibernate** - ORM and database access
-- **Flyway** - Database migration
+- Spring Boot 3.2 - Enterprise Java framework
+- Java 21 - Latest LTS version of Java
+- Spring Security - Authentication & authorization
+- JPA/Hibernate - ORM and database access
+- Flyway - Database migration
 
 ### Data & AI
-- **PostgreSQL** - Main database (with RLS support)
-- **Redis** - Cache and session management
-- **Google Gemini** - AI summarization, analysis, and vector embeddings
-- **Apache Commons Math** - Statistical analysis
+- PostgreSQL - Main database (with RLS support)
+- Redis - Cache and session management
+- Google Gemini - AI summarization, analysis, and vector embeddings
+- Apache Commons Math - Statistical analysis
 
 ### Infrastructure & DevOps
-- **AWS ECS Fargate** - Container orchestration
-- **Application Load Balancer + WAF** - Load balancing and security
-- **Amazon RDS** - Managed PostgreSQL
-- **ElastiCache** - Managed Redis
-- **AWS Secrets Manager + KMS** - Secret management
-- **Amazon ECR** - Container registry
+- AWS ECS Fargate - Container orchestration
+- Application Load Balancer + WAF - Load balancing and security
+- Amazon RDS - Managed PostgreSQL
+- ElastiCache - Managed Redis
+- AWS Secrets Manager + KMS - Secret management
+- Amazon ECR - Container registry
 
 ### Development & CI/CD
-- **GitHub Actions** - CI/CD pipeline
-- **Docker** - Containerization
-- **Terraform** - Infrastructure as Code
-- **Trivy** - Security scanning
-- **Biome** - Linting & formatting
+- GitHub Actions - CI/CD pipeline
+- Docker - Containerization
+- Terraform - Infrastructure as Code
+- Trivy - Security scanning
+- Biome - Linting & formatting
 
-## 🏗 Architecture
+## Architecture
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
@@ -103,56 +97,56 @@ It automatically collects transaction data through secure bank account integrati
 ```
 
 ### Design Principles
-- **Contract-First API** - Type safety through OpenAPI specifications
-- **Microservices** - Loosely coupled service design
-- **Zero-Trust Security** - Multi-layered defense security
-- **Event-Driven** - High throughput through asynchronous processing
+- Contract-First API - Type safety through OpenAPI specifications
+- Microservices - Loosely coupled service design
+- Zero-Trust Security - Multi-layered defense security
+- Event-Driven - High throughput through asynchronous processing
 
-## 🔐 Technical Highlights & Challenges
+## Technical Highlights & Challenges
 
 ### 1. Enterprise-Grade Security
-- **Row Level Security (RLS)** for multi-tenant isolation
-- **KMS encryption** to protect Plaid access tokens
-- **JWT + Cognito** for robust authentication infrastructure
-- **WAF** for attack defense
+- Row Level Security (RLS) for multi-tenant isolation
+- KMS encryption to protect Plaid access tokens
+- JWT + Cognito for robust authentication infrastructure
+- WAF for attack defense
 
 ### 2. RAG Implementation
-- **Vector search** for fast extraction of related transactions
-- **Multi-modal embeddings** (Gemini API)
-- **Context optimization** to improve LLM response accuracy
-- **Entity extraction** for semantic search
+- Vector search for fast extraction of related transactions
+- Multi-modal embeddings (Gemini API)
+- Context optimization to improve LLM response accuracy
+- Entity extraction for semantic search
 
 ### 3. DevOps & Automation
-- **GitHub Actions OIDC** for secure CI/CD
-- **Blue-Green Deployment** for zero-downtime updates
-- **Infrastructure as Code** (Terraform)
-- **Multi-stage Dockerfiles** for optimized containers
+- GitHub Actions OIDC for secure CI/CD
+- Blue-Green Deployment for zero-downtime updates
+- Infrastructure as Code (Terraform)
+- Multi-stage Dockerfiles for optimized containers
 
 ### 4. Performance Optimization
-- **PostgreSQL index strategies** for query optimization
-- **Redis caching** for faster response times
-- **Connection pooling** for efficient database connection management
-- **Lazy loading** to reduce memory usage
+- PostgreSQL index strategies for query optimization
+- Redis caching for faster response times
+- Connection pooling for efficient database connection management
+- Lazy loading to reduce memory usage
 
 ### 5. Developer Experience (DX)
-- **Make commands** for one-click environment setup
-- **Contract-First development** for type safety guarantees
-- **Hot reload** enabled development environment
-- **Comprehensive testing** (Unit/Integration/E2E)
+- Make commands for one-click environment setup
+- Contract-First development for type safety guarantees
+- Hot reload enabled development environment
+- Comprehensive testing (Unit/Integration/E2E)
 
 ### 6. Monitoring & Operations
-- **Structured logging** for improved operations
-- **Health checks** for automatic recovery
-- **Metrics collection** for performance monitoring
-- **Error tracking** for fast incident response
+- Structured logging for improved operations
+- Health checks for automatic recovery
+- Metrics collection for performance monitoring
+- Error tracking for fast incident response
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- **Docker & Docker Compose**
-- **Java 21+**
-- **Node.js 18+**
-- **pnpm 8+**
+- Docker & Docker Compose
+- Java 21+
+- Node.js 18+
+- pnpm 8+
 
 ### 1. Clone and Setup
 ```bash
@@ -186,9 +180,9 @@ cd apps/web && pnpm dev  # Frontend
 ```
 
 ### 4. Access Points
-- **Web UI**: http://localhost:3000
-- **API**: http://localhost:8081
-- **API Docs**: http://localhost:8081/swagger-ui.html
+- Web UI: http://localhost:3000
+- API: http://localhost:8081
+- API Docs: http://localhost:8081/swagger-ui.html
 
 ### 5. Run Tests
 ```bash
@@ -214,7 +208,7 @@ make seed
 
 ---
 
-## 📚 Technical Documentation
+## Technical Documentation
 
 For detailed technical specifications, please refer to:
 
@@ -225,9 +219,9 @@ For detailed technical specifications, please refer to:
 
 ---
 
-## 📄 License & Credits
+## License & Credits
 
-**Developer:** Shota Suzuki ([@shouta256](https://github.com/shouta256))
-**Project Period:** September 2025 - Ongoing
-**Purpose:** Technical skills demonstration
-**Tools Used:** GitHub Copilot for efficient and collaborative development
+Developer: Shota Suzuki ([@shouta256](https://github.com/shouta256))
+Project Period: September 2025 - Ongoing
+Purpose: Technical skills demonstration
+Tools Used: GitHub Copilot for efficient and collaborative development

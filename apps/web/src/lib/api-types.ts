@@ -41,6 +41,10 @@ export interface paths {
     /** Aggregate transactions for a custom window and granularity */
     post: operations["ragAggregate"];
   };
+  "/users/{userId}": {
+    /** Delete user and purge associated data */
+    delete: operations["deleteUser"];
+  };
   "/ai/chat": {
     /** Send a chat message to AI assistant */
     post: operations["sendAiChatMessage"];
@@ -597,6 +601,21 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["RagAggregateResponse"];
         };
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
+  /** Delete user and purge associated data */
+  deleteUser: {
+    parameters: {
+      path: {
+        userId: string;
+      };
+    };
+    responses: {
+      /** @description User deleted */
+      204: {
+        content: never;
       };
       default: components["responses"]["ErrorResponse"];
     };

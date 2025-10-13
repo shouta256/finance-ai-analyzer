@@ -220,6 +220,24 @@ paths:
                 $ref: '#/components/schemas/RagAggregateResponse'
         default:
           $ref: '#/components/responses/ErrorResponse'
+  /users/{userId}:
+    delete:
+      summary: Delete user and purge associated data
+      operationId: deleteUser
+      tags:
+        - Users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: User deleted
+        default:
+          $ref: '#/components/responses/ErrorResponse'
   /ai/chat:
     post:
       summary: Send a chat message to AI assistant

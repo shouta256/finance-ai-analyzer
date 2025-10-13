@@ -221,7 +221,7 @@ For detailed technical specifications, please refer to:
 
 ## License & Credits
 
-Developer: Shota Suzuki ([@shouta256](https://github.com/shouta256))
-Project Period: September 2025 - Ongoing
-Purpose: Technical skills demonstration
-Tools Used: GitHub Copilot for efficient and collaborative development
+- Developer: Shota Suzuki ([@shouta256](https://github.com/shouta256))
+- Project Period: September 2025 - Ongoing
+- Purpose: Technical skills demonstration
+- Tools Used: GitHub Copilot for efficient and collaborative development

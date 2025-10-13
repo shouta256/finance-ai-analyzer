@@ -11,14 +11,19 @@ import com.safepocket.ledger.user.UserService;
 import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.math.RoundingMode;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -65,14 +70,15 @@ public class TransactionSyncService {
         boolean useDemoSeed = demoSeedRequested || demoSeedEnabled;
         int synced = 0;
         if (needsSeed) {
-            List<Transaction> toInsert = List.of();
+            List<Transaction> fetched = List.of();
             if (useDemoSeed) {
                 ensureDemoAccounts(userId);
-                toInsert = seedTransactions(userId);
+                fetched = seedTransactions(userId);
             } else {
                 // Fetch recent real transactions from Plaid
-                toInsert = plaidService.fetchRecentTransactions(userId, 30);
+                fetched = plaidService.fetchRecentTransactions(userId, 30);
             }
+            List<Transaction> toInsert = dedupeTransactions(userId, fetched);
             if (!toInsert.isEmpty()) {
                 toInsert.forEach(transactionRepository::save);
                 synced = toInsert.size();
@@ -84,6 +90,49 @@ public class TransactionSyncService {
         // If demo seeding is disabled, there is no backlog to process.
         int pending = useDemoSeed ? Math.max(0, 50 - synced) : 0;
         return new SyncResult("STARTED", synced, pending, traceId);
+    }
+
+    private List<Transaction> dedupeTransactions(UUID userId, List<Transaction> candidates) {
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        Set<String> existingFingerprints = loadExistingFingerprints(userId, candidates);
+        List<Transaction> unique = new ArrayList<>(candidates.size());
+        for (Transaction transaction : candidates) {
+            String fingerprint = fingerprint(transaction);
+            if (existingFingerprints.add(fingerprint)) {
+                unique.add(transaction);
+            }
+        }
+        return unique;
+    }
+
+    private Set<String> loadExistingFingerprints(UUID userId, List<Transaction> candidates) {
+        Set<String> seen = new HashSet<>();
+        if (candidates.isEmpty()) {
+            return seen;
+        }
+        Set<YearMonth> months = candidates.stream()
+                .map(tx -> YearMonth.from(tx.occurredAt().atZone(ZoneOffset.UTC)))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        for (YearMonth month : months) {
+            transactionRepository.findByUserIdAndMonth(userId, month).stream()
+                    .map(this::fingerprint)
+                    .forEach(seen::add);
+        }
+        return seen;
+    }
+
+    private String fingerprint(Transaction transaction) {
+        String merchant = transaction.merchantName() == null ? "" : transaction.merchantName().trim().toLowerCase();
+        String amount = transaction.amount() == null
+                ? "0.00"
+                : transaction.amount().setScale(2, RoundingMode.HALF_EVEN).toPlainString();
+        String occurred = transaction.occurredAt() == null
+                ? ""
+                : transaction.occurredAt().truncatedTo(ChronoUnit.MINUTES).toString();
+        String pending = transaction.pending() ? "1" : "0";
+        return transaction.accountId() + "|" + merchant + "|" + amount + "|" + occurred + "|" + pending;
     }
 
     private void ensureDemoAccounts(UUID userId) {

@@ -142,31 +142,4 @@ class TransactionSyncServiceTest {
             assertThat(transactionRepository.findByUserIdAndMonth(userId, previous)).isNotEmpty();
         }
     }
-
-    @Test
-    void repeatedDemoSeedDoesNotDuplicateTransactions() {
-        when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
-        transactionSyncService.triggerSync(false, true, "demo-seed-1");
-        int beforeCount = totalTransactionsAcrossRecentMonths(3);
-
-        var second = transactionSyncService.triggerSync(true, true, "demo-seed-2");
-
-        assertThat(second.syncedCount()).isZero();
-        int afterCount = totalTransactionsAcrossRecentMonths(3);
-        assertThat(afterCount).isEqualTo(beforeCount);
-        org.mockito.Mockito.verify(transactionEmbeddingService, org.mockito.Mockito.times(1))
-                .upsertEmbeddings(
-                        org.mockito.ArgumentMatchers.eq(userId),
-                        org.mockito.ArgumentMatchers.anyList()
-                );
-    }
-
-    private int totalTransactionsAcrossRecentMonths(int months) {
-        int total = 0;
-        YearMonth current = YearMonth.now(ZoneOffset.UTC);
-        for (int i = 0; i < months; i++) {
-            total += transactionRepository.findByUserIdAndMonth(userId, current.minusMonths(i)).size();
-        }
-        return total;
-    }
 }

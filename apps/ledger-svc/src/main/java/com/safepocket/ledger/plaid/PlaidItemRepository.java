@@ -14,6 +14,7 @@ public interface PlaidItemRepository extends JpaRepository<PlaidItemEntity, UUID
     Optional<PlaidItemEntity> findByUserId(UUID userId);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("DELETE FROM PlaidItemEntity p WHERE p.userId = :userId")
+    @Query("delete from PlaidItemEntity p where p.userId = :userId")
     int deleteByUserId(@Param("userId") UUID userId);
 }
+

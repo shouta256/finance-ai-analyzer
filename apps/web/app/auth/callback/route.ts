@@ -29,7 +29,11 @@ export async function GET(req: NextRequest) {
     // Use forwarded host if present (proxy) else request host
     const incomingHost = fwdHost || req.nextUrl.host; // includes port if any
     const isProdLikeHost = !incomingHost.startsWith('localhost') && incomingHost !== '127.0.0.1' && !incomingHost.startsWith('0.0.0.0');
-    if (isProdLikeHost && parsed.host !== incomingHost) {
+    const isHttpScheme = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    if (!isHttpScheme) {
+      // Custom scheme (e.g. native app). For web callback we override to current host to avoid mismatch.
+      redirectUri = `${effectiveOrigin}/auth/callback`;
+    } else if (isProdLikeHost && parsed.host !== incomingHost) {
       // Only override when the configured value looks like a localhost while request host is prod-like
       const looksLocal = parsed.host.startsWith('localhost') || parsed.host.startsWith('127.0.0.1') || parsed.host.startsWith('0.0.0.0');
       if (looksLocal) {

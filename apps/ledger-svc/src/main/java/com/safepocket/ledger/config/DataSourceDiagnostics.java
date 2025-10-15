@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
  * surface immediately (instead of a generic Hikari message later).
  */
 @Component
+@Profile("!test")
 public class DataSourceDiagnostics {
     private static final Logger log = LoggerFactory.getLogger(DataSourceDiagnostics.class);
 

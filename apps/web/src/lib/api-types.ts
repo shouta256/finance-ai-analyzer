@@ -54,6 +54,8 @@ export interface paths {
     delete: operations["deleteUser"];
   };
   "/ai/chat": {
+    /** Retrieve chat history */
+    get: operations["getAiChatHistory"];
     /** Send a chat message to AI assistant */
     post: operations["sendAiChatMessage"];
   };
@@ -740,6 +742,24 @@ export interface operations {
       /** @description User deleted */
       204: {
         content: never;
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
+  /** Retrieve chat history */
+  getAiChatHistory: {
+    parameters: {
+      query?: {
+        /** @description Existing conversation identifier to fetch history for */
+        conversationId?: string;
+      };
+    };
+    responses: {
+      /** @description Chat response returned */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AiChatResponse"];
+        };
       };
       default: components["responses"]["ErrorResponse"];
     };

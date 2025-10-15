@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       redirect_uri: redirectUri,
     });
 
-    const tokenEndpoint = `https://${userPoolDomain}/oauth2/token`;
+    const tokenEndpoint = buildCognitoUrl(userPoolDomain, "/oauth2/token");
     const resp = await fetch(tokenEndpoint, {
       method: 'POST',
       headers: {
@@ -142,6 +142,16 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     return NextResponse.json({ error: { code: 'EXCHANGE_ERROR', message: (e as Error).message } }, { status: 500 });
   }
+}
+
+function buildCognitoUrl(domain: string | null | undefined, path: string): string {
+  if (!domain || !domain.trim()) {
+    throw new Error('Missing Cognito domain');
+  }
+  const trimmed = domain.trim().replace(/\/+$/, '');
+  const hasProtocol = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+  const base = hasProtocol ? trimmed : `https://${trimmed}`;
+  return `${base}${path}`;
 }
 
 function safeRedirectPath(raw: string): string {

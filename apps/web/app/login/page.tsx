@@ -12,6 +12,16 @@ const cognitoStatic = {
   scope: process.env.NEXT_PUBLIC_COGNITO_SCOPE || 'openid profile email',
 };
 
+function buildCognitoUrl(domain?: string | null, path = ""): string {
+  if (!domain || !domain.trim()) {
+    throw new Error("Missing Cognito domain");
+  }
+  const trimmed = domain.trim().replace(/\/+$/, "");
+  const hasProtocol = trimmed.startsWith("http://") || trimmed.startsWith("https://");
+  const base = hasProtocol ? trimmed : `https://${trimmed}`;
+  return `${base}${path}`;
+}
+
 // Determine the redirect URI at runtime. If an env var is provided AND its host matches current
 // window.location.host we use it; otherwise we fallback to current origin. This lets you keep
 // NEXT_PUBLIC_COGNITO_REDIRECT_URI in local dev while production (different host) auto-corrects.
@@ -81,7 +91,7 @@ function LoginForm() {
       redirect_uri: redirectUri,
       state: searchParams.get("redirect") || '/dashboard',
     });
-    const authorizeUrl = `https://${cognitoStatic.domain}/oauth2/authorize?${params.toString()}`;
+    const authorizeUrl = buildCognitoUrl(cognitoStatic.domain, "/oauth2/authorize") + `?${params.toString()}`;
     window.location.href = authorizeUrl;
   };
 
@@ -143,12 +153,19 @@ function LoginForm() {
                   redirect_uri: redirectUri,
                   state: '/dashboard',
                 });
-                const url = `https://${cognitoStatic.domain}/oauth2/authorize?${params.toString()}`;
+                const base = buildCognitoUrl(cognitoStatic.domain, "/oauth2/authorize");
+                const url = `${base}?${params.toString()}`;
                 window.open(url, '_blank');
               }}
               className="mt-1 truncate rounded bg-white px-2 py-1 text-left font-mono text-[10px] shadow-sm hover:bg-slate-100"
             >
-              https://{cognitoStatic.domain}/oauth2/authorize?... (open)
+              {(() => {
+                try {
+                  return `${buildCognitoUrl(cognitoStatic.domain, "/oauth2/authorize")}?... (open)`;
+                } catch {
+                  return "authorize URL unavailable";
+                }
+              })()}
             </button>
           </div>
         )}

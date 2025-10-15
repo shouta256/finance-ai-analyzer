@@ -16,12 +16,22 @@ const chatRequestSchema = z.object({
   truncateFromMessageId: z.string().uuid().optional(),
 });
 
+function normalizeBearer(value: string): string {
+  return value.startsWith("Bearer ") ? value : `Bearer ${value}`;
+}
+
 function requireAuthorization(request: NextRequest): string | NextResponse {
-  const authorization = request.headers.get("authorization");
-  if (!authorization) {
-    return NextResponse.json(authErrorBody, { status: 401 });
+  const header = request.headers.get("authorization");
+  if (header && header.trim()) {
+    return normalizeBearer(header.trim());
   }
-  return authorization;
+
+  const cookieToken = request.cookies.get("sp_token")?.value;
+  if (cookieToken && cookieToken.trim()) {
+    return normalizeBearer(cookieToken.trim());
+  }
+
+  return NextResponse.json(authErrorBody, { status: 401 });
 }
 
 function mapError(error: unknown): NextResponse {

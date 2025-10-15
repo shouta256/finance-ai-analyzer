@@ -23,6 +23,7 @@ describe("/api/chat route", () => {
     const request = {
       headers: new Headers(),
       url: "https://example.com/api/chat",
+      cookies: new Map() as any,
     } as any;
 
     const res = await GET(request);
@@ -31,11 +32,32 @@ describe("/api/chat route", () => {
     expect(body).toEqual({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
   });
 
+  it("accepts sp_token cookie when header missing", async () => {
+    mockedLedgerFetch.mockResolvedValue(sampleConversation);
+    const request = {
+      headers: new Headers(),
+      url: "https://example.com/api/chat",
+      cookies: {
+        get: (name: string) => (name === "sp_token" ? { value: "cookie-token" } : undefined),
+      },
+      json: async () => ({ message: "Hello" }),
+    } as any;
+
+    const res = await POST(request);
+    expect(res.status).toBe(200);
+    expect(mockedLedgerFetch).toHaveBeenCalledWith("/ai/chat", {
+      method: "POST",
+      headers: { authorization: "Bearer cookie-token", "content-type": "application/json" },
+      body: JSON.stringify({ message: "Hello" }),
+    });
+  });
+
   it("proxies GET requests to ledger service", async () => {
     mockedLedgerFetch.mockResolvedValue(sampleConversation);
     const request = {
       headers: new Headers({ authorization: "Bearer token" }),
       url: "https://example.com/api/chat?conversationId=22222222-2222-2222-2222-222222222222",
+      cookies: new Map() as any,
     } as any;
 
     const res = await GET(request);
@@ -58,6 +80,7 @@ describe("/api/chat route", () => {
       headers: new Headers({ authorization: "Bearer token" }),
       url: "https://example.com/api/chat",
       json: async () => body,
+      cookies: new Map() as any,
     } as any;
 
     const res = await POST(request);
@@ -75,6 +98,7 @@ describe("/api/chat route", () => {
       headers: new Headers({ authorization: "Bearer token" }),
       url: "https://example.com/api/chat",
       json: async () => ({ message: "" }),
+      cookies: new Map() as any,
     } as any;
 
     const res = await POST(request);
@@ -96,6 +120,7 @@ describe("/api/chat route", () => {
       headers: new Headers({ authorization: "Bearer token" }),
       url: "https://example.com/api/chat",
       json: async () => ({ message: "hello" }),
+      cookies: new Map() as any,
     } as any;
 
     const res = await POST(request);

@@ -137,6 +137,9 @@ jobs:
           ENV_OVERRIDES=$(jq -n '[]')
           for VAR in \
             NEXT_PUBLIC_COGNITO_DOMAIN \
+            COGNITO_DOMAIN \
+            COGNITO_CLIENT_ID_NATIVE \
+            COGNITO_REDIRECT_URI_NATIVE \
             NEXT_PUBLIC_COGNITO_CLIENT_ID \
             NEXT_PUBLIC_COGNITO_SCOPE \
             NEXT_PUBLIC_COGNITO_REDIRECT_URI \
@@ -192,6 +195,9 @@ jobs:
       CONTAINER_NAME:  ledger-svc
       IMAGE:           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/ledger-svc:${{ github.sha }}
       # ==== Backend (Spring) Cognito runtime vars ====
+      COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
+      COGNITO_CLIENT_ID_NATIVE: ${{ secrets.COGNITO_CLIENT_ID_NATIVE }}
+      COGNITO_REDIRECT_URI_NATIVE: ${{ secrets.COGNITO_REDIRECT_URI_NATIVE }}
       COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
       COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
       SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
@@ -293,6 +299,9 @@ jobs:
           ENV_OVERRIDES=$(jq -n '[]')
           for VAR in \
             COGNITO_ISSUER \
+            COGNITO_DOMAIN \
+            COGNITO_CLIENT_ID_NATIVE \
+            COGNITO_REDIRECT_URI_NATIVE \
             COGNITO_AUDIENCE \
             SAFEPOCKET_USE_COGNITO \
             PLAID_CLIENT_ID \

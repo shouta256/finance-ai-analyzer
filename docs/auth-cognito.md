@@ -11,10 +11,12 @@ Backend (`apps/ledger-svc`):
 - `SAFEPOCKET_DEV_JWT_SECRET` (omit in production)
 - `COGNITO_REGION=us-east-1`
 - `COGNITO_USER_POOL_ID=<prod pool id>` (Option A pool)
-- `COGNITO_CLIENT_ID=<prod app client id>`
+- `COGNITO_CLIENT_ID_WEB=<web app client id>`
+- `COGNITO_CLIENT_ID_NATIVE=<native app client id>`
+- (optional) `COGNITO_CLIENT_ID` (fallback if both above absent)
 - (optional) `COGNITO_CLIENT_SECRET=<secret>` (only if app client has secret; then token exchange uses Basic Auth)
 - (optional) `COGNITO_ISSUER` override. Default: `https://cognito-idp.{region}.amazonaws.com/{userPoolId}`
-- (optional) `COGNITO_AUDIENCE` override. Default: client id
+- (optional) `COGNITO_AUDIENCE` override. Default: derived from client ids (comma-separated)
 
 Frontend (`apps/web`):
 - `NEXT_PUBLIC_COGNITO_DOMAIN=<domain>.auth.us-east-1.amazoncognito.com`
@@ -67,6 +69,31 @@ Implement `/logout` to clear cookie and redirect to:
 4. (Optional) Remove legacy/unused new pool to avoid confusion.
 5. Deploy; verify `/login` loads then immediately hits Hosted UI; complete login.
 6. Capture token in cookie; check protected API returns 200.
+
+## Native App (iOS/Android) Settings
+
+For native clients using a custom URL scheme and a public app client (no secret):
+
+- Backend required envs (example values):
+   - `SAFEPOCKET_USE_COGNITO=true`
+   - `COGNITO_DOMAIN=https://us-east-1mfd4o5tgy.auth.us-east-1.amazoncognito.com`
+   - `COGNITO_CLIENT_ID_NATIVE=p4tu620p2eriv24tb1897d49s`
+   - `COGNITO_REDIRECT_URI=safepocket://auth/callback`
+- Notes:
+   - The backend builds `audience` from available client ids if `COGNITO_AUDIENCE` isn’t set.
+   - Most native app clients don’t use a client secret; leave `COGNITO_CLIENT_SECRET` unset.
+   - Ensure the exact `redirect_uri` is whitelisted in the Cognito app client.
+   - The backend token exchange will send `redirect_uri` you provide; you can also supply it per-request via the token exchange API.
+
+### CI/CD Secrets (GitHub Actions)
+
+Set the following repository/environment secrets for deployments:
+
+- `COGNITO_DOMAIN`
+- `COGNITO_CLIENT_ID_WEB`
+- `COGNITO_CLIENT_ID_NATIVE`
+- (optional) `COGNITO_AUDIENCE`
+- (optional) `COGNITO_CLIENT_SECRET` (if web client uses secret)
 
 ## TODO / Future Enhancements
 - PKCE implementation (`code_challenge` S256 + verifier storage in session cookie).

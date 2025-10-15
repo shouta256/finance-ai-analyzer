@@ -217,6 +217,18 @@ For detailed technical specifications, please refer to:
 - [Coding Standards](docs/coding-standards.md) - Coding conventions
 - [Operations Guide](docs/operations.md) - Operations guide
 
+### Cognito Setup for Native App
+
+1. Copy `.env.example` to `.env` and set:
+        - `SAFEPOCKET_USE_COGNITO=true`
+        - `COGNITO_DOMAIN=https://us-east-1mfd4o5tgy.auth.us-east-1.amazoncognito.com`
+                - `COGNITO_CLIENT_ID_NATIVE=p4tu620p2eriv24tb1897d49s` (for native app)
+                - Optionally set `COGNITO_CLIENT_ID_WEB` for web client deployments
+        - `COGNITO_REDIRECT_URI=safepocket://auth/callback`
+2. Start services normally (Makefile targets auto-load `.env`).
+3. Ensure the redirect URI is registered in the Cognito app client.
+
+
 ---
 
 ## License & Credits

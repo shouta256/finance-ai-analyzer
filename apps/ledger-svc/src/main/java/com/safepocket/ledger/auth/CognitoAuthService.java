@@ -44,7 +44,7 @@ public class CognitoAuthService {
         }
         String grantType = normalizeGrantType(request.grantType());
         String baseUrl = resolveBaseUrl();
-        String clientId = resolveClientId();
+    String clientId = resolveClientId(commandRedirectUriOrNull(request));
 
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", grantType);
@@ -140,12 +140,36 @@ public class CognitoAuthService {
         return grantType.trim().toLowerCase();
     }
 
-    private String resolveClientId() {
+    private String resolveClientId(String redirectUri) {
+        // Prefer platform-specific client id when redirect URI indicates platform
+        String webId = properties.cognito().clientIdWeb();
+        String nativeId = properties.cognito().clientIdNative();
+        if (StringUtils.hasText(redirectUri)) {
+            String trimmed = redirectUri.trim().toLowerCase();
+            if ((trimmed.startsWith("http://") || trimmed.startsWith("https://")) && StringUtils.hasText(webId)) {
+                return webId;
+            }
+            // Non-http(s) scheme implies native custom scheme
+            int colon = trimmed.indexOf(":");
+            if (colon > 0 && !trimmed.startsWith("http") && StringUtils.hasText(nativeId)) {
+                return nativeId;
+            }
+        }
         String clientId = properties.cognito().clientId();
         if (!StringUtils.hasText(clientId)) {
-            throw new IllegalStateException("Cognito client ID not configured (set COGNITO_CLIENT_ID or COGNITO_AUDIENCE)");
+            // As a last resort, use whichever specific id is present
+            if (StringUtils.hasText(webId)) return webId;
+            if (StringUtils.hasText(nativeId)) return nativeId;
+            throw new IllegalStateException("Cognito client ID not configured (set COGNITO_CLIENT_ID or platform-specific IDs)");
         }
         return clientId;
+    }
+
+    private String commandRedirectUriOrNull(TokenExchangeRequest request) {
+        if (request == null) return null;
+        if (StringUtils.hasText(request.redirectUri())) return request.redirectUri();
+        if (properties.cognito().hasRedirectUri()) return properties.cognito().redirectUri();
+        return null;
     }
 
     private String resolveBaseUrl() {

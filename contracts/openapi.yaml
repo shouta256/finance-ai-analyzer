@@ -13,6 +13,28 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /auth/token:
+    post:
+      summary: Exchange Cognito authorization code or refresh token for Safepocket session
+      operationId: exchangeAuthToken
+      tags:
+        - Authentication
+      security: []  # Public endpoint (tokens issued from Cognito)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthTokenRequest'
+      responses:
+        '200':
+          description: Tokens issued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
   /plaid/link-token:
     post:
       summary: Create Plaid link token
@@ -152,7 +174,22 @@ paths:
           content:
             application/json:
               schema:
-          $ref: '#/components/schemas/AnalyticsSummaryResponse'
+                $ref: '#/components/schemas/AnalyticsSummaryResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /accounts:
+    get:
+      summary: List linked accounts for the authenticated user
+      operationId: listAccounts
+      tags:
+        - Accounts
+      responses:
+        '200':
+          description: Accounts retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountsListResponse'
         default:
           $ref: '#/components/responses/ErrorResponse'
   /rag/search:
@@ -239,6 +276,28 @@ paths:
         default:
           $ref: '#/components/responses/ErrorResponse'
   /ai/chat:
+    get:
+      summary: Retrieve chat history
+      operationId: getAiChatHistory
+      tags:
+        - AI
+      parameters:
+        - in: query
+          name: conversationId
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Existing conversation identifier to fetch history for
+      responses:
+        '200':
+          description: Chat response returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiChatResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
     post:
       summary: Send a chat message to AI assistant
       operationId: sendAiChatMessage
@@ -273,6 +332,136 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    AuthTokenRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - grantType
+      properties:
+        grantType:
+          type: string
+          description: OAuth2 grant type to execute (authorization_code or refresh_token)
+          enum:
+            - authorization_code
+            - refresh_token
+        code:
+          type: string
+          description: Authorization code returned from Cognito Hosted UI callback (required for authorization_code grant)
+        redirectUri:
+          type: string
+          format: uri
+          description: Redirect URI registered in Cognito and used during authorization (required for authorization_code grant)
+        codeVerifier:
+          type: string
+          description: PKCE code_verifier used during authorization (optional)
+        refreshToken:
+          type: string
+          description: Refresh token issued by Cognito (required for refresh_token grant)
+    AuthTokenResponse:
+      type: object
+      required:
+        - accessToken
+        - expiresIn
+        - tokenType
+        - traceId
+      properties:
+        accessToken:
+          type: string
+          description: Access token issued by Cognito (use in Authorization header)
+        idToken:
+          type: string
+          description: ID token issued by Cognito (may be absent if scope excludes openid)
+          nullable: true
+        refreshToken:
+          type: string
+          description: Refresh token for obtaining new access tokens
+          nullable: true
+        expiresIn:
+          type: integer
+          format: int32
+          description: Token lifetime in seconds
+        tokenType:
+          type: string
+          description: Token type (typically Bearer)
+        scope:
+          type: string
+          description: Granted scopes from Cognito
+          nullable: true
+        userId:
+          type: string
+          format: uuid
+          description: Authenticated user identifier derived from token subject
+          nullable: true
+        traceId:
+          type: string
+          description: Request trace identifier for auditing
+    AccountsListResponse:
+      type: object
+      required:
+        - currency
+        - totalBalance
+        - accounts
+        - traceId
+      properties:
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: ISO 4217 currency code for balances
+        totalBalance:
+          type: number
+          format: double
+          description: Sum of balances across all accounts
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        traceId:
+          type: string
+          description: Request trace identifier for auditing
+    Account:
+      type: object
+      required:
+        - id
+        - name
+        - institution
+        - balance
+        - currency
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        institution:
+          type: string
+        type:
+          type: string
+          description: Account type (checking, savings, credit, etc.)
+          nullable: true
+        balance:
+          type: number
+          format: double
+          description: Current account balance
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the account was first recorded
+        lastTransactionAt:
+          type: string
+          format: date-time
+          description: Timestamp of the latest transaction observed for this account
+          nullable: true
+        linkedAt:
+          type: string
+          format: date-time
+          description: When the underlying financial institution link was established
+          nullable: true
     PlaidLinkTokenResponse:
       type: object
       required:

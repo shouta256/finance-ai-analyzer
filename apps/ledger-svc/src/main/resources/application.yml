@@ -49,10 +49,15 @@ management:
 safepocket:
   cognito:
     issuer: ${COGNITO_ISSUER:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_mFd4O5tGY}
-    audience: ${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv}
+    # Audience can be a comma-separated list. If not provided, it will be derived from client ids.
+    audience: ${COGNITO_AUDIENCE:}
     enabled: ${SAFEPOCKET_USE_COGNITO:false}
     domain: ${COGNITO_DOMAIN:}
-    client-id: ${COGNITO_CLIENT_ID:${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv}}
+    # Primary (fallback) client id. If absent, will be derived at runtime.
+    client-id: ${COGNITO_CLIENT_ID:}
+    # Separate client ids per platform (optional)
+    client-id-web: ${COGNITO_CLIENT_ID_WEB:}
+    client-id-native: ${COGNITO_CLIENT_ID_NATIVE:}
     client-secret: ${COGNITO_CLIENT_SECRET:}
     redirect-uri: ${COGNITO_REDIRECT_URI:}
   plaid:

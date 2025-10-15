@@ -35,18 +35,50 @@ public record SafepocketProperties(
             Boolean enabled,
             String domain,
             String clientId,
+            String clientIdWeb,
+            String clientIdNative,
             String clientSecret,
             String redirectUri
     ) {
         public Cognito {
-            if (issuer == null || issuer.isBlank()) {
-                throw new IllegalArgumentException("issuer must be provided");
-            }
-            if (audience == null || audience.isBlank()) {
-                throw new IllegalArgumentException("audience must be provided");
-            }
-            if (clientId == null || clientId.isBlank()) {
-                clientId = audience;
+            boolean enabledValue = enabled == null || enabled;
+            if (enabledValue) {
+                if (issuer == null || issuer.isBlank()) {
+                    throw new IllegalArgumentException("issuer must be provided");
+                }
+                // Compute effective clientId if not provided: prefer specific web/native ids, else derive from audience
+                if (clientId == null || clientId.isBlank()) {
+                    if (clientIdWeb != null && !clientIdWeb.isBlank()) {
+                        clientId = clientIdWeb;
+                    } else if (clientIdNative != null && !clientIdNative.isBlank()) {
+                        clientId = clientIdNative;
+                    }
+                }
+                // Compute audience if missing: join available client ids (web,native,clientId) as comma list
+                if (audience == null || audience.isBlank()) {
+                    StringBuilder aud = new StringBuilder();
+                    if (clientIdWeb != null && !clientIdWeb.isBlank()) aud.append(clientIdWeb);
+                    if (clientIdNative != null && !clientIdNative.isBlank()) {
+                        if (aud.length() > 0) aud.append(",");
+                        aud.append(clientIdNative);
+                    }
+                    if ((clientId == null || clientId.isBlank()) && aud.length() == 0) {
+                        throw new IllegalArgumentException("audience must be provided or derived from client ids");
+                    }
+                    if (aud.length() == 0) {
+                        aud.append(clientId);
+                    }
+                    audience = aud.toString();
+                }
+                // Ensure clientId has a value at this point
+                if (clientId == null || clientId.isBlank()) {
+                    // choose first in audience list
+                    clientId = audience.contains(",") ? audience.split("\\s*,\\s*")[0] : audience;
+                }
+            } else {
+                // When Cognito disabled, avoid strict validation; set safe defaults to avoid NPEs in diagnostics
+                if (audience == null) audience = "";
+                if (clientId == null) clientId = "";
             }
         }
 

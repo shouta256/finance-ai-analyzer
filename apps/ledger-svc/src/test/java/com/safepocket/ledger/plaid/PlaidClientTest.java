@@ -56,7 +56,7 @@ public class PlaidClientTest {
 
     private PlaidClient newClient() {
     var props = new SafepocketProperties(
-        new SafepocketProperties.Cognito("issuer","aud", true, "cognito.example.com", "aud", null, null),
+        new SafepocketProperties.Cognito("issuer","aud", true, "cognito.example.com", "aud", null, null, null, null),
         new SafepocketProperties.Plaid("cid","secret","https://redirect","http://localhost:" + port, "sandbox", null, null),
         new SafepocketProperties.Ai("openai","model","endpoint", null,null),
         new SafepocketProperties.Security(null),

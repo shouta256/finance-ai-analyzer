@@ -1,5 +1,6 @@
 package com.safepocket.ledger.controller;
 
+import com.safepocket.ledger.auth.CognitoAuthService;
 import com.safepocket.ledger.controller.dto.ErrorResponseDto;
 import com.safepocket.ledger.security.RequestContextHolder;
 import jakarta.validation.ConstraintViolationException;
@@ -25,6 +26,21 @@ public class ApiExceptionHandler {
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class})
     public ResponseEntity<ErrorResponseDto> handleValidation(Exception ex) {
         return build(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", ex.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(CognitoAuthService.CognitoExchangeException.class)
+    public ResponseEntity<ErrorResponseDto> handleCognitoExchange(CognitoAuthService.CognitoExchangeException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.status());
+        if (status == null) {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+        return build(status,
+                "AUTH_TOKEN_EXCHANGE_FAILED",
+                "Cognito token exchange failed",
+                Map.of(
+                        "status", ex.status(),
+                        "body", ex.responseBody()
+                ));
     }
 
     @ExceptionHandler(Exception.class)

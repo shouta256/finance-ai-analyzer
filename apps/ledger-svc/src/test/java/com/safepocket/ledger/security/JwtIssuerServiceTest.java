@@ -13,7 +13,7 @@ public class JwtIssuerServiceTest {
 
     private JwtIssuerService newService(String secret) {
         SafepocketProperties props = new SafepocketProperties(
-                new SafepocketProperties.Cognito("https://example.com/issuer","aud", false),
+                new SafepocketProperties.Cognito("https://example.com/issuer","aud", false, "cognito.example.com", "aud", null, null),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null),
                 new SafepocketProperties.Security(secret),
@@ -40,7 +40,7 @@ public class JwtIssuerServiceTest {
     @Test
     void decoderAcceptsDevToken() {
         SafepocketProperties props = new SafepocketProperties(
-                new SafepocketProperties.Cognito("https://example.com/issuer","aud", false),
+                new SafepocketProperties.Cognito("https://example.com/issuer","aud", false, "cognito.example.com", "aud", null, null),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null),
                 new SafepocketProperties.Security("12345678901234567890123456789012"),

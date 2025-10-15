@@ -16,4 +16,22 @@ public interface JpaAccountRepository extends JpaRepository<AccountEntity, UUID>
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM AccountEntity a WHERE a.userId = :userId")
     int deleteByUserId(@Param("userId") UUID userId);
+
+    @Query("""
+            SELECT new com.safepocket.ledger.repository.AccountBalanceProjection(
+                a.id,
+                a.userId,
+                a.name,
+                a.institution,
+                a.createdAt,
+                COALESCE(SUM(t.amount), 0),
+                MAX(t.occurredAt)
+            )
+            FROM AccountEntity a
+            LEFT JOIN TransactionEntity t ON t.accountId = a.id AND t.userId = a.userId
+            WHERE a.userId = :userId
+            GROUP BY a.id, a.userId, a.name, a.institution, a.createdAt
+            ORDER BY a.createdAt ASC
+            """)
+    List<AccountBalanceProjection> findSummariesByUserId(@Param("userId") UUID userId);
 }

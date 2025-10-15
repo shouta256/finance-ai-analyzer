@@ -29,7 +29,15 @@ public record SafepocketProperties(
         // security may be null for production defaults; handle via accessor method
     }
 
-    public record Cognito(String issuer, String audience, Boolean enabled) {
+    public record Cognito(
+            String issuer,
+            String audience,
+            Boolean enabled,
+            String domain,
+            String clientId,
+            String clientSecret,
+            String redirectUri
+    ) {
         public Cognito {
             if (issuer == null || issuer.isBlank()) {
                 throw new IllegalArgumentException("issuer must be provided");
@@ -37,10 +45,25 @@ public record SafepocketProperties(
             if (audience == null || audience.isBlank()) {
                 throw new IllegalArgumentException("audience must be provided");
             }
+            if (clientId == null || clientId.isBlank()) {
+                clientId = audience;
+            }
         }
 
         public boolean enabledFlag() {
             return enabled == null || enabled;
+        }
+
+        public boolean hasDomain() {
+            return domain != null && !domain.isBlank();
+        }
+
+        public boolean hasClientSecret() {
+            return clientSecret != null && !clientSecret.isBlank();
+        }
+
+        public boolean hasRedirectUri() {
+            return redirectUri != null && !redirectUri.isBlank();
         }
     }
 

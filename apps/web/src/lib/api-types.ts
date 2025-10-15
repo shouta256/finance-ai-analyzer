@@ -5,6 +5,10 @@
 
 
 export interface paths {
+  "/auth/token": {
+    /** Exchange Cognito authorization code or refresh token for Safepocket session */
+    post: operations["exchangeAuthToken"];
+  };
   "/plaid/link-token": {
     /** Create Plaid link token */
     post: operations["createPlaidLinkToken"];
@@ -28,6 +32,10 @@ export interface paths {
   "/analytics/summary": {
     /** Retrieve monthly analytics summary */
     get: operations["getAnalyticsSummary"];
+  };
+  "/accounts": {
+    /** List linked accounts for the authenticated user */
+    get: operations["listAccounts"];
   };
   "/rag/search": {
     /** Search transactions with structured filters and semantic ranking */
@@ -55,6 +63,89 @@ export type webhooks = Record<string, never>;
 
 export interface components {
   schemas: {
+    AuthTokenRequest: {
+      /**
+       * @description OAuth2 grant type to execute (authorization_code or refresh_token)
+       * @enum {string}
+       */
+      grantType: "authorization_code" | "refresh_token";
+      /** @description Authorization code returned from Cognito Hosted UI callback (required for authorization_code grant) */
+      code?: string;
+      /**
+       * Format: uri
+       * @description Redirect URI registered in Cognito and used during authorization (required for authorization_code grant)
+       */
+      redirectUri?: string;
+      /** @description PKCE code_verifier used during authorization (optional) */
+      codeVerifier?: string;
+      /** @description Refresh token issued by Cognito (required for refresh_token grant) */
+      refreshToken?: string;
+    };
+    AuthTokenResponse: {
+      /** @description Access token issued by Cognito (use in Authorization header) */
+      accessToken: string;
+      /** @description ID token issued by Cognito (may be absent if scope excludes openid) */
+      idToken?: string | null;
+      /** @description Refresh token for obtaining new access tokens */
+      refreshToken?: string | null;
+      /**
+       * Format: int32
+       * @description Token lifetime in seconds
+       */
+      expiresIn: number;
+      /** @description Token type (typically Bearer) */
+      tokenType: string;
+      /** @description Granted scopes from Cognito */
+      scope?: string | null;
+      /**
+       * Format: uuid
+       * @description Authenticated user identifier derived from token subject
+       */
+      userId?: string | null;
+      /** @description Request trace identifier for auditing */
+      traceId: string;
+    };
+    AccountsListResponse: {
+      /** @description ISO 4217 currency code for balances */
+      currency: string;
+      /**
+       * Format: double
+       * @description Sum of balances across all accounts
+       */
+      totalBalance: number;
+      accounts: components["schemas"]["Account"][];
+      /** @description Request trace identifier for auditing */
+      traceId: string;
+    };
+    Account: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      institution: string;
+      /** @description Account type (checking, savings, credit, etc.) */
+      type?: string | null;
+      /**
+       * Format: double
+       * @description Current account balance
+       */
+      balance: number;
+      currency: string;
+      /**
+       * Format: date-time
+       * @description Timestamp when the account was first recorded
+       */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @description Timestamp of the latest transaction observed for this account
+       */
+      lastTransactionAt?: string | null;
+      /**
+       * Format: date-time
+       * @description When the underlying financial institution link was established
+       */
+      linkedAt?: string | null;
+    };
     PlaidLinkTokenResponse: {
       /** @description Plaid Link token */
       linkToken: string;
@@ -449,6 +540,23 @@ export type external = Record<string, never>;
 
 export interface operations {
 
+  /** Exchange Cognito authorization code or refresh token for Safepocket session */
+  exchangeAuthToken: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AuthTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Tokens issued successfully */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AuthTokenResponse"];
+        };
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
   /** Create Plaid link token */
   createPlaidLinkToken: {
     responses: {
@@ -549,7 +657,23 @@ export interface operations {
     };
     responses: {
       /** @description Analytics summary retrieved */
-      200: components["schemas"]["AnalyticsSummaryResponse"];
+      200: {
+        content: {
+          "application/json": components["schemas"]["AnalyticsSummaryResponse"];
+        };
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
+  /** List linked accounts for the authenticated user */
+  listAccounts: {
+    responses: {
+      /** @description Accounts retrieved */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AccountsListResponse"];
+        };
+      };
       default: components["responses"]["ErrorResponse"];
     };
   };

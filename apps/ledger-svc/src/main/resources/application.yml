@@ -51,6 +51,10 @@ safepocket:
     issuer: ${COGNITO_ISSUER:https://cognito-idp.us-east-1.amazonaws.com/us-east-1_mFd4O5tGY}
     audience: ${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv}
     enabled: ${SAFEPOCKET_USE_COGNITO:false}
+    domain: ${COGNITO_DOMAIN:}
+    client-id: ${COGNITO_CLIENT_ID:${COGNITO_AUDIENCE:5ge4c1b382ft2v71rvip0rrhqv}}
+    client-secret: ${COGNITO_CLIENT_SECRET:}
+    redirect-uri: ${COGNITO_REDIRECT_URI:}
   plaid:
     client-id: ${PLAID_CLIENT_ID:demo-client}
     client-secret: ${PLAID_CLIENT_SECRET:demo-secret}

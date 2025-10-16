@@ -21,16 +21,15 @@ function normalizeBearer(value: string): string {
 }
 
 function requireAuthorization(request: NextRequest): string | NextResponse {
+  // Prefer header when present, else fall back to cookie (supports SSR & client fetch)
   const header = request.headers.get("authorization");
   if (header && header.trim()) {
     return normalizeBearer(header.trim());
   }
-
   const cookieToken = request.cookies.get("sp_token")?.value;
   if (cookieToken && cookieToken.trim()) {
     return normalizeBearer(cookieToken.trim());
   }
-
   return NextResponse.json(authErrorBody, { status: 401 });
 }
 

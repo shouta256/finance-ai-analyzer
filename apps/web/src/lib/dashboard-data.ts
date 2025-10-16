@@ -48,7 +48,16 @@ export async function getDashboardData(month: string): Promise<{
     throw new Error(details ?? `Failed to load transactions: ${transactionsResponse.statusText}`);
   }
   const transactionsJson = await transactionsResponse.json();
-  const transactions = transactionsListSchema.parse(transactionsJson);
+  const parsedTransactions = transactionsListSchema.parse(transactionsJson);
+  const normalizedPeriod = {
+    month: parsedTransactions.period?.month ?? parsedTransactions.month ?? month,
+    from: parsedTransactions.period?.from ?? null,
+    to: parsedTransactions.period?.to ?? null,
+  };
+  const transactions = {
+    ...parsedTransactions,
+    period: normalizedPeriod,
+  };
   return { summary, transactions };
 }
 

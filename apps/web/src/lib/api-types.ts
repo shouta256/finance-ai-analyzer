@@ -21,6 +21,10 @@ export interface paths {
     /** Trigger Plaid transaction sync */
     post: operations["triggerTransactionSync"];
   };
+  "/transactions/reset": {
+    /** Reset transactions for the authenticated user */
+    post: operations["resetTransactions"];
+  };
   "/transactions": {
     /** List transactions for a user and month */
     get: operations["listTransactions"];
@@ -187,6 +191,11 @@ export interface components {
        * @default false
        */
       demoSeed?: boolean;
+      /**
+       * Format: date
+       * @description Optional start date (YYYY-MM-DD) for Plaid backfill. Ignored when demoSeed is true.
+       */
+      startDate?: string;
     };
     TransactionsSyncResponse: {
       /** @enum {string} */
@@ -204,12 +213,38 @@ export interface components {
       /** @description Identifier for correlating async sync operations */
       traceId: string;
     };
+    TransactionsResetRequest: {
+      /**
+       * @description When true, unlink the Plaid item after purging transactions.
+       * @default false
+       */
+      unlinkPlaid?: boolean;
+    };
+    TransactionsResetResponse: {
+      /** @enum {string} */
+      status: "ACCEPTED";
+      /** @description Request trace identifier for auditing */
+      traceId: string;
+    };
     TransactionsListResponse: {
-      /** @description Requested month window (YYYY-MM) */
-      month: string;
+      period?: components["schemas"]["TransactionsQueryPeriod"];
       transactions: components["schemas"]["Transaction"][];
       /** @description Request trace identifier for auditing */
       traceId: string;
+    };
+    TransactionsQueryPeriod: {
+      /** @description Legacy month value (YYYY-MM) supplied by earlier clients */
+      month?: string;
+      /**
+       * Format: date
+       * @description Inclusive start date (YYYY-MM-DD)
+       */
+      from?: string;
+      /**
+       * Format: date
+       * @description Exclusive end date (YYYY-MM-DD)
+       */
+      to?: string;
     };
     Transaction: {
       /** Format: uuid */
@@ -605,12 +640,33 @@ export interface operations {
       default: components["responses"]["ErrorResponse"];
     };
   };
+  /** Reset transactions for the authenticated user */
+  resetTransactions: {
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["TransactionsResetRequest"];
+      };
+    };
+    responses: {
+      /** @description Reset accepted */
+      202: {
+        content: {
+          "application/json": components["schemas"]["TransactionsResetResponse"];
+        };
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
   /** List transactions for a user and month */
   listTransactions: {
     parameters: {
-      query: {
+      query?: {
         /** @description Month to filter transactions by (YYYY-MM) */
-        month: string;
+        month?: string;
+        /** @description Inclusive start date (YYYY-MM-DD). When provided, overrides `month`. */
+        from?: string;
+        /** @description Exclusive end date (YYYY-MM-DD). Defaults to today when `from` is provided without `to`. */
+        to?: string;
         /** @description Filter by account identifier */
         accountId?: string;
       };

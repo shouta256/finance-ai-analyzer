@@ -81,4 +81,28 @@ describe("/api/transactions/sync route", () => {
     });
     expect(await res.json()).toEqual(sampleResponse);
   });
+
+  it("forwards startDate when provided", async () => {
+    mockedLedgerFetch.mockResolvedValue(sampleResponse);
+    const headers = new Headers();
+    headers.set("content-length", "1");
+    const req = {
+      headers,
+      cookies: {
+        get: (name: string) => (name === "sp_token" ? { value: "token" } : undefined),
+      },
+      json: async () => ({ startDate: "2024-01-01" }),
+      url: "https://example.com/api/transactions/sync",
+    } as any;
+
+    const res = await POST(req);
+    expect(res.status).toBe(202);
+    expect(mockedLedgerFetch).toHaveBeenCalledWith("/transactions/sync", {
+      method: "POST",
+      headers: { authorization: "Bearer token", "content-type": "application/json" },
+      body: JSON.stringify({ startDate: "2024-01-01" }),
+      baseUrlOverride: undefined,
+    });
+    expect(await res.json()).toEqual(sampleResponse);
+  });
 });

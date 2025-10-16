@@ -8,6 +8,10 @@ const requestSchema = z.object({
   cursor: z.string().optional(),
   forceFullSync: z.boolean().optional(),
   demoSeed: z.boolean().optional(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 export async function POST(request: NextRequest) {

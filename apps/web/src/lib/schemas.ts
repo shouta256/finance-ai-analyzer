@@ -36,11 +36,22 @@ export const transactionSchema = z.object({
     .optional(),
 });
 
-export const transactionsListSchema = z.object({
-  month: z.string(),
-  transactions: z.array(transactionSchema),
-  traceId: z.string().nullable().optional(),
-});
+export const transactionsListSchema = z
+  .object({
+    period: z
+      .object({
+        month: z.string().nullable().optional(),
+        from: z.string().nullable().optional(),
+        to: z.string().nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+    transactions: z.array(transactionSchema),
+    traceId: z.string().nullable().optional(),
+  })
+  .extend({
+    month: z.string().optional(),
+  });
 
 export const analyticsSummarySchema = z.object({
   month: z.string(),

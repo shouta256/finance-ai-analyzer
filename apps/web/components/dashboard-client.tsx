@@ -9,6 +9,7 @@ import {
   triggerTransactionSync,
   createPlaidLinkToken,
   exchangePlaidPublicToken,
+  resetTransactions,
 } from "@/src/lib/client-api";
 import { loadPlaidLink } from "@/src/lib/plaid";
 
@@ -33,6 +34,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [sandboxLoading, setSandboxLoading] = useState<boolean>(false);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [generatingAi, setGeneratingAi] = useState<boolean>(false);
+  const [startDate, setStartDate] = useState<string>(""); // YYYY-MM-DD
+  const [unlinkPlaid, setUnlinkPlaid] = useState<boolean>(false);
 
   const anomalies = state.summary.anomalies;
   const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
@@ -44,7 +47,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     setMessage("Syncing transactions...");
     startTransition(async () => {
       try {
-        await triggerTransactionSync();
+        const payload: Parameters<typeof triggerTransactionSync>[0] = {};
+        if (startDate) payload.startDate = startDate;
+        await triggerTransactionSync(payload);
         await refreshData();
         setMessage("Sync triggered successfully");
       } catch (error) {
@@ -52,6 +57,25 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setMessage((error as Error).message ?? "Sync failed");
       } finally {
         setSyncing(false);
+      }
+    });
+  }
+
+  async function handleReset() {
+    if (syncing || generatingAi || linking || sandboxLoading) return;
+    const confirmMsg = unlinkPlaid
+      ? "This will delete all transactions and unlink your Plaid account. Continue?"
+      : "This will delete all transactions. Continue?";
+    if (!window.confirm(confirmMsg)) return;
+    setMessage("Resetting transactions...");
+    startTransition(async () => {
+      try {
+        await resetTransactions({ unlinkPlaid });
+        await refreshData();
+        setMessage("Transactions reset requested");
+      } catch (error) {
+        console.error(error);
+        setMessage((error as Error).message ?? "Reset failed");
       }
     });
   }
@@ -229,6 +253,16 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         >
           {sandboxLoading ? "Loading demo..." : "Try Demo Data"}
         </button>
+        <div className="flex items-center gap-2">
+          <label htmlFor="startDate" className="text-xs text-slate-600">Sync from</label>
+          <input
+            id="startDate"
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+        </div>
         <button
           onClick={handleSync}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
@@ -243,7 +277,20 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         >
           {generatingAi ? "Generating..." : "Generate AI Summary"}
         </button>
-        {message ? <span className="text-sm text-slate-600">{message}</span> : null}
+        <div className="flex items-center gap-2 ml-auto">
+          <label className="inline-flex items-center gap-1 text-xs text-slate-600">
+            <input type="checkbox" checked={unlinkPlaid} onChange={(e) => setUnlinkPlaid(e.target.checked)} />
+            Unlink Plaid on reset
+          </label>
+          <button
+            onClick={handleReset}
+            className="rounded-md border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
+            disabled={isPending || linking || generatingAi || syncing || sandboxLoading}
+          >
+            Reset Data
+          </button>
+        </div>
+        {message ? <span className="text-sm text-slate-600 w-full">{message}</span> : null}
       </div>
 
       <section className="grid gap-4 md:grid-cols-3">

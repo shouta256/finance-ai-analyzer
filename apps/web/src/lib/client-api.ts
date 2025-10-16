@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema, ragAggregateResponseSchema, ragSearchResponseSchema, ragSummariesResponseSchema } from "./schemas";
+import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema, ragAggregateResponseSchema, ragSearchResponseSchema, ragSummariesResponseSchema, transactionsResetResponseSchema } from "./schemas";
 
 export type AnalyticsSummary = z.infer<typeof analyticsSummarySchema>;
 export type TransactionsList = z.infer<typeof transactionsListSchema>;
@@ -50,6 +50,7 @@ export async function listTransactions(month: string): Promise<TransactionsList>
 export interface TriggerSyncOptions {
   forceFullSync?: boolean;
   demoSeed?: boolean;
+  startDate?: string; // YYYY-MM-DD
 }
 
 export async function triggerTransactionSync(options: TriggerSyncOptions = {}): Promise<void> {
@@ -69,6 +70,24 @@ export async function triggerTransactionSync(options: TriggerSyncOptions = {}): 
     const message = (payload as { error?: { message?: string } })?.error?.message ?? res.statusText;
     throw new ApiError(message || "Failed to trigger sync", res.status, payload);
   }
+}
+
+export async function resetTransactions(options: { unlinkPlaid?: boolean } = {}) {
+  const body = Object.keys(options).length > 0 ? JSON.stringify(options) : undefined;
+  const res = await fetch(`/api/transactions/reset`, {
+    method: "POST",
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body,
+  });
+  const parsed = await (async () => {
+    const json = await res.json().catch(() => null);
+    return json;
+  })();
+  if (!res.ok) {
+    const message = (parsed as any)?.error?.message ?? res.statusText;
+    throw new ApiError(message || "Failed to reset transactions", res.status, parsed);
+  }
+  return transactionsResetResponseSchema.parse(parsed);
 }
 
 export async function createPlaidLinkToken(): Promise<{ linkToken: string }> {

@@ -11,8 +11,12 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const authorization = request.headers.get("authorization");
-  if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+  const header = request.headers.get("authorization")?.trim();
+  const cookieToken = request.cookies.get("sp_token")?.value?.trim();
+  const authorization = header?.startsWith("Bearer ") ? header : header ? `Bearer ${header}` : cookieToken ? `Bearer ${cookieToken}` : null;
+  if (!authorization) {
+    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+  }
   const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
   if (errorResponse) return errorResponse;
   const body = request.headers.get("content-length") === "0" || request.headers.get("content-length") === null

@@ -47,6 +47,15 @@ export async function listTransactions(month: string): Promise<TransactionsList>
   return handleJson(res, transactionsListSchema);
 }
 
+export async function listTransactionsRange(params: { from?: string; to?: string; month?: string }): Promise<TransactionsList> {
+  const url = new URL(`/api/transactions`, window.location.origin);
+  if (params.month) url.searchParams.set("month", params.month);
+  if (params.from) url.searchParams.set("from", params.from);
+  if (params.to) url.searchParams.set("to", params.to);
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  return handleJson(res, transactionsListSchema);
+}
+
 export interface TriggerSyncOptions {
   forceFullSync?: boolean;
   demoSeed?: boolean;

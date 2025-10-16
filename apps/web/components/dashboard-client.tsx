@@ -35,6 +35,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [syncing, setSyncing] = useState<boolean>(false);
   const [generatingAi, setGeneratingAi] = useState<boolean>(false);
   const [startDate, setStartDate] = useState<string>(""); // YYYY-MM-DD
+  const [monthOnly, setMonthOnly] = useState<string>(""); // YYYY-MM (for display/filter)
+  const [rangeFrom, setRangeFrom] = useState<string>(""); // YYYY-MM-DD
+  const [rangeTo, setRangeTo] = useState<string>(""); // YYYY-MM-DD
   const [unlinkPlaid, setUnlinkPlaid] = useState<boolean>(false);
 
   const anomalies = state.summary.anomalies;
@@ -145,9 +148,14 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   async function refreshData() {
     try {
       setErrorState(null);
+      // Determine filter source: explicit range -> monthOnly -> default month prop
+      const useMonth = monthOnly || month;
+      const listPromise = (rangeFrom || rangeTo)
+        ? import("@/src/lib/client-api").then(m => m.listTransactionsRange({ from: rangeFrom || undefined, to: rangeTo || undefined }))
+        : listTransactions(useMonth);
       const [summary, transactions] = await Promise.all([
-        getAnalyticsSummary(month),
-        listTransactions(month),
+        getAnalyticsSummary(useMonth),
+        listPromise,
       ]);
       setState({ summary, transactions });
     } catch (e) {
@@ -262,6 +270,26 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             onChange={(e) => setStartDate(e.target.value)}
             className="rounded border border-slate-300 px-2 py-1 text-sm"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="monthOnly" className="text-xs text-slate-600">View month</label>
+          <input
+            id="monthOnly"
+            type="month"
+            value={monthOnly}
+            onChange={(e) => setMonthOnly(e.target.value)}
+            className="rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="from" className="text-xs text-slate-600">From</label>
+          <input id="from" type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" />
+          <label htmlFor="to" className="text-xs text-slate-600">To</label>
+          <input id="to" type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm" />
+          <button
+            onClick={() => { startTransition(() => refreshData()); }}
+            className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
+          >Apply</button>
         </div>
         <button
           onClick={handleSync}

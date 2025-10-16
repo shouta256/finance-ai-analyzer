@@ -54,7 +54,9 @@ export async function ledgerFetch<T>(
       // ignore if not in a Next.js server context
     }
   }
-  const response = await fetch(`${baseUrlOverride ?? env.LEDGER_SERVICE_URL}${path}`, {
+  const base = baseUrlOverride ?? env.LEDGER_SERVICE_URL;
+  const prefix = baseUrlOverride ? '' : (env as any).LEDGER_SERVICE_PATH_PREFIX || '';
+  const response = await fetch(`${base}${prefix}${path}`, {
     credentials: 'include',
     ...fetchInit,
     headers,

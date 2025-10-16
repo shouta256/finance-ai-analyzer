@@ -51,13 +51,19 @@ const REGION = process.env.COGNITO_REGION;
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID; // Example: us-east-1_abc123
 const EXPLICIT_ISSUER = process.env.COGNITO_ISSUER;
 const EXPLICIT_JWKS = process.env.COGNITO_JWKS_URL;
-const EXPLICIT_AUDIENCE = process.env.COGNITO_AUDIENCE; // Optional: use only when it differs from the client ID
-const CLIENT_ID = process.env.COGNITO_CLIENT_ID; // Cognito App Client ID
+const EXPLICIT_AUDIENCE = process.env.COGNITO_AUDIENCE; // Optional: comma-separated when multiple app clients
+const CLIENT_ID = process.env.COGNITO_CLIENT_ID; // Cognito App Client ID (web)
 
 let derivedIssuer = EXPLICIT_ISSUER || ((REGION && USER_POOL_ID) ? `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}` : undefined);
 let issuer = derivedIssuer;
 let jwksUri = EXPLICIT_JWKS || (issuer ? `${issuer}/.well-known/jwks.json` : undefined);
-let audience = EXPLICIT_AUDIENCE || CLIENT_ID; // default audience equals client_id
+// Support multiple audiences via comma-separated env (e.g., WEB_CLIENT_ID,NATIVE_CLIENT_ID)
+let allowedAudiences: string[] = (EXPLICIT_AUDIENCE || CLIENT_ID || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter((s) => s.length > 0);
+// Back-compat single audience string (for debug headers only)
+let audience = allowedAudiences[0];
 
 const devSharedSecret = process.env.SAFEPOCKET_DEV_JWT_SECRET ?? 'dev-secret-key-for-local-development-only';
 let remoteJwks: ReturnType<typeof createRemoteJWKSet> | undefined;
@@ -72,9 +78,9 @@ function isHttpUrl(value?: string) {
   }
 }
 
-async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string; mode: string }> {
+async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; aud?: string | string[]; mode: string }> {
   // Dynamic fallback: if issuer or audience is missing, decode header to guess iss/aud
-  if (!issuer || !audience) {
+  if (!issuer || allowedAudiences.length === 0) {
     try {
       const [, payloadB64] = token.split('.');
       const json = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
@@ -82,9 +88,14 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
         issuer = json.iss;
         jwksUri = isHttpUrl(issuer) ? `${issuer}/.well-known/jwks.json` : undefined;
       }
-      if (!audience) {
-        if (Array.isArray(json.aud)) audience = json.aud[0];
-        else if (typeof json.aud === 'string') audience = json.aud;
+      if (allowedAudiences.length === 0) {
+        if (Array.isArray(json.aud)) allowedAudiences = json.aud.filter((x: unknown): x is string => typeof x === 'string');
+        else if (typeof json.aud === 'string') allowedAudiences = [json.aud];
+        // If aud is missing, try client_id as fallback (common for Cognito access tokens)
+        if ((!allowedAudiences || allowedAudiences.length === 0) && typeof json.client_id === 'string') {
+          allowedAudiences = [json.client_id];
+        }
+        audience = allowedAudiences[0];
       }
     } catch {
       // ignore – fallback to dev secret if still not resolvable
@@ -93,15 +104,29 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
 
   if (jwksUri && issuer && isHttpUrl(jwksUri)) {
     remoteJwks ||= createRemoteJWKSet(new URL(jwksUri));
-    if (audience) {
+    if (allowedAudiences.length > 0) {
       try {
-        const verified = await jwtVerify(token, remoteJwks, { issuer, audience });
+        const verified = await jwtVerify(token, remoteJwks, { issuer, audience: allowedAudiences });
         return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks+audi' };
       } catch (e: any) {
         // Audience mismatch fallback: retry with issuer only (avoids loops when audience is not set yet)
         if (e?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' || e?.message?.includes('audience')) {
           try {
             const verified2 = await jwtVerify(token, remoteJwks, { issuer });
+            // Manual audience/client_id check against allowed list after issuer-only verification
+            const payload = verified2.payload as any;
+            const audClaim: string | string[] | undefined = payload?.aud;
+            const clientIdClaim: string | undefined = payload?.client_id;
+            const tokenUse: string | undefined = payload?.token_use;
+            const audOk = Array.isArray(audClaim)
+              ? audClaim.some((a) => allowedAudiences.includes(a))
+              : typeof audClaim === 'string'
+                ? allowedAudiences.includes(audClaim)
+                : false;
+            const clientOk = clientIdClaim && tokenUse === 'access' && allowedAudiences.includes(clientIdClaim);
+            if (!audOk && !clientOk && allowedAudiences.length > 0) {
+              throw new Error('invalid_audience');
+            }
             return { sub: verified2.payload.sub as string | undefined, iss: verified2.payload.iss as string | undefined, aud: (verified2.payload.aud as any), mode: 'jwks-issuer-only' };
           } catch (inner) {
             // Non-production fallback: try dev shared secret to keep local flows working when Cognito is not ready
@@ -131,6 +156,22 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
       // Audience is empty → verify issuer only
       try {
         const verified = await jwtVerify(token, remoteJwks, { issuer });
+        // If allowedAudiences configured, enforce it manually using aud or client_id
+        if (allowedAudiences.length > 0) {
+          const payload = verified.payload as any;
+          const audClaim: string | string[] | undefined = payload?.aud;
+          const clientIdClaim: string | undefined = payload?.client_id;
+          const tokenUse: string | undefined = payload?.token_use;
+          const audOk = Array.isArray(audClaim)
+            ? audClaim.some((a) => allowedAudiences.includes(a))
+            : typeof audClaim === 'string'
+              ? allowedAudiences.includes(audClaim)
+              : false;
+          const clientOk = clientIdClaim && tokenUse === 'access' && allowedAudiences.includes(clientIdClaim);
+          if (!audOk && !clientOk) {
+            throw new Error('invalid_audience');
+          }
+        }
         return { sub: verified.payload.sub as string | undefined, iss: verified.payload.iss as string | undefined, aud: (verified.payload.aud as any), mode: 'jwks-no-aud' };
       } catch (e) {
         if (process.env.NODE_ENV !== 'production') {

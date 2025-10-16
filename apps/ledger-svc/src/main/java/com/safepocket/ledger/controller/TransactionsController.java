@@ -87,9 +87,9 @@ public class TransactionsController {
             @RequestBody(required = false) TransactionsSyncRequestDto request
     ) {
         String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId).orElse(null);
-        boolean forceFullSync = request != null && request.forceFullSyncFlag();
-        boolean demoSeed = request != null && request.demoSeedFlag();
-        var startDate = request != null ? request.startDateValue() : java.util.Optional.empty();
+    boolean forceFullSync = request != null && request.forceFullSyncFlag();
+    boolean demoSeed = request != null && request.demoSeedFlag();
+    Optional<LocalDate> startDate = request != null ? request.startDateValue() : Optional.empty();
         var result = transactionSyncService.triggerSync(forceFullSync, demoSeed, startDate, traceId);
         var response = new TransactionsSyncResponseDto(result.status(), result.syncedCount(), result.pendingCount(), result.traceId());
         return ResponseEntity.accepted().body(response);

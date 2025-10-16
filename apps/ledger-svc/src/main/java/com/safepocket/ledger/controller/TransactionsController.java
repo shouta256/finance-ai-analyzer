@@ -3,6 +3,9 @@ package com.safepocket.ledger.controller;
 import com.safepocket.ledger.controller.dto.TransactionResponseDto;
 import com.safepocket.ledger.controller.dto.TransactionUpdateRequestDto;
 import com.safepocket.ledger.controller.dto.TransactionsListResponseDto;
+import com.safepocket.ledger.controller.dto.TransactionsListResponseDto.PeriodDto;
+import com.safepocket.ledger.controller.dto.TransactionsResetRequestDto;
+import com.safepocket.ledger.controller.dto.TransactionsResetResponseDto;
 import com.safepocket.ledger.controller.dto.TransactionsSyncRequestDto;
 import com.safepocket.ledger.controller.dto.TransactionsSyncResponseDto;
 import com.safepocket.ledger.model.AnomalyScore;
@@ -10,8 +13,11 @@ import com.safepocket.ledger.model.Transaction;
 import com.safepocket.ledger.security.RequestContextHolder;
 import com.safepocket.ledger.service.TransactionService;
 import com.safepocket.ledger.service.TransactionSyncService;
+import com.safepocket.ledger.service.TransactionMaintenanceService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -30,24 +36,36 @@ public class TransactionsController {
 
     private final TransactionService transactionService;
     private final TransactionSyncService transactionSyncService;
+    private final TransactionMaintenanceService transactionMaintenanceService;
 
-    public TransactionsController(TransactionService transactionService, TransactionSyncService transactionSyncService) {
+    public TransactionsController(
+            TransactionService transactionService,
+            TransactionSyncService transactionSyncService,
+            TransactionMaintenanceService transactionMaintenanceService
+    ) {
         this.transactionService = transactionService;
         this.transactionSyncService = transactionSyncService;
+        this.transactionMaintenanceService = transactionMaintenanceService;
     }
 
     @GetMapping
     public ResponseEntity<TransactionsListResponseDto> listTransactions(
-            @RequestParam("month") String month,
+            @RequestParam(value = "month", required = false) String month,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to,
             @RequestParam(value = "accountId", required = false) String accountId
     ) {
-        YearMonth yearMonth = YearMonth.parse(month);
+        var window = resolveWindow(month, from, to);
         Optional<UUID> accountUuid = Optional.ofNullable(accountId).filter(value -> !value.isBlank()).map(UUID::fromString);
-        var transactions = transactionService.listTransactions(yearMonth, accountUuid);
+        var result = transactionService.listTransactions(window.fromDate(), window.toDate(), window.month(), accountUuid);
         String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId).orElse(null);
         var response = new TransactionsListResponseDto(
-                month,
-                transactions.stream().map(this::map).toList(),
+                new PeriodDto(
+                        result.month().map(YearMonth::toString).orElse(null),
+                        result.from(),
+                        result.to()
+                ),
+                result.transactions().stream().map(this::map).toList(),
                 traceId
         );
         return ResponseEntity.ok(response);
@@ -71,9 +89,20 @@ public class TransactionsController {
         String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId).orElse(null);
         boolean forceFullSync = request != null && request.forceFullSyncFlag();
         boolean demoSeed = request != null && request.demoSeedFlag();
-        var result = transactionSyncService.triggerSync(forceFullSync, demoSeed, traceId);
+        var startDate = request != null ? request.startDateValue() : java.util.Optional.empty();
+        var result = transactionSyncService.triggerSync(forceFullSync, demoSeed, startDate, traceId);
         var response = new TransactionsSyncResponseDto(result.status(), result.syncedCount(), result.pendingCount(), result.traceId());
         return ResponseEntity.accepted().body(response);
+    }
+
+    @PostMapping("/reset")
+    public ResponseEntity<TransactionsResetResponseDto> resetTransactions(
+            @RequestBody(required = false) TransactionsResetRequestDto request
+    ) {
+        boolean unlinkPlaid = request != null && request.unlinkPlaidFlag();
+        String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId).orElse(null);
+        transactionMaintenanceService.resetTransactions(unlinkPlaid);
+        return ResponseEntity.accepted().body(new TransactionsResetResponseDto("ACCEPTED", traceId));
     }
 
     private TransactionResponseDto map(Transaction transaction) {
@@ -104,5 +133,40 @@ public class TransactionsController {
                 score.budgetImpactPercent(),
                 score.commentary()
         );
+    }
+
+    private static TransactionWindow resolveWindow(String month, String from, String to) {
+        boolean hasFrom = from != null && !from.isBlank();
+        if (hasFrom) {
+            LocalDate fromDate = parseDate(from, "from");
+            LocalDate toDate = (to != null && !to.isBlank()) ? parseDate(to, "to") : LocalDate.now().plusDays(1);
+            if (!toDate.isAfter(fromDate)) {
+                throw new IllegalArgumentException("to must be after from");
+            }
+            return new TransactionWindow(Optional.empty(), fromDate, toDate);
+        }
+        YearMonth targetMonth = (month != null && !month.isBlank()) ? parseMonth(month, "month") : YearMonth.now();
+        LocalDate fromDate = targetMonth.atDay(1);
+        LocalDate toDate = targetMonth.plusMonths(1).atDay(1);
+        return new TransactionWindow(Optional.of(targetMonth), fromDate, toDate);
+    }
+
+    private record TransactionWindow(Optional<YearMonth> month, LocalDate fromDate, LocalDate toDate) {
+    }
+
+    private static LocalDate parseDate(String value, String param) {
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid " + param + " format");
+        }
+    }
+
+    private static YearMonth parseMonth(String value, String param) {
+        try {
+            return YearMonth.parse(value);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid " + param + " format");
+        }
     }
 }

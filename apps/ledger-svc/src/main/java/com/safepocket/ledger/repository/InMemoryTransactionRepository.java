@@ -1,6 +1,7 @@
 package com.safepocket.ledger.repository;
 
 import com.safepocket.ledger.model.Transaction;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -26,16 +27,30 @@ public class InMemoryTransactionRepository implements TransactionRepository {
 
     @Override
     public List<Transaction> findByUserIdAndMonth(UUID userId, YearMonth month) {
+        var start = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        var end = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        return findByUserIdAndRange(userId, start, end);
+    }
+
+    @Override
+    public List<Transaction> findByUserIdAndMonthAndAccount(UUID userId, YearMonth month, UUID accountId) {
+        var start = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        var end = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        return findByUserIdAndRangeAndAccount(userId, start, end, accountId);
+    }
+
+    @Override
+    public List<Transaction> findByUserIdAndRange(UUID userId, Instant fromInclusive, Instant toExclusive) {
         return storage.values().stream()
                 .filter(tx -> tx.userId().equals(userId))
-                .filter(tx -> YearMonth.from(tx.occurredAt().atZone(ZoneOffset.UTC)).equals(month))
+                .filter(tx -> !tx.occurredAt().isBefore(fromInclusive) && tx.occurredAt().isBefore(toExclusive))
                 .sorted(Comparator.comparing(Transaction::occurredAt).reversed())
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
     @Override
-    public List<Transaction> findByUserIdAndMonthAndAccount(UUID userId, YearMonth month, UUID accountId) {
-        return findByUserIdAndMonth(userId, month).stream()
+    public List<Transaction> findByUserIdAndRangeAndAccount(UUID userId, Instant fromInclusive, Instant toExclusive, UUID accountId) {
+        return findByUserIdAndRange(userId, fromInclusive, toExclusive).stream()
                 .filter(tx -> tx.accountId().equals(accountId))
                 .collect(Collectors.toCollection(ArrayList::new));
     }

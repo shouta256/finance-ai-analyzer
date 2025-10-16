@@ -24,6 +24,17 @@ public interface JpaTransactionRepository extends JpaRepository<TransactionEntit
                                                            @Param("startOfNextMonth") Instant startOfNextMonth,
                                                            @Param("accountId") UUID accountId);
 
+    @Query("SELECT t FROM TransactionEntity t WHERE t.userId = :userId AND t.occurredAt >= :from AND t.occurredAt < :to ORDER BY t.occurredAt DESC")
+    List<TransactionEntity> findByUserIdAndRange(@Param("userId") UUID userId,
+                                                 @Param("from") Instant from,
+                                                 @Param("to") Instant to);
+
+    @Query("SELECT t FROM TransactionEntity t WHERE t.userId = :userId AND t.accountId = :accountId AND t.occurredAt >= :from AND t.occurredAt < :to ORDER BY t.occurredAt DESC")
+    List<TransactionEntity> findByUserIdAndRangeAndAccount(@Param("userId") UUID userId,
+                                                           @Param("from") Instant from,
+                                                           @Param("to") Instant to,
+                                                           @Param("accountId") UUID accountId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM TransactionEntity t WHERE t.userId = :userId")
     int deleteByUserId(@Param("userId") UUID userId);

@@ -97,14 +97,20 @@ public class PlaidService {
      * Returns empty list if no Plaid item or no accounts exist yet for the user.
      */
     public List<Transaction> fetchRecentTransactions(UUID userId, int days) {
+        LocalDate endInclusive = LocalDate.now();
+        LocalDate startInclusive = endInclusive.minusDays(Math.max(0, days - 1));
+        return fetchTransactionsBetween(userId, startInclusive, endInclusive);
+    }
+
+    public List<Transaction> fetchTransactionsBetween(UUID userId, LocalDate startInclusive, LocalDate endInclusive) {
         rlsGuard.setAppsecUser(userId);
         var itemOpt = plaidItemRepository.findByUserId(userId);
         if (itemOpt.isEmpty()) return List.of();
         var item = itemOpt.get();
         String accessToken = decryptAccessToken(new PlaidItem(item.getUserId(), item.getItemId(), item.getEncryptedAccessToken(), item.getLinkedAt()));
 
-        LocalDate end = LocalDate.now();
-        LocalDate start = end.minusDays(Math.max(1, days));
+        LocalDate start = startInclusive != null ? startInclusive : LocalDate.now().minusDays(30);
+        LocalDate end = (endInclusive != null && !endInclusive.isBefore(start)) ? endInclusive : start;
         var resp = plaidClient.getTransactions(accessToken, start.toString(), end.toString(), 100);
 
         // Choose an account to attribute these transactions to (fallback: first account)
@@ -143,5 +149,10 @@ public class PlaidService {
             ));
         }
         return results;
+    }
+
+    public void unlink(UUID userId) {
+        rlsGuard.setAppsecUser(userId);
+        plaidItemRepository.deleteByUserId(userId);
     }
 }

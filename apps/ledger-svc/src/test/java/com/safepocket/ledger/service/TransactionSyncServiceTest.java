@@ -14,9 +14,11 @@ import com.safepocket.ledger.security.RlsGuard;
 import com.safepocket.ledger.plaid.PlaidService;
 import com.safepocket.ledger.user.UserService;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,7 +78,7 @@ class TransactionSyncServiceTest {
     @Test
     void seedsTransactionsOnFirstSync() {
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
-        var result = transactionSyncService.triggerSync(false, false, "trace-1");
+        var result = transactionSyncService.triggerSync(false, false, Optional.empty(), "trace-1");
 
         assertThat(result.syncedCount()).isGreaterThan(0);
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
@@ -109,7 +111,7 @@ class TransactionSyncServiceTest {
         );
 
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
-        var result = transactionSyncService.triggerSync(false, false, "trace-2");
+        var result = transactionSyncService.triggerSync(false, false, Optional.empty(), "trace-2");
         assertThat(result.syncedCount()).isZero();
         assertThat(result.pendingCount()).isZero();
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
@@ -130,7 +132,7 @@ class TransactionSyncServiceTest {
         );
 
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
-        var result = transactionSyncService.triggerSync(false, true, "trace-3");
+        var result = transactionSyncService.triggerSync(false, true, Optional.empty(), "trace-3");
 
         assertThat(result.syncedCount()).isGreaterThan(0);
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
@@ -141,5 +143,33 @@ class TransactionSyncServiceTest {
             YearMonth previous = current.minusMonths(1);
             assertThat(transactionRepository.findByUserIdAndMonth(userId, previous)).isNotEmpty();
         }
+    }
+
+    @Test
+    void usesStartDateForPlaidBackfillWhenProvided() {
+        transactionSyncService = new TransactionSyncService(
+            transactionRepository,
+            jpaAccountRepository,
+            authenticatedUserProvider,
+            rlsGuard,
+            plaidService,
+            userService,
+            transactionEmbeddingService,
+            false
+        );
+
+        when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
+        when(plaidService.fetchTransactionsBetween(org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.any(LocalDate.class),
+                org.mockito.ArgumentMatchers.any(LocalDate.class)))
+            .thenReturn(List.of());
+
+        var result = transactionSyncService.triggerSync(false, false, Optional.of(LocalDate.now().minusDays(7)), "trace-4");
+
+        assertThat(result.status()).isEqualTo("STARTED");
+        verify(plaidService).fetchTransactionsBetween(
+                org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.any(LocalDate.class),
+                org.mockito.ArgumentMatchers.any(LocalDate.class));
     }
 }

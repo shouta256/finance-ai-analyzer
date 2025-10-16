@@ -11,6 +11,7 @@ import com.safepocket.ledger.user.UserService;
 import com.safepocket.ledger.rag.TransactionEmbeddingService;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.math.RoundingMode;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
@@ -20,6 +21,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,12 +64,12 @@ public class TransactionSyncService {
         this.demoSeedEnabled = demoSeedEnabled;
     }
 
-    public SyncResult triggerSync(boolean forceFullSync, boolean demoSeedRequested, String traceId) {
+    public SyncResult triggerSync(boolean forceFullSync, boolean demoSeedRequested, Optional<LocalDate> startDate, String traceId) {
         UUID userId = authenticatedUserProvider.requireCurrentUserId();
         rlsGuard.setAppsecUser(userId);
         Instant lastSync = userSyncCursor.get(userId);
-        boolean needsSeed = forceFullSync || lastSync == null || demoSeedRequested;
-        boolean useDemoSeed = demoSeedRequested || demoSeedEnabled;
+        boolean needsSeed = forceFullSync || lastSync == null || demoSeedRequested || startDate.isPresent();
+        boolean useDemoSeed = demoSeedRequested || (demoSeedEnabled && startDate.isEmpty());
         int synced = 0;
         if (needsSeed) {
             List<Transaction> fetched = List.of();
@@ -75,8 +77,17 @@ public class TransactionSyncService {
                 ensureDemoAccounts(userId);
                 fetched = seedTransactions(userId);
             } else {
-                // Fetch recent real transactions from Plaid
-                fetched = plaidService.fetchRecentTransactions(userId, 30);
+                // Fetch real transactions from Plaid
+                if (startDate.isPresent()) {
+                    LocalDate start = startDate.get();
+                    LocalDate end = LocalDate.now();
+                    if (end.isBefore(start)) {
+                        end = start;
+                    }
+                    fetched = plaidService.fetchTransactionsBetween(userId, start, end);
+                } else {
+                    fetched = plaidService.fetchRecentTransactions(userId, 30);
+                }
             }
             List<Transaction> toInsert = dedupeTransactions(userId, fetched);
             if (!toInsert.isEmpty()) {

@@ -9,6 +9,8 @@ import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.security.RlsGuard;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
@@ -38,17 +40,20 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public List<Transaction> listTransactions(YearMonth month, Optional<UUID> accountId) {
+    public TransactionListResult listTransactions(LocalDate from, LocalDate to, Optional<YearMonth> month, Optional<UUID> accountId) {
         UUID userId = authenticatedUserProvider.requireCurrentUserId();
         rlsGuard.setAppsecUser(userId);
+        var fromInstant = from.atStartOfDay(ZoneOffset.UTC).toInstant();
+        var toInstant = to.atStartOfDay(ZoneOffset.UTC).toInstant();
         List<Transaction> transactions = accountId
-                .map(uuid -> transactionRepository.findByUserIdAndMonthAndAccount(userId, month, uuid))
-                .orElseGet(() -> transactionRepository.findByUserIdAndMonth(userId, month));
+                .map(uuid -> transactionRepository.findByUserIdAndRangeAndAccount(userId, fromInstant, toInstant, uuid))
+                .orElseGet(() -> transactionRepository.findByUserIdAndRange(userId, fromInstant, toInstant));
         var anomalies = anomalyDetectionService.detectAnomalies(transactions).stream()
                 .collect(Collectors.toMap(AnalyticsSummary.AnomalyInsight::transactionId, insight -> insight));
-        return transactions.stream()
+        List<Transaction> annotated = transactions.stream()
                 .map(tx -> annotateWithAnomaly(tx, anomalies.get(tx.id().toString())))
                 .toList();
+        return new TransactionListResult(annotated, from, to, month);
     }
 
     @Transactional
@@ -82,5 +87,13 @@ public class TransactionService {
                 insight.commentary()
         );
         return transaction.withAnomalyScore(score);
+    }
+
+    public record TransactionListResult(
+            List<Transaction> transactions,
+            LocalDate from,
+            LocalDate to,
+            Optional<YearMonth> month
+    ) {
     }
 }

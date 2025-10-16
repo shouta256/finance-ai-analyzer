@@ -71,4 +71,11 @@ public class TransactionEmbeddingService {
     private String normalizeMerchant(String merchantName) {
         return merchantName == null ? "" : merchantName.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
     }
+
+    @Transactional
+    public void deleteAll(UUID userId) {
+        rlsGuard.setAppsecUser(userId);
+        txEmbeddingRepository.deleteByUserId(userId);
+        log.debug("Deleted embeddings for user {}", userId);
+    }
 }

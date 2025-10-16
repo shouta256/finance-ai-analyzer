@@ -55,6 +55,11 @@ public class TxEmbeddingRepository {
         jdbcTemplate.batchUpdate(sql, params.toArray(MapSqlParameterSource[]::new));
     }
 
+    public void deleteByUserId(UUID userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("userId", userId);
+        jdbcTemplate.update("DELETE FROM tx_embeddings WHERE user_id = :userId", params);
+    }
+
     public List<EmbeddingMatch> findNearest(
             UUID userId,
             float[] queryVector,

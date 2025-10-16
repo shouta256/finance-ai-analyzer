@@ -6,6 +6,7 @@ import com.safepocket.ledger.model.Transaction;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -39,17 +40,25 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
     public List<Transaction> findByUserIdAndMonth(UUID userId, YearMonth month) {
         var startOfMonth = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         var startOfNextMonth = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        
-        List<TransactionEntity> entities = jpaTransactionRepository.findByUserIdAndMonth(userId, startOfMonth, startOfNextMonth);
-        return convertToModels(entities);
+        return findByUserIdAndRange(userId, startOfMonth, startOfNextMonth);
     }
 
     @Override
     public List<Transaction> findByUserIdAndMonthAndAccount(UUID userId, YearMonth month, UUID accountId) {
         var startOfMonth = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         var startOfNextMonth = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        
-        List<TransactionEntity> entities = jpaTransactionRepository.findByUserIdAndMonthAndAccount(userId, startOfMonth, startOfNextMonth, accountId);
+        return findByUserIdAndRangeAndAccount(userId, startOfMonth, startOfNextMonth, accountId);
+    }
+
+    @Override
+    public List<Transaction> findByUserIdAndRange(UUID userId, Instant fromInclusive, Instant toExclusive) {
+        List<TransactionEntity> entities = jpaTransactionRepository.findByUserIdAndRange(userId, fromInclusive, toExclusive);
+        return convertToModels(entities);
+    }
+
+    @Override
+    public List<Transaction> findByUserIdAndRangeAndAccount(UUID userId, Instant fromInclusive, Instant toExclusive, UUID accountId) {
+        List<TransactionEntity> entities = jpaTransactionRepository.findByUserIdAndRangeAndAccount(userId, fromInclusive, toExclusive, accountId);
         return convertToModels(entities);
     }
 

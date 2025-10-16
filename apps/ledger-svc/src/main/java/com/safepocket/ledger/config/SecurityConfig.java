@@ -56,9 +56,9 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/login").permitAll()
             .requestMatchers(HttpMethod.POST, "/dev/auth/login").permitAll()
             .requestMatchers(HttpMethod.POST, "/auth/token").permitAll()
-            // Chat endpoint requires authentication (both /ai/chat and /api/chat for compatibility)
-            .requestMatchers(HttpMethod.POST, "/ai/chat", "/api/chat", "/chat").authenticated()
-            .requestMatchers(HttpMethod.GET, "/ai/chat", "/api/chat", "/chat").authenticated()
+            // Chat endpoint requires authentication (canonical path)
+            .requestMatchers(HttpMethod.POST, "/ai/chat").authenticated()
+            .requestMatchers(HttpMethod.GET, "/ai/chat").authenticated()
             .requestMatchers("/healthz").permitAll()
             .requestMatchers("/actuator/health/liveness").permitAll()
             // All other endpoints require authentication

@@ -119,6 +119,13 @@ public class PlaidService {
             var authorized = occurred.minus(1, ChronoUnit.HOURS);
             // Plaid amount is positive for outflows; store expenses as negative
             var amount = t.amount().negate();
+            // Derive category: prefer Plaid personal finance primary, then joined category array, else fallback
+            String category = "Uncategorized";
+            if (t.personalFinanceCategory() != null && t.personalFinanceCategory().primary() != null && !t.personalFinanceCategory().primary().isBlank()) {
+                category = t.personalFinanceCategory().primary();
+            } else if (t.category() != null && !t.category().isEmpty()) {
+                category = String.join("/", t.category());
+            }
             results.add(new Transaction(
                     java.util.UUID.randomUUID(),
                     userId,
@@ -129,7 +136,7 @@ public class PlaidService {
                     occurred,
                     authorized,
                     t.pending(),
-                    "Uncategorized",
+                    category,
                     t.name(),
                     java.util.Optional.empty(),
                     java.util.Optional.empty()

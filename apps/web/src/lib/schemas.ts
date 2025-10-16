@@ -102,6 +102,13 @@ export const transactionsSyncSchema = z.object({
   traceId: z.string().nullable().optional(),
 });
 
+// Transactions reset response
+// OpenAPI components.schemas.TransactionsResetResponse
+export const transactionsResetResponseSchema = z.object({
+  status: z.literal("ACCEPTED"),
+  traceId: z.string().nullable().optional(),
+});
+
 // Chat schemas
 export const chatMessageSchema = z.object({
   id: z.string().uuid(),

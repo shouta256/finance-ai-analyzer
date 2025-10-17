@@ -2,7 +2,6 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -60,7 +59,6 @@ const setTransactionsCache = (key: string, data: TransactionsList) => {
 };
 
 export function DashboardClient({ month, initialSummary, initialTransactions }: DashboardClientProps) {
-  const router = useRouter();
   const [state, setState] = useState<FetchState>({ summary: initialSummary, transactions: initialTransactions });
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -408,8 +406,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     } catch (e) {
       const err = e as any;
       const code = err?.payload?.error?.code || "UNKNOWN_ERROR";
-      if (err.status === 401 || code === "UNAUTHENTICATED") {
-        router.push("/login");
+      if ((err.status === 401 || code === "UNAUTHENTICATED") && typeof window !== "undefined") {
+        window.location.assign("/login");
         return;
       }
 
@@ -651,6 +649,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           onClearCustomRange={handleClearRange}
           customRangeError={customRangeError}
           rangeDescription={rangeDescription}
+          onOpenActions={() => setActionsOpen(true)}
         />
 
         <TotalsGrid totals={viewTotals} />

@@ -191,11 +191,8 @@ export interface components {
        * @default false
        */
       demoSeed?: boolean;
-      /**
-       * Format: date
-       * @description Optional start date (YYYY-MM-DD) for Plaid backfill. Ignored when demoSeed is true.
-       */
-      startDate?: string;
+      /** @description Optional start month (YYYY-MM) for Plaid backfill. Ignored when demoSeed is true. */
+      startMonth?: string;
     };
     TransactionsSyncResponse: {
       /** @enum {string} */
@@ -663,9 +660,9 @@ export interface operations {
       query?: {
         /** @description Month to filter transactions by (YYYY-MM) */
         month?: string;
-        /** @description Inclusive start date (YYYY-MM-DD). When provided, overrides `month`. */
+        /** @description Inclusive start month (YYYY-MM). When provided, overrides `month`. Leave blank for no lower bound. */
         from?: string;
-        /** @description Exclusive end date (YYYY-MM-DD). Defaults to today when `from` is provided without `to`. */
+        /** @description Inclusive end month (YYYY-MM). Leave blank for no upper bound. */
         to?: string;
         /** @description Filter by account identifier */
         accountId?: string;

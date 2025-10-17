@@ -225,9 +225,40 @@ export interface components {
     };
     TransactionsListResponse: {
       period?: components["schemas"]["TransactionsQueryPeriod"];
+      aggregates?: components["schemas"]["TransactionsAggregates"];
       transactions: components["schemas"]["Transaction"][];
       /** @description Request trace identifier for auditing */
       traceId: string;
+    };
+    TransactionsAggregates: {
+      /**
+       * Format: double
+       * @description Sum of positive transaction amounts in the response set
+       */
+      incomeTotal?: number;
+      /**
+       * Format: double
+       * @description Sum of negative transaction amounts in the response set
+       */
+      expenseTotal?: number;
+      /**
+       * Format: double
+       * @description Net amount (income + expense) across the response set
+       */
+      netTotal?: number;
+      /** @description Per-month net totals keyed by YYYY-MM */
+      monthNet?: {
+        [key: string]: number;
+      };
+      /** @description Totals grouped by category */
+      categoryTotals?: {
+        [key: string]: number;
+      };
+      /**
+       * Format: int32
+       * @description Number of transactions considered when computing the aggregates
+       */
+      count?: number;
     };
     TransactionsQueryPeriod: {
       /** @description Legacy month value (YYYY-MM) supplied by earlier clients */

@@ -185,6 +185,10 @@ public class SecurityConfig {
         if (message == null) {
             return false;
         }
-        return message.contains("Invalid signature") || message.contains("MAC check failed");
+        String normalized = message.toLowerCase();
+        return normalized.contains("invalid signature")
+                || normalized.contains("mac check failed")
+                || normalized.contains("another algorithm expected")
+                || normalized.contains("no matching key");
     }
 }

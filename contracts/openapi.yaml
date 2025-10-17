@@ -608,6 +608,8 @@ components:
       properties:
         period:
           $ref: '#/components/schemas/TransactionsQueryPeriod'
+        aggregates:
+          $ref: '#/components/schemas/TransactionsAggregates'
         transactions:
           type: array
           items:
@@ -615,6 +617,37 @@ components:
         traceId:
           type: string
           description: Request trace identifier for auditing
+    TransactionsAggregates:
+      type: object
+      properties:
+        incomeTotal:
+          type: number
+          format: double
+          description: Sum of positive transaction amounts in the response set
+        expenseTotal:
+          type: number
+          format: double
+          description: Sum of negative transaction amounts in the response set
+        netTotal:
+          type: number
+          format: double
+          description: Net amount (income + expense) across the response set
+        monthNet:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+          description: Per-month net totals keyed by YYYY-MM
+        categoryTotals:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+          description: Totals grouped by category
+        count:
+          type: integer
+          format: int32
+          description: Number of transactions considered when computing the aggregates
     TransactionsQueryPeriod:
       type: object
       properties:

@@ -47,6 +47,7 @@ export async function listTransactions(month: string): Promise<TransactionsList>
   return handleJson(res, transactionsListSchema);
 }
 
+// from/to expect YYYY-MM boundaries; month remains YYYY-MM for single-month view.
 export async function listTransactionsRange(params: { from?: string; to?: string; month?: string }): Promise<TransactionsList> {
   const url = new URL(`/api/transactions`, window.location.origin);
   if (params.month) url.searchParams.set("month", params.month);
@@ -59,7 +60,7 @@ export async function listTransactionsRange(params: { from?: string; to?: string
 export interface TriggerSyncOptions {
   forceFullSync?: boolean;
   demoSeed?: boolean;
-  startDate?: string; // YYYY-MM-DD
+  startMonth?: string; // YYYY-MM
 }
 
 export async function triggerTransactionSync(options: TriggerSyncOptions = {}): Promise<void> {

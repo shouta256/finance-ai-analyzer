@@ -2,7 +2,6 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -80,8 +79,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [unlinkPlaid, setUnlinkPlaid] = useState<boolean>(false);
   const [actionsOpen, setActionsOpen] = useState<boolean>(false);
   const [periodOpen, setPeriodOpen] = useState<boolean>(false);
-
-  const router = useRouter();
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -462,7 +459,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const err = e as any;
       const code = err?.payload?.error?.code || "UNKNOWN_ERROR";
       if ((err.status === 401 || code === "UNAUTHENTICATED") && typeof window !== "undefined") {
-        router.push("/login");
+        window.location.href = "/login";
         return;
       }
 

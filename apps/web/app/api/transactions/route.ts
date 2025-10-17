@@ -12,15 +12,24 @@ const querySchema = z
       .optional(),
     from: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .regex(/^\d{4}-\d{2}$/)
       .optional(),
     to: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .regex(/^\d{4}-\d{2}$/)
       .optional(),
     accountId: z.string().uuid().optional(),
-  })
-  .refine((data) => data.month || data.from, { message: "Provide month or from" });
+    page: z
+      .string()
+      .regex(/^\d+$/)
+      .transform((v) => parseInt(v, 10))
+      .optional(),
+    pageSize: z
+      .string()
+      .regex(/^\d+$/)
+      .transform((v) => Math.min(100, Math.max(1, parseInt(v, 10))))
+      .optional(),
+  });
 
 export async function GET(request: NextRequest) {
   const headerToken = request.headers.get("authorization")?.trim();
@@ -46,6 +55,8 @@ export async function GET(request: NextRequest) {
     from: searchParams.get("from") ?? undefined,
     to: searchParams.get("to") ?? undefined,
     accountId: searchParams.get("accountId") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   const endpoint = new URL("/transactions", "http://localhost");
@@ -60,5 +71,46 @@ export async function GET(request: NextRequest) {
     baseUrlOverride,
   });
   const body = transactionsListSchema.parse(result);
-  return NextResponse.json(body);
+  const aggregates = (() => {
+    if (!Array.isArray(body.transactions) || body.transactions.length === 0) {
+      return {
+        incomeTotal: 0,
+        expenseTotal: 0,
+        netTotal: 0,
+        monthNet: {},
+        categoryTotals: {},
+        count: 0,
+      };
+    }
+    const monthNet = new Map<string, number>();
+    const categoryTotals = new Map<string, number>();
+    let incomeTotal = 0;
+    let expenseTotal = 0;
+    for (const tx of body.transactions) {
+      const occurred = new Date(tx.occurredAt);
+      if (!Number.isNaN(occurred.getTime())) {
+        const label = `${occurred.getUTCFullYear()}-${String(occurred.getUTCMonth() + 1).padStart(2, "0")}`;
+        monthNet.set(label, (monthNet.get(label) ?? 0) + tx.amount);
+      }
+      const category = tx.category;
+      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + tx.amount);
+      if (tx.amount > 0) incomeTotal += tx.amount;
+      if (tx.amount < 0) expenseTotal += tx.amount;
+    }
+    const netTotal = Number((incomeTotal + expenseTotal).toFixed(2));
+    return {
+      incomeTotal: Number(incomeTotal.toFixed(2)),
+      expenseTotal: Number(expenseTotal.toFixed(2)),
+      netTotal,
+      monthNet: Object.fromEntries(monthNet),
+      categoryTotals: Object.fromEntries(categoryTotals),
+      count: body.transactions.length,
+    };
+  })();
+  const page = query.page ?? 0;
+  const size = query.pageSize ?? 15;
+  const start = page * size;
+  const end = start + size;
+  const paged = { ...body, transactions: body.transactions.slice(start, end), aggregates };
+  return NextResponse.json(paged);
 }

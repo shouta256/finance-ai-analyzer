@@ -574,7 +574,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   return (
-    <div className="flex flex-col gap-8 text-slate-900">
+    <div className="flex flex-col gap-8 bg-slate-100 p-8 text-slate-900">
       {errorState ? (
         <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-5 shadow-sm">
           <div className="flex flex-col gap-2">
@@ -612,7 +612,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       </div>
 
       <section className="grid gap-6">
-        <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm backdrop-blur">
+        <div className="rounded-3xl border border-slate-200/80 border-t-white/80 bg-gradient-to-b from-white to-slate-50 p-6 shadow-[0_4px_12px_rgba(0,0,0,0.04),_0_1px_4px_rgba(0,0,0,0.05)]">
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex flex-col gap-2">
@@ -724,7 +724,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <div className="min-h-[280px] rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
+              <div className="min-h-[280px] rounded-3xl border border-slate-200/80 border-t-white/80 bg-gradient-to-b from-white to-slate-50 p-6 shadow-[0_4px_12px_rgba(0,0,0,0.04),_0_1px_4px_rgba(0,0,0,0.05)]">
                 <h2 className="text-lg font-semibold tracking-tight text-slate-900">Spending mix</h2>
                 <p className="text-sm text-slate-500">Category distribution for the current view.</p>
                 <div className="mt-4 h-56">
@@ -735,7 +735,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
                   )}
                 </div>
               </div>
-              <div className="min-h-[280px] rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
+              <div className="min-h-[280px] rounded-3xl border border-slate-200/80 border-t-white/80 bg-gradient-to-b from-white to-slate-50 p-6 shadow-[0_4px_12px_rgba(0,0,0,0.04),_0_1px_4px_rgba(0,0,0,0.05)]">
                 <h2 className="text-lg font-semibold tracking-tight text-slate-900">Net trend</h2>
                 <p className="text-sm text-slate-500">Monthly net movement based on the selected period.</p>
                 <div className="mt-4 h-56">
@@ -753,7 +753,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         {message ? <p className="text-xs text-slate-500">{message}</p> : null}
       </section>
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-3xl border border-slate-200/80 border-t-white/80 bg-gradient-to-b from-white to-slate-50 p-6 shadow-[0_4px_12px_rgba(0,0,0,0.04),_0_1px_4px_rgba(0,0,0,0.05)]">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">Spend by Category</h2>
           <p className="mb-4 text-sm text-slate-500">Top categories for {analyticsLabel}.</p>
           <ul className="space-y-3">
@@ -768,7 +768,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             {expenseCategories.length === 0 ? <p className="text-sm text-slate-500">No expense activity.</p> : null}
           </ul>
         </div>
-        <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-3xl border border-slate-200/80 border-t-white/80 bg-gradient-to-b from-white to-slate-50 p-6 shadow-[0_4px_12px_rgba(0,0,0,0.04),_0_1px_4px_rgba(0,0,0,0.05)]">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">Top Merchants</h2>
           <p className="mb-4 text-sm text-slate-500">Highest activity merchants.</p>
           <ul className="space-y-3">
@@ -828,7 +828,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         <div className="flow-root overflow-hidden rounded-2xl border border-slate-100">
           <table className="min-w-full divide-y divide-slate-100 text-sm">
             <thead className="bg-slate-50">
-              <tr>
+              <tr className="border-b border-slate-200/90">
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Merchant</th>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Amount</th>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Delta</th>
@@ -866,7 +866,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         <div className="flow-root overflow-hidden rounded-2xl border border-slate-100">
           <table className="min-w-full divide-y divide-slate-100 text-sm">
             <thead className="bg-slate-50">
-              <tr>
+              <tr className="border-b border-slate-200/90">
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Merchant</th>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Category</th>
                 <th className="px-4 py-2 text-left font-semibold text-slate-600">Amount</th>
@@ -1022,15 +1022,17 @@ interface SummaryCardProps {
 
 function SummaryCard({ title, value, tone }: SummaryCardProps) {
   const toneStyles: Record<SummaryCardProps["tone"], { value: string; glow: string }> = {
-    positive: { value: "text-emerald-600", glow: "from-emerald-200/50" },
-    negative: { value: "text-rose-500", glow: "from-rose-200/50" },
-    neutral: { value: "text-slate-700", glow: "from-slate-200/50" },
+    positive: { value: "text-emerald-600", glow: "from-emerald-400/20" },
+    negative: { value: "text-rose-500", glow: "from-rose-400/20" },
+    neutral: { value: "text-slate-600", glow: "from-slate-400/20" },
   };
   return (
-    <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
+    <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 border-t-white/80 bg-gradient-to-b from-white to-slate-50 p-6 shadow-[0_4px_12px_rgba(0,0,0,0.04),_0_1px_4px_rgba(0,0,0,0.05)]">
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
       <p className={`mt-3 text-3xl font-semibold tracking-tight ${toneStyles[tone].value}`}>{value}</p>
-      <div className={`mt-4 h-1 rounded-full bg-gradient-to-r ${toneStyles[tone].glow} via-transparent to-transparent`} />
+      <div
+        className={`pointer-events-none absolute -bottom-10 left-0 h-12 w-full rounded-full bg-gradient-to-r ${toneStyles[tone].glow} via-transparent to-transparent opacity-80`}
+      />
     </div>
   );
 }

@@ -23,9 +23,9 @@ interface SummaryCardProps {
 
 function SummaryCard({ title, value, tone }: SummaryCardProps) {
   const toneStyles: Record<SummaryCardProps["tone"], { value: string; glow: string }> = {
-    positive: { value: "text-emerald-600", glow: "from-emerald-200/50" },
-    negative: { value: "text-rose-500", glow: "from-rose-200/50" },
-    neutral: { value: "text-slate-700", glow: "from-slate-200/50" },
+    positive: { value: "text-emerald-600", glow: "from-emerald-400/80" },
+    negative: { value: "text-rose-500", glow: "from-rose-400/80" },
+    neutral: { value: "text-slate-700", glow: "from-slate-400/80" },
   };
   return (
     <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">

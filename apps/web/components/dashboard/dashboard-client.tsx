@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -59,6 +60,7 @@ const setTransactionsCache = (key: string, data: TransactionsList) => {
 };
 
 export function DashboardClient({ month, initialSummary, initialTransactions }: DashboardClientProps) {
+  const router = useRouter();
   const [state, setState] = useState<FetchState>({ summary: initialSummary, transactions: initialTransactions });
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -405,8 +407,13 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       setState({ summary, transactions });
     } catch (e) {
       const err = e as any;
+      const code = err?.payload?.error?.code || "UNKNOWN_ERROR";
+      if (err.status === 401 || code === "UNAUTHENTICATED") {
+        router.push("/login");
+        return;
+      }
+
       const payload = err?.payload?.error?.backendPayload?.error || err?.payload?.error || {};
-      const code = payload?.code || err?.payload?.error?.code || "UNKNOWN_ERROR";
       const traceId = payload?.traceId || err?.payload?.error?.traceId;
       const reason = payload?.details?.reason || payload?.message || err.message;
       if (code === "DB_UNAVAILABLE" || reason?.includes("Failed to obtain JDBC Connection")) {

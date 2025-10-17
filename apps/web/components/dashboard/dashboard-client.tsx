@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -16,6 +17,7 @@ import {
 import { loadPlaidLink } from "@/src/lib/plaid";
 import { transactionsListSchema } from "@/src/lib/schemas";
 import { DashboardViewPeriod } from "./view-period";
+import { PeriodModal } from "./period-modal";
 import { TotalsGrid } from "./totals-grid";
 import { ChartsSection } from "./charts-section";
 import { AiHighlightCard, AnomaliesTable } from "./ai-highlight";
@@ -77,6 +79,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const pageSize = 15;
   const [unlinkPlaid, setUnlinkPlaid] = useState<boolean>(false);
   const [actionsOpen, setActionsOpen] = useState<boolean>(false);
+  const [periodOpen, setPeriodOpen] = useState<boolean>(false);
+
+  const router = useRouter();
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -113,8 +118,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }, [customFromMonth, customToMonth]);
 
   const analyticsLabel = useMemo(
-    () => formatMonthLabel(state.summary.period?.month ?? focusMonth ?? month),
-    [state.summary.period?.month, focusMonth, month],
+    () => formatMonthLabel(state.summary.month ?? focusMonth ?? month),
+    [state.summary.month, focusMonth, month],
   );
 
   const customFromLabel = useMemo(() => formatMonthLabel(customFromMonth), [customFromMonth]);
@@ -128,12 +133,14 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       if (customRangeError) return customRangeError;
       if (customFromLabel || customToLabel) {
         if (customFromLabel && customToLabel) {
-          return `Overview for ${customFromLabel} – ${customToLabel}.`;
+          return `${customFromLabel} – ${customToLabel}`;
         }
         if (customFromLabel) {
-          return `Overview starting ${customFromLabel}.`;
+          return `From ${customFromLabel}`;
         }
-        return `Overview through ${customToLabel}.`;
+        if (customToLabel) {
+          return `Up to ${customToLabel}`;
+        }
       }
       return "Choose a start/end month and apply to refine the overview.";
     }
@@ -169,6 +176,34 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     };
   }, [rangeMode, state.summary.totals, state.transactions]);
 
+  const spendingScore = useMemo(() => {
+    const income = viewTotals.income;
+    const expenseAbs = Math.abs(viewTotals.expense);
+    if (income <= 0) {
+      if (expenseAbs === 0) return 100;
+      return 50;
+    }
+    const ratio = Math.min(Math.max(expenseAbs / income, 0), 2);
+    const raw = Math.round((1 - ratio) * 100);
+    return Math.max(0, Math.min(100, raw));
+  }, [viewTotals]);
+
+  const scoreLabel = useMemo(() => {
+    switch (rangeMode) {
+      case "month":
+        return formatMonthLabel(focusMonth || month);
+      case "all":
+        return "All history";
+      case "custom":
+        if (customFromLabel && customToLabel) return `${customFromLabel} – ${customToLabel}`;
+        if (customFromLabel) return `From ${customFromLabel}`;
+        if (customToLabel) return `Up to ${customToLabel}`;
+        return "Custom view";
+      default:
+        return "Overview";
+    }
+  }, [rangeMode, focusMonth, month, customFromLabel, customToLabel]);
+
   const categoryChartData = useMemo<ChartData<"doughnut"> | null>(() => {
     if (rangeMode === "month") {
       if (expenseCategories.length === 0) return null;
@@ -180,15 +215,16 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           {
             data,
             backgroundColor: [
-              "#0ea5e9",
-              "#22c55e",
-              "#f97316",
-              "#6366f1",
-              "#ec4899",
-              "#14b8a6",
-              "#facc15",
+              "#38bdf8", // sky-400
+              "#6366f1", // indigo-500
+              "#818cf8", // indigo-400
+              "#a78bfa", // violet-400
+              "#c084fc", // purple-400
+              "#e879f9", // fuchsia-400
+              "#f472b6", // pink-400
             ],
-            borderWidth: 0,
+            borderWidth: 4,
+            borderColor: "#fff",
           },
         ],
       };
@@ -206,15 +242,16 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         {
           data,
           backgroundColor: [
-            "#0ea5e9",
-            "#22c55e",
-            "#f97316",
-            "#6366f1",
-            "#ec4899",
-            "#14b8a6",
-            "#facc15",
+            "#38bdf8", // sky-400
+            "#6366f1", // indigo-500
+            "#818cf8", // indigo-400
+            "#a78bfa", // violet-400
+            "#c084fc", // purple-400
+            "#e879f9", // fuchsia-400
+            "#f472b6", // pink-400
           ],
-          borderWidth: 0,
+          borderWidth: 4,
+          borderColor: "#fff",
         },
       ],
     };
@@ -226,9 +263,12 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         position: "bottom",
         labels: { boxWidth: 12 },
       },
+      centerText: {},
     },
     responsive: true,
     maintainAspectRatio: false,
+    cutout: "65%",
+    hoverOffset: 8,
   }), []);
 
   const trendChartData = useMemo<ChartData<"line"> | null>(() => {
@@ -291,10 +331,19 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           label: "Net",
           data,
           borderColor: "#2563eb",
-          backgroundColor: "rgba(37, 99, 235, 0.1)",
-          tension: 0.3,
+          borderWidth: 100,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 6,
           fill: true,
-          pointRadius: 3,
+          backgroundColor: (context: any) => {
+            const ctx = context.chart.ctx;
+            if (!ctx) return null;
+            const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
+            gradient.addColorStop(0, "rgba(37, 99, 235, 0.2)");
+            gradient.addColorStop(1, "rgba(37, 99, 235, 0)");
+            return gradient;
+          },
         },
       ],
     };
@@ -318,21 +367,27 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     },
     scales: {
       y: {
-        ticks: {
-          callback(value: string | number) {
-            const num = typeof value === "string" ? Number(value) : value;
-            return formatCurrency(num);
-          },
-        },
-        grid: {
-          color: "rgba(148, 163, 184, 0.2)",
-        },
+        display: false,
       },
       x: {
         grid: {
           display: false,
         },
+        ticks: {
+          font: {
+            size: 10,
+          },
+        },
       },
+    },
+    elements: {
+      line: {
+        borderWidth: 3,
+      },
+    },
+    animation: {
+      duration: 750,
+      easing: "easeOutQuad",
     },
   }), []);
 
@@ -407,7 +462,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const err = e as any;
       const code = err?.payload?.error?.code || "UNKNOWN_ERROR";
       if ((err.status === 401 || code === "UNAUTHENTICATED") && typeof window !== "undefined") {
-        window.location.assign("/login");
+        router.push("/login");
         return;
       }
 
@@ -615,71 +670,57 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         />
       ) : null}
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)]">
-        <DashboardViewPeriod
-          focusMonth={focusMonth}
-          defaultMonth={month}
-          rangeMode={rangeMode}
-          onRangeModeChange={(mode) => {
-            if (mode === "custom") {
-              setRangeMode(mode);
-              return;
-            }
-            setRangeMode(mode);
-            setPage(0);
-            startTransition(() => refreshData({ rangeMode: mode, page: 0 }));
-          }}
-          onFocusMonthChange={(value) => {
-            setFocusMonth(value);
-            setPage(0);
-            setMessage(null);
-            startTransition(() => refreshData({ focusMonth: value, page: 0 }));
-          }}
-          onResetFocusMonth={() => {
-            setFocusMonth(month);
-            setPage(0);
-            setMessage(null);
-            startTransition(() => refreshData({ focusMonth: month, page: 0 }));
-          }}
-          customFromMonth={customFromMonth}
-          customToMonth={customToMonth}
-          onCustomFromChange={setCustomFromMonth}
-          onCustomToChange={setCustomToMonth}
-          onApplyCustomRange={handleCustomApply}
-          onClearCustomRange={handleClearRange}
-          customRangeError={customRangeError}
-          rangeDescription={rangeDescription}
-          onOpenActions={() => setActionsOpen(true)}
-        />
-
-        <TotalsGrid totals={viewTotals} />
-        <ChartsSection
-          categoryData={categoryChartData}
-          categoryOptions={categoryChartOptions}
-          trendData={trendChartData}
-          trendOptions={trendChartOptions}
-        />
+      <section className="flex flex-col gap-6">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
+          <TotalsGrid totals={viewTotals} />
+        </div>
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
+          <DashboardViewPeriod
+            rangeMode={rangeMode}
+            focusMonth={focusMonth}
+            defaultMonth={month}
+            rangeDescription={rangeDescription}
+            onOpenPeriod={() => setPeriodOpen(true)}
+            onOpenActions={() => setActionsOpen(true)}
+          />
+        </div>
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+          <ChartsSection
+            categoryData={categoryChartData}
+            categoryOptions={categoryChartOptions}
+            trendData={trendChartData}
+            trendOptions={trendChartOptions}
+            spendingScore={spendingScore}
+            scoreLabel={scoreLabel}
+          />
+        </div>
       </section>
 
-      <AiHighlightCard
-        aiReady={aiReady}
-        analyticsLabel={analyticsLabel}
-        summary={state.summary}
-        netValue={formatCurrency(net)}
-        anomalyCount={anomalies.length}
-        topCategory={topCategory}
-        topMerchant={topMerchant}
-        sentiment={sentimentTone}
-      />
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
+        <AiHighlightCard
+          aiReady={aiReady}
+          analyticsLabel={analyticsLabel}
+          summary={state.summary}
+          netValue={formatCurrency(net)}
+          anomalyCount={anomalies.length}
+          topCategory={topCategory}
+          topMerchant={topMerchant}
+          sentiment={sentimentTone}
+        />
+      </div>
 
-      <AnomaliesTable anomalies={anomalies} />
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-500">
+        <AnomaliesTable anomalies={anomalies} />
+      </div>
 
-      <TransactionsTable
-        transactions={state.transactions.transactions}
-        page={page}
-        pageSize={pageSize}
-        onPageChange={handlePageChange}
-      />
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-600">
+        <TransactionsTable
+          transactions={state.transactions.transactions}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+        />
+      </div>
 
       <DashboardActionsModal
         open={actionsOpen}
@@ -699,6 +740,43 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         unlinkPlaid={unlinkPlaid}
         onToggleUnlink={setUnlinkPlaid}
         message={message}
+      />
+
+      <PeriodModal
+        open={periodOpen}
+        onClose={() => setPeriodOpen(false)}
+        rangeMode={rangeMode}
+        onRangeModeChange={(mode) => {
+          setRangeMode(mode);
+          if (mode !== "custom") {
+            setPage(0);
+            startTransition(() => refreshData({ rangeMode: mode, page: 0 }));
+          }
+        }}
+        focusMonth={focusMonth}
+        defaultMonth={month}
+        onFocusMonthChange={(value) => {
+          setFocusMonth(value);
+          setPage(0);
+          setMessage(null);
+          startTransition(() => refreshData({ focusMonth: value, page: 0 }));
+        }}
+        onResetFocusMonth={() => {
+          setFocusMonth(month);
+          setPage(0);
+          setMessage(null);
+          startTransition(() => refreshData({ focusMonth: month, page: 0 }));
+        }}
+        customFromMonth={customFromMonth}
+        customToMonth={customToMonth}
+        onCustomFromChange={setCustomFromMonth}
+        onCustomToChange={setCustomToMonth}
+        onApplyCustomRange={() => {
+          handleCustomApply();
+          setPeriodOpen(false);
+        }}
+        onClearCustomRange={handleClearRange}
+        customRangeError={customRangeError}
       />
     </div>
   );
@@ -746,5 +824,5 @@ function formatMonthLabel(value?: string | null): string {
   if (!Number.isFinite(year) || !Number.isFinite(month)) return value;
   const date = new Date(year, month - 1, 1);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date);
 }

@@ -130,14 +130,14 @@ paths:
           name: from
           schema:
             type: string
-            format: date
-          description: Inclusive start date (YYYY-MM-DD). When provided, overrides `month`.
+            pattern: '^\\d{4}-\\d{2}$'
+          description: Inclusive start month (YYYY-MM). When provided, overrides `month`. Leave blank for no lower bound.
         - in: query
           name: to
           schema:
             type: string
-            format: date
-          description: Exclusive end date (YYYY-MM-DD). Defaults to today when `from` is provided without `to`.
+            pattern: '^\\d{4}-\\d{2}$'
+          description: Inclusive end month (YYYY-MM). Leave blank for no upper bound.
         - in: query
           name: accountId
           schema:
@@ -551,10 +551,10 @@ components:
           type: boolean
           default: false
           description: When true, load demo accounts and sample transactions instead of calling Plaid
-        startDate:
+        startMonth:
           type: string
-          format: date
-          description: Optional start date (YYYY-MM-DD) for Plaid backfill. Ignored when demoSeed is true.
+          pattern: '^\\d{4}-\\d{2}$'
+          description: Optional start month (YYYY-MM) for Plaid backfill. Ignored when demoSeed is true.
     TransactionsSyncResponse:
       type: object
       required:

@@ -62,8 +62,8 @@ public class TransactionsController {
         var response = new TransactionsListResponseDto(
                 new PeriodDto(
                         result.month().map(YearMonth::toString).orElse(null),
-                        result.from(),
-                        result.to()
+                        window.fromProvided() ? result.from() : null,
+                        window.toProvided() ? result.to() : null
                 ),
                 result.transactions().stream().map(this::map).toList(),
                 traceId
@@ -137,29 +137,33 @@ public class TransactionsController {
 
     private static TransactionWindow resolveWindow(String month, String from, String to) {
         boolean hasFrom = from != null && !from.isBlank();
-        if (hasFrom) {
-            LocalDate fromDate = parseDate(from, "from");
-            LocalDate toDate = (to != null && !to.isBlank()) ? parseDate(to, "to") : LocalDate.now().plusDays(1);
+        boolean hasTo = to != null && !to.isBlank();
+        boolean hasMonth = month != null && !month.isBlank();
+
+        if (hasFrom || hasTo) {
+            YearMonth fromMonth = hasFrom ? parseMonth(from, "from") : null;
+            YearMonth toMonth = hasTo ? parseMonth(to, "to") : null;
+            LocalDate fromDate = fromMonth != null ? fromMonth.atDay(1) : LocalDate.of(1970, 1, 1);
+            LocalDate toDate = toMonth != null ? toMonth.plusMonths(1).atDay(1) : LocalDate.now().plusDays(1);
             if (!toDate.isAfter(fromDate)) {
                 throw new IllegalArgumentException("to must be after from");
             }
-            return new TransactionWindow(Optional.empty(), fromDate, toDate);
+            return new TransactionWindow(Optional.empty(), fromDate, toDate, hasFrom, hasTo);
         }
-        YearMonth targetMonth = (month != null && !month.isBlank()) ? parseMonth(month, "month") : YearMonth.now();
-        LocalDate fromDate = targetMonth.atDay(1);
-        LocalDate toDate = targetMonth.plusMonths(1).atDay(1);
-        return new TransactionWindow(Optional.of(targetMonth), fromDate, toDate);
+
+        if (hasMonth) {
+            YearMonth targetMonth = parseMonth(month, "month");
+            LocalDate fromDate = targetMonth.atDay(1);
+            LocalDate toDate = targetMonth.plusMonths(1).atDay(1);
+            return new TransactionWindow(Optional.of(targetMonth), fromDate, toDate, true, true);
+        }
+
+        LocalDate fromDate = LocalDate.of(1970, 1, 1);
+        LocalDate toDate = LocalDate.now().plusDays(1);
+        return new TransactionWindow(Optional.empty(), fromDate, toDate, false, false);
     }
 
-    private record TransactionWindow(Optional<YearMonth> month, LocalDate fromDate, LocalDate toDate) {
-    }
-
-    private static LocalDate parseDate(String value, String param) {
-        try {
-            return LocalDate.parse(value);
-        } catch (DateTimeParseException ex) {
-            throw new IllegalArgumentException("Invalid " + param + " format");
-        }
+    private record TransactionWindow(Optional<YearMonth> month, LocalDate fromDate, LocalDate toDate, boolean fromProvided, boolean toProvided) {
     }
 
     private static YearMonth parseMonth(String value, String param) {

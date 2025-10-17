@@ -1,5 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { DashboardClient } from "./dashboard-client";
+import { vi } from "vitest";
+import { DashboardClient } from "./dashboard";
+
+vi.mock("react-chartjs-2", () => ({
+  Doughnut: () => <div data-testid="chart-doughnut" />,
+  Line: () => <div data-testid="chart-line" />,
+}));
 
 describe("DashboardClient", () => {
   it("renders summary tiles", () => {
@@ -36,13 +42,20 @@ describe("DashboardClient", () => {
           notes: null,
         },
       ],
+      aggregates: {
+        incomeTotal: 4200,
+        expenseTotal: -188.65,
+        netTotal: 4011.35,
+        monthNet: { "2024-03": 4011.35 },
+        categoryTotals: { Groceries: -120.45 },
+      },
       traceId: "trace",
     };
 
     render(<DashboardClient month="2024-03" initialSummary={summary} initialTransactions={transactions} />);
 
     expect(screen.getByText("Income")).toBeInTheDocument();
-    expect(screen.getByText("Link Accounts with Plaid")).toBeInTheDocument();
+    expect(screen.getByText("Manage connections & sync")).toBeInTheDocument();
     expect(screen.getAllByText("Amazon").length).toBeGreaterThan(0);
   });
 });

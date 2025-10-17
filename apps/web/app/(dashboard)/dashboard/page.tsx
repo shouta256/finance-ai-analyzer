@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
+import { BackgroundGlows } from "@/components/background-glows";
 import { currentYearMonth } from "@/src/lib/date";
 import { getDashboardData } from "@/src/lib/dashboard-data";
 
@@ -18,8 +19,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   try {
     const { summary, transactions } = await getDashboardData(month);
     return (
-      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 py-10">
-        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-10 px-6">
+      <main className="relative min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 py-10">
+        <BackgroundGlows />
+        <div className="relative z-10 mx-auto flex w-full max-w-screen-2xl flex-col gap-10 px-6">
           <Suspense fallback={<p className="text-sm text-slate-500">Loading dashboard…</p>}>
             <DashboardClient month={month} initialSummary={summary} initialTransactions={transactions} />
           </Suspense>

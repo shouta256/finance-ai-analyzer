@@ -24,7 +24,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       <main className="mx-auto max-w-screen-2xl px-6 pb-14">{children}</main>
       <Link
         href="/chat"
-        className="fixed bottom-6 right-6 flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-800"
+        className="fixed bottom-6 right-6 z-[60] flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-800"
         aria-label="AI Chat"
       >
         <AiChatIcon className="h-8 w-8" />

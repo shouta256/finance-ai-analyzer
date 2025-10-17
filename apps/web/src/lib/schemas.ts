@@ -51,6 +51,16 @@ export const transactionsListSchema = z
   })
   .extend({
     month: z.string().optional(),
+    aggregates: z
+      .object({
+        incomeTotal: z.number(),
+        expenseTotal: z.number(),
+        netTotal: z.number(),
+        monthNet: z.record(z.number()).optional(),
+        categoryTotals: z.record(z.number()).optional(),
+        count: z.number().optional(),
+      })
+      .optional(),
   });
 
 export const analyticsSummarySchema = z.object({

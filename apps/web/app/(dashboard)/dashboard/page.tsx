@@ -19,25 +19,30 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   try {
     const { summary, transactions } = await getDashboardData(month);
     return (
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-3xl font-semibold">Safepocket Dashboard</h1>
-          <p className="text-sm text-slate-600">
-            Secure financial intelligence with Plaid sandbox connectivity.
-          </p>
-        </header>
-        <Suspense fallback={<p className="text-sm text-slate-500">Loading dashboard...</p>}>
-          <DashboardClient month={month} initialSummary={summary} initialTransactions={transactions} />
-        </Suspense>
+      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 py-10">
+  <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-10 px-6">
+          <header className="flex flex-col gap-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Safepocket</span>
+            <h1 className="text-4xl font-semibold tracking-tight text-slate-900">Financial Trust Dashboard</h1>
+            <p className="max-w-xl text-sm text-slate-600">
+              Monitor spending, anomalies, and AI highlights with a calm, high-fidelity workspace designed for focus.
+            </p>
+          </header>
+          <Suspense fallback={<p className="text-sm text-slate-500">Loading dashboard…</p>}>
+            <DashboardClient month={month} initialSummary={summary} initialTransactions={transactions} />
+          </Suspense>
+        </div>
       </main>
     );
   } catch (error) {
     return (
-      <main className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold">Safepocket Dashboard</h1>
-        <p className="text-sm text-rose-600">
+      <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 py-10">
+        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Safepocket Dashboard</h1>
+          <p className="text-sm text-rose-600">
           {(error as Error).message ?? "Unable to load dashboard. Please authenticate and retry."}
-        </p>
+          </p>
+        </div>
       </main>
     );
   }

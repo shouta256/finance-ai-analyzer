@@ -1,7 +1,7 @@
 // middleware.ts (updated)
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'edge';
+export const runtime = 'experimental-edge';
 
 const AUTH_OPTIONAL =
   process.env.NEXT_PUBLIC_AUTH_OPTIONAL === 'true' ||

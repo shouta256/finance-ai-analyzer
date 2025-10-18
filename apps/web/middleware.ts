@@ -1,6 +1,8 @@
 // middleware.ts (updated)
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+
 const AUTH_OPTIONAL =
   process.env.NEXT_PUBLIC_AUTH_OPTIONAL === 'true' ||
   process.env.AUTH_OPTIONAL === 'true';
@@ -48,14 +50,22 @@ function takeTicket(key: string, limit = 60, windowSec = 60) {
   return { ok: false, retryAfter: Math.ceil((rec.resetAt - now) / 1000) };
 }
 
-function decodeJwt(token: string) {
+function decodeJwt(token: string): Record<string, unknown> {
   const parts = token.split('.');
   if (parts.length < 2) {
     throw new Error('invalid_token');
   }
-  const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
-  const json = atob(b64 + pad);
+  const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const decoder = globalThis.atob ?? (() => {
+    throw new Error('atob not available');
+  });
+  const binary = decoder(padded);
+  const json = decodeURIComponent(
+    Array.from(binary)
+      .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+      .join(''),
+  );
   return JSON.parse(json);
 }
 
@@ -113,7 +123,7 @@ export async function middleware(req: NextRequest) {
     const payload = decodeJwt(token);
     const sub = typeof payload.sub === 'string' ? payload.sub : undefined;
     const iss = typeof payload.iss === 'string' ? payload.iss : undefined;
-    const audValue = payload.aud;
+    const audValue = (payload as any).aud;
     const aud = Array.isArray(audValue) ? audValue[0] : typeof audValue === 'string' ? audValue : undefined;
     if (!sub) throw new Error('Missing subject');
     if (pathname.startsWith('/login')) {

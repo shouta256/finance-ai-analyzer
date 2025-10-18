@@ -2,6 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
+const AUTH_OPTIONAL =
+  process.env.NEXT_PUBLIC_AUTH_OPTIONAL === 'true' ||
+  process.env.AUTH_OPTIONAL === 'true';
+
 // --- Public paths (no auth check) ---
 function isPublicPath(pathname: string) {
   return (
@@ -229,7 +233,20 @@ export async function middleware(req: NextRequest) {
   // 4) Resolve token from Authorization header or cookie
   const token = extractToken(req);
   if (!token) {
-    return NextResponse.next();
+    if (AUTH_OPTIONAL) {
+      return NextResponse.next();
+    }
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'Missing token' } }, { status: 401 });
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = '/login';
+    url.searchParams.set('redirect', pathname || '/dashboard');
+    const res = NextResponse.redirect(url);
+    if (req.headers.get('x-forwarded-proto') === 'http') {
+      res.headers.set('x-auth-hint', 'missing-token-proto-http');
+    }
+    return res;
   }
 
   try {

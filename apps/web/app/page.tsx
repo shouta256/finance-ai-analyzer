@@ -1,7 +1,8 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-
 export default function Home() {
-  const hasToken = cookies().has("sp_token");
-  redirect(hasToken ? "/dashboard" : "/login");
+  return (
+    <main style={{ padding: 24 }}>
+      <h1>Safepocket Home</h1>
+      <p>アプリは動作中です。/login または /dashboard へ移動してください。</p>
+    </main>
+  );
 }

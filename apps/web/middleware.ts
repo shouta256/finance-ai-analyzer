@@ -83,7 +83,10 @@ async function verifyJwt(token: string): Promise<{ sub?: string; iss?: string; a
   if (!issuer || allowedAudiences.length === 0) {
     try {
       const [, payloadB64] = token.split('.');
-      const json = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+      // Edge-safe base64url decode without Buffer
+      const b64 = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+      const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+      const json = JSON.parse(atob(b64 + pad));
       if (typeof json.iss === 'string' && issuer !== json.iss) {
         issuer = json.iss;
         jwksUri = isHttpUrl(issuer) ? `${issuer}/.well-known/jwks.json` : undefined;

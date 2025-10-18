@@ -1,346 +1,80 @@
-name: Build, Push, and Deploy (ECR → ECS)
+name: Web CI (Vercel) + Backend tests
 
 on:
   push:
     branches: ["main"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch: {}
 
 permissions:
-  id-token: write          # for GitHub OIDC → AWS
   contents: read
 
-env:
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  AWS_REGION:     ${{ secrets.AWS_REGION }}
-  AWS_ROLE_ARN:   ${{ secrets.AWS_ROLE_ARN }}
-  ECR_REGISTRY:   ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-  SHA:            ${{ github.sha }}
-
 jobs:
-  build-and-push:
+  web-ci:
+    name: Web - Lint/Test/Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # GitHub → AWS (OIDC)
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          node-version: 18
+          cache: 'pnpm'
 
-      # ECR login（公式アクション推奨）
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          mask-password: 'true'
+          version: 9
 
-      # buildx（Fargate 向け linux/amd64）
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - name: Install deps (apps/web)
+        run: pnpm -C apps/web install --frozen-lockfile
 
-      # ===== Web =====
-      - name: Build & Push next-web
-        uses: docker/build-push-action@v6
-        with:
-          context: ./apps/web
-          file: ./apps/web/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/next-web:${{ github.sha }}
-            ${{ github.ref == 'refs/heads/main' && format('{0}.dkr.ecr.{1}.amazonaws.com/safepocket/next-web:latest', secrets.AWS_ACCOUNT_ID, secrets.AWS_REGION) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Run unit tests (apps/web)
+        run: pnpm -C apps/web test
 
-      # ===== Backend =====
-      - name: Build & Push ledger-svc
-        uses: docker/build-push-action@v6
-        with:
-          context: ./apps/ledger-svc
-          file: ./apps/ledger-svc/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/ledger-svc:${{ github.sha }}
-            ${{ github.ref == 'refs/heads/main' && format('{0}.dkr.ecr.{1}.amazonaws.com/safepocket/ledger-svc:latest', secrets.AWS_ACCOUNT_ID, secrets.AWS_REGION) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build (apps/web)
+        run: pnpm -C apps/web build
 
-  deploy-web:
-    needs: build-and-push
+  vercel-deploy:
+    name: Web - Deploy to Vercel
+    needs: web-ci
     runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' && secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
     env:
-      CLUSTER:         safepocket-cluster
-      SERVICE:         safepocket-next-web-service-68os670g
-      CONTAINER_NAME:  next-web
-      IMAGE:           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/next-web:${{ github.sha }}
-      # ==== Web (Next.js) runtime & build cognito related env (set these in GitHub Secrets) ====
-      NEXT_PUBLIC_COGNITO_DOMAIN: ${{ secrets.NEXT_PUBLIC_COGNITO_DOMAIN }}
-      NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
-      NEXT_PUBLIC_COGNITO_SCOPE: ${{ secrets.NEXT_PUBLIC_COGNITO_SCOPE }}
-      # Redirect URI (set this secret). If legacy *_REDIRECT_URL was used previously, rename it to *_REDIRECT_URI.
-      NEXT_PUBLIC_COGNITO_REDIRECT_URI: ${{ secrets.NEXT_PUBLIC_COGNITO_REDIRECT_URI }}
-      COGNITO_CLIENT_SECRET: ${{ secrets.COGNITO_CLIENT_SECRET }}
-      COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
-      COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
-      COGNITO_REDIRECT_URI: ${{ secrets.COGNITO_REDIRECT_URI }}
-      # Issuer/Audience info for middleware JWT verification
-      COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
-      COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
-      COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
-      COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
-      SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
-      # Backend service base URL for server-side API calls
-      LEDGER_SERVICE_URL: ${{ secrets.LEDGER_SERVICE_URL }}
-    # Ensure all above secrets exist. SAFEPOCKET_USE_COGNITO should be 'true' in production.
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/checkout@v4
 
-      - name: Preflight ECS permission check
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Checking ecs:DescribeServices for $CLUSTER / $SERVICE" >&2
-          if ! aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text >/dev/null 2>&1; then
-            echo "::error::ecs:DescribeServices failed. Ensure the GitHubOIDCDeployRole has ecs:DescribeServices on service ARN" >&2
-            exit 1
-          fi
-          echo "Permission OK" >&2
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Pull Vercel env (production)
+        working-directory: apps/web
+        run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
 
-      - name: Render new task definition (image swap + env overrides)
-        id: render
-        shell: bash
-        run: |
-          set -euo pipefail
-          TD_ARN=$(aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --region "$AWS_REGION" --task-definition "$TD_ARN" \
-            --query 'taskDefinition' > td.json
+      - name: Build on Vercel (prebuilt)
+        working-directory: apps/web
+        run: vercel build --prod --token=${{ env.VERCEL_TOKEN }}
 
-          # strip read-only fields
-          jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td.json > td.base.json
+      - name: Deploy to Vercel (production)
+        working-directory: apps/web
+        run: vercel deploy --prebuilt --prod --token=${{ env.VERCEL_TOKEN }}
 
-          # build env override JSON only for non-empty vars to avoid clobbering with null
-          make_env_entry() { # name value
-            if [ -n "$2" ]; then
-              printf '{"name":"%s","value":"%s"}' "$1" "$2"
-            fi
-          }
-          ENV_OVERRIDES=$(jq -n '[]')
-          for VAR in \
-            NEXT_PUBLIC_COGNITO_DOMAIN \
-            COGNITO_DOMAIN \
-            COGNITO_CLIENT_ID_NATIVE \
-            COGNITO_REDIRECT_URI_NATIVE \
-            NEXT_PUBLIC_COGNITO_CLIENT_ID \
-            NEXT_PUBLIC_COGNITO_SCOPE \
-            NEXT_PUBLIC_COGNITO_REDIRECT_URI \
-            COGNITO_CLIENT_SECRET \
-            COGNITO_DOMAIN \
-            COGNITO_CLIENT_ID \
-            COGNITO_REDIRECT_URI \
-            COGNITO_ISSUER \
-            COGNITO_AUDIENCE \
-            COGNITO_REGION \
-            COGNITO_USER_POOL_ID \
-            SAFEPOCKET_USE_COGNITO; do
-            # LEDGER_SERVICE_URL intentionally appended after loop; add if present
-            VAL="${!VAR:-}"
-            if [ -n "$VAL" ]; then
-              ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')
-            fi
-          done
-
-          # Add LEDGER_SERVICE_URL separately so older loops remain backward compatible
-          if [ -n "${LEDGER_SERVICE_URL:-}" ]; then
-            ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n LEDGER_SERVICE_URL --arg v "$LEDGER_SERVICE_URL" '. + [{name:$n,value:$v}]')
-          fi
-
-          # swap container image & merge env (remove duplicates by name)
-          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" --argjson overrides "$ENV_OVERRIDES" '
-            .containerDefinitions = (.containerDefinitions | map(
-              if .name==$name then
-                .image=$img |
-                (.environment) as $orig |
-                (.environment = ((($orig // []) | map(select([.name] | inside([ $overrides[].name ]) | not))) + $overrides))
-              else . end))' td.base.json > td.new.json
-
-          NEW_TD_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
-            --cli-input-json file://td.new.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "NEW_TD_ARN=$NEW_TD_ARN" >> $GITHUB_OUTPUT
-
-      - name: Update service
-        run: |
-          aws ecs update-service --region "$AWS_REGION" \
-            --cluster "$CLUSTER" --service "$SERVICE" \
-            --task-definition "${{ steps.render.outputs.NEW_TD_ARN }}" \
-            --force-new-deployment >/dev/null
-          aws ecs wait services-stable --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE"
-
-  deploy-be:
-    needs: build-and-push
+  backend-tests:
+    name: Backend - Unit tests
     runs-on: ubuntu-latest
-    env:
-      CLUSTER:         safepocket-cluster
-      SERVICE:         safepocket-ledger-svc-service-2f0u2cu0
-      CONTAINER_NAME:  ledger-svc
-      IMAGE:           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/safepocket/ledger-svc:${{ github.sha }}
-      # ==== Backend (Spring) Cognito runtime vars ====
-      COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
-      COGNITO_CLIENT_ID_NATIVE: ${{ secrets.COGNITO_CLIENT_ID_NATIVE }}
-      COGNITO_REDIRECT_URI_NATIVE: ${{ secrets.COGNITO_REDIRECT_URI_NATIVE }}
-      COGNITO_ISSUER: ${{ secrets.COGNITO_ISSUER }}
-      COGNITO_AUDIENCE: ${{ secrets.COGNITO_AUDIENCE }}
-      SAFEPOCKET_USE_COGNITO: ${{ secrets.SAFEPOCKET_USE_COGNITO }}
-      # ==== Backend (Spring) Plaid credentials ====
-      PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
-      PLAID_CLIENT_SECRET: ${{ secrets.PLAID_CLIENT_SECRET }}
-      PLAID_ENV: ${{ secrets.PLAID_ENV }}
-      PLAID_BASE_URL: ${{ secrets.PLAID_BASE_URL }}
-      PLAID_REDIRECT_URI: ${{ secrets.PLAID_REDIRECT_URI }}
-      PLAID_WEBHOOK_URL: ${{ secrets.PLAID_WEBHOOK_URL }}
-      PLAID_WEBHOOK_SECRET: ${{ secrets.PLAID_WEBHOOK_SECRET }}
-      # ==== Backend (Spring) Encryption key (REQUIRED in prod) ====
-      SAFEPOCKET_KMS_DATA_KEY: ${{ secrets.SAFEPOCKET_KMS_DATA_KEY }}
-      # Spring profile selection
-      SPRING_PROFILES_ACTIVE: prod
-      # ==== Backend (Spring) Datasource vars (must be set as GitHub Secrets) ====
-      SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
-      SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
-      SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
-      # ==== One-time DB bootstrap flag (set secret SAFEPOCKET_DB_BOOTSTRAP=true; remove after schema created) ====
-      SAFEPOCKET_DB_BOOTSTRAP: ${{ secrets.SAFEPOCKET_DB_BOOTSTRAP }}
-      # ==== OpenAI (AI chat/summaries) ====
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          distribution: 'temurin'
+          java-version: '21'
 
-      - name: Preflight required backend env vars
-        shell: bash
-        run: |
-          set -euo pipefail
-          missing=()
-          for v in \
-            COGNITO_ISSUER COGNITO_AUDIENCE SAFEPOCKET_USE_COGNITO \
-            SPRING_DATASOURCE_URL SPRING_DATASOURCE_USERNAME SPRING_DATASOURCE_PASSWORD \
-            PLAID_CLIENT_ID PLAID_CLIENT_SECRET PLAID_ENV PLAID_BASE_URL \
-            OPENAI_API_KEY \
-            SAFEPOCKET_KMS_DATA_KEY; do
-            val="$(printenv "$v" || true)"
-            if [ -z "$val" ]; then
-              missing+=("$v")
-            fi
-          done
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing required backend secrets: ${missing[*]}" >&2
-            exit 1
-          fi
-          # Basic sanity: issuer should start with https:// and contain cognito-idp
-          if [[ "$COGNITO_ISSUER" != https://cognito-idp.* ]]; then
-            echo "::warning::COGNITO_ISSUER does not look like a standard Cognito issuer: $COGNITO_ISSUER" >&2
-          fi
-          # Basic JDBC sanity
-          if [[ "$SPRING_DATASOURCE_URL" != jdbc:postgresql://* ]]; then
-            echo "::error::SPRING_DATASOURCE_URL must start with jdbc:postgresql:// (current='$SPRING_DATASOURCE_URL')" >&2
-            exit 1
-          fi
-          # Plaid base URL sanity
-          case "$PLAID_ENV" in
-            sandbox|development|production) : ;; 
-            *) echo "::warning::PLAID_ENV should be one of sandbox|development|production (current='$PLAID_ENV')" >&2 ;;
-          esac
-          if [[ -n "${PLAID_REDIRECT_URI:-}" && "$PLAID_REDIRECT_URI" != https://* ]]; then
-            echo "::warning::PLAID_REDIRECT_URI should be an https URL (current='$PLAID_REDIRECT_URI')" >&2
-          fi
-          if [[ -z "${PLAID_WEBHOOK_SECRET:-}" ]]; then
-            echo "::notice::PLAID_WEBHOOK_SECRET is not set (not required when using Plaid's JWT-based webhook verification)." >&2
-          fi
-          echo "Backend env preflight OK" >&2
-
-      - name: Preflight ECS permission check
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Checking ecs:DescribeServices for $CLUSTER / $SERVICE" >&2
-          if ! aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text >/dev/null 2>&1; then
-            echo "::error::ecs:DescribeServices failed. Ensure the GitHubOIDCDeployRole has ecs:DescribeServices on service ARN" >&2
-            exit 1
-          fi
-          echo "Permission OK" >&2
-
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Render new task definition (image swap + env overrides)
-        id: render
-        shell: bash
-        run: |
-          set -euo pipefail
-          TD_ARN=$(aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --region "$AWS_REGION" --task-definition "$TD_ARN" \
-            --query 'taskDefinition' > td.json
-
-          jq 'del(.taskDefinitionArn,.revision,.status,.registeredAt,.registeredBy,.compatibilities,.requiresAttributes)' td.json > td.base.json
-
-          ENV_OVERRIDES=$(jq -n '[]')
-          for VAR in \
-            COGNITO_ISSUER \
-            COGNITO_DOMAIN \
-            COGNITO_CLIENT_ID_NATIVE \
-            COGNITO_REDIRECT_URI_NATIVE \
-            COGNITO_AUDIENCE \
-            SAFEPOCKET_USE_COGNITO \
-            PLAID_CLIENT_ID \
-            PLAID_CLIENT_SECRET \
-            PLAID_ENV \
-            PLAID_BASE_URL \
-            PLAID_REDIRECT_URI \
-            PLAID_WEBHOOK_URL \
-            PLAID_WEBHOOK_SECRET \
-            OPENAI_API_KEY \
-            SPRING_PROFILES_ACTIVE \
-            SAFEPOCKET_KMS_DATA_KEY \
-            SPRING_DATASOURCE_URL \
-            SPRING_DATASOURCE_USERNAME \
-            SPRING_DATASOURCE_PASSWORD \
-            SAFEPOCKET_DB_BOOTSTRAP; do
-            VAL="${!VAR:-}"
-            if [ -n "$VAL" ]; then
-              ENV_OVERRIDES=$(echo "$ENV_OVERRIDES" | jq --arg n "$VAR" --arg v "$VAL" '. + [{name:$n,value:$v}]')
-            fi
-          done
-
-          jq --arg name "$CONTAINER_NAME" --arg img "$IMAGE" --argjson overrides "$ENV_OVERRIDES" '
-            .containerDefinitions = (.containerDefinitions | map(
-              if .name==$name then
-                .image=$img |
-                (.environment) as $orig |
-                (.environment = ((($orig // []) | map(select([.name] | inside([ $overrides[].name ]) | not))) + $overrides))
-              else . end))' td.base.json > td.new.json
-
-          NEW_TD_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
-            --cli-input-json file://td.new.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "NEW_TD_ARN=$NEW_TD_ARN" >> $GITHUB_OUTPUT
-
-      - name: Update service
-        run: |
-          aws ecs update-service --region "$AWS_REGION" \
-            --cluster "$CLUSTER" --service "$SERVICE" \
-            --task-definition "${{ steps.render.outputs.NEW_TD_ARN }}" \
-            --force-new-deployment >/dev/null
-          aws ecs wait services-stable --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE"
+      - name: Run tests (ledger-svc)
+        run: ./apps/ledger-svc/gradlew -p apps/ledger-svc test

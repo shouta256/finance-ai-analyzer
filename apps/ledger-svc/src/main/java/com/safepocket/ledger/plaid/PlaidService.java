@@ -7,6 +7,7 @@ import com.safepocket.ledger.model.Transaction;
 import com.safepocket.ledger.repository.JpaAccountRepository;
 import com.safepocket.ledger.security.AccessTokenEncryptor;
 import com.safepocket.ledger.security.RlsGuard;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -123,8 +124,10 @@ public class PlaidService {
             String merchant = (t.merchantName() != null && !t.merchantName().isBlank()) ? t.merchantName() : t.name();
             var occurred = LocalDate.parse(t.date()).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
             var authorized = occurred.minus(1, ChronoUnit.HOURS);
-            // Plaid amount is positive for outflows; store expenses as negative
-            var amount = t.amount().negate();
+            // Plaid amounts are positive for debits (money out) and negative for credits (money in).
+            // Normalise to Safepocket convention: expenses < 0, income > 0.
+            BigDecimal rawAmount = t.amount() == null ? BigDecimal.ZERO : t.amount();
+            BigDecimal amount = rawAmount.signum() > 0 ? rawAmount.negate() : rawAmount.abs();
             // Derive category: prefer Plaid personal finance primary, then joined category array, else fallback
             String category = "Uncategorized";
             if (t.personalFinanceCategory() != null && t.personalFinanceCategory().primary() != null && !t.personalFinanceCategory().primary().isBlank()) {

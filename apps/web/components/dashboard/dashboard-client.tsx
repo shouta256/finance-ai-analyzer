@@ -233,6 +233,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     const entries = Object.entries(categoryTotals)
       .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
       .slice(0, 8);
+    if (entries.length === 0) return null;
     const labels = entries.map(([name]) => name);
     const data = entries.map(([, amount]) => Math.abs(amount));
     return {

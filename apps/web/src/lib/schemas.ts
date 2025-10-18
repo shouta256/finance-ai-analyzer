@@ -102,6 +102,27 @@ export const analyticsSummarySchema = z.object({
     sentiment: z.enum(["POSITIVE", "NEUTRAL", "NEGATIVE"]),
     recommendations: z.array(z.string()),
   }),
+  safeToSpend: z.object({
+    cycleStart: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date"),
+    cycleEnd: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date"),
+    safeToSpendToday: z.number(),
+    hardCap: z.number(),
+    dailyBase: z.number(),
+    dailyAdjusted: z.number(),
+    rollToday: z.number(),
+    paceRatio: z.number(),
+    adjustmentFactor: z.number(),
+    daysRemaining: z.number(),
+    variableBudget: z.number(),
+    variableSpent: z.number(),
+    remainingVariableBudget: z.number(),
+    danger: z.boolean(),
+    notes: z.array(z.string()),
+  }),
   traceId: z.string().nullable().optional(),
 });
 

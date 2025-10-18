@@ -308,6 +308,7 @@ export interface components {
       topMerchants: components["schemas"]["MerchantBreakdown"][];
       anomalies: components["schemas"]["AnomalyInsight"][];
       aiHighlight: components["schemas"]["AiHighlight"];
+      safeToSpend: components["schemas"]["SafeToSpendSummary"];
       /** @description Identifier for correlating AI computations */
       traceId: string;
     };
@@ -372,6 +373,77 @@ export interface components {
       occurredAt: string;
       merchantName: string;
       commentary?: string | null;
+    };
+    SafeToSpendSummary: {
+      /**
+       * Format: date
+       * @description Start date (inclusive) of the current cashflow cycle.
+       */
+      cycleStart: string;
+      /**
+       * Format: date
+       * @description End date (inclusive) of the current cashflow cycle.
+       */
+      cycleEnd: string;
+      /**
+       * Format: double
+       * @description Amount the user can safely spend today after adjustments and rollovers.
+       */
+      safeToSpendToday: number;
+      /**
+       * Format: double
+       * @description Absolute upper bound based on cash on hand, expected inflows, and reserved obligations.
+       */
+      hardCap: number;
+      /**
+       * Format: double
+       * @description Evenly distributed daily allowance before pacing adjustments.
+       */
+      dailyBase: number;
+      /**
+       * Format: double
+       * @description Daily allowance after pacing adjustment.
+       */
+      dailyAdjusted: number;
+      /**
+       * Format: double
+       * @description Portion of unused allowance carried over to today.
+       */
+      rollToday: number;
+      /**
+       * Format: double
+       * @description Ratio of actual variable spend pace vs the planned pace.
+       */
+      paceRatio: number;
+      /**
+       * Format: double
+       * @description Multiplier applied to the base allowance to nudge spending toward target pace.
+       */
+      adjustmentFactor: number;
+      /**
+       * Format: int32
+       * @description Number of days remaining in the cycle (inclusive of today).
+       */
+      daysRemaining: number;
+      /**
+       * Format: double
+       * @description Total variable budget allocated for the current cycle.
+       */
+      variableBudget: number;
+      /**
+       * Format: double
+       * @description Variable outflows booked so far in the cycle.
+       */
+      variableSpent: number;
+      /**
+       * Format: double
+       * @description Variable budget still available for the remainder of the cycle.
+       */
+      remainingVariableBudget: number;
+      /** @description Indicates that the user has exhausted the hard cap and should be warned. */
+      danger: boolean;
+      /** @description Short diagnostic messages explaining key drivers or recommendations. */
+      notes?: string[];
     };
     AiHighlight: {
       title: string;

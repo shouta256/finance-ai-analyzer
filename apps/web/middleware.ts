@@ -1,4 +1,7 @@
 // middleware.ts (updated)
+// Edge shim: some vendor chunks may reference CommonJS __dirname; define a harmless fallback
+// eslint-disable-next-line no-var
+var __dirname = "/";
 import { NextRequest, NextResponse } from 'next/server';
 
 const AUTH_OPTIONAL =

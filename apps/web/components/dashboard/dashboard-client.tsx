@@ -296,7 +296,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             backgroundColor: "rgba(37, 99, 235, 0.1)",
             tension: 0.3,
             fill: true,
-            pointRadius: 3,
+            pointRadius: 0,
+            pointHoverRadius: 6,
           },
         ],
       };
@@ -328,7 +329,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           label: "Net",
           data,
           borderColor: "#2563eb",
-          borderWidth: 100,
+          borderWidth: 7,
           tension: 0.4,
           pointRadius: 0,
           pointHoverRadius: 6,

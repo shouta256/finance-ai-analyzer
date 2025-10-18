@@ -37,32 +37,6 @@ jobs:
       - name: Build (apps/web)
         run: pnpm -C apps/web build
 
-  vercel-deploy:
-    name: Web - Deploy to Vercel
-    needs: web-ci
-    runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/main' && secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Vercel CLI
-        run: npm i -g vercel@latest
-
-      - name: Pull Vercel env (production)
-        working-directory: apps/web
-        run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
-
-      - name: Build on Vercel (prebuilt)
-        working-directory: apps/web
-        run: vercel build --prod --token=${{ env.VERCEL_TOKEN }}
-
-      - name: Deploy to Vercel (production)
-        working-directory: apps/web
-        run: vercel deploy --prebuilt --prod --token=${{ env.VERCEL_TOKEN }}
 
   backend-tests:
     name: Backend - Unit tests

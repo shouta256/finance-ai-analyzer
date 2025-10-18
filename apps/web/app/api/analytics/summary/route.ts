@@ -7,8 +7,7 @@ import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 const querySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), generateAi: z.string().optional() });
 
 export async function GET(request: NextRequest) {
-  const authorization = request.headers.get("authorization");
-  if (!authorization) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+  const authorization = request.headers.get("authorization") ?? undefined;
   const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
   if (errorResponse) return errorResponse;
   const { searchParams } = new URL(request.url);
@@ -20,7 +19,11 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("month", query.month);
   if (query.generateAi) url.searchParams.set("generateAi", query.generateAi);
   try {
-    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, { method: "GET", headers: { authorization }, baseUrlOverride });
+    const headers: Record<string, string> = {};
+    if (authorization) {
+      headers.authorization = authorization;
+    }
+    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, { method: "GET", headers, baseUrlOverride });
     const body = analyticsSummarySchema.parse(result);
     return NextResponse.json(body);
   } catch (e) {

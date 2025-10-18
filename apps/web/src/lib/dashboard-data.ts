@@ -12,21 +12,22 @@ export async function getDashboardData(month: string): Promise<{
   const headerList = headers();
   const cookieStore = cookies();
   const token = cookieStore.get("sp_token")?.value;
-  if (!token) throw new Error("Missing authentication token (sp_token)");
   const cookieHeader = cookieStore
     .getAll()
     .map((entry) => `${entry.name}=${entry.value}`)
     .join("; ");
   const protocol = headerList.get("x-forwarded-proto") ?? "http";
   const host = headerList.get("host") ?? "localhost:3000";
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${protocol}://${host}`;
+  const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${protocol}://${host}`;
   const commonHeaders = new Headers();
   if (cookieHeader) {
     commonHeaders.set("cookie", cookieHeader);
   }
-  commonHeaders.set("authorization", `Bearer ${token}`);
+  if (token) {
+    commonHeaders.set("authorization", `Bearer ${token}`);
+  }
 
-  const summaryUrl = new URL(`/api/analytics/summary?month=${month}`, baseUrl);
+  const summaryUrl = new URL(`/api/analytics/summary?month=${month}`, appBaseUrl);
   const summaryResponse = await fetch(summaryUrl, {
     headers: commonHeaders,
     cache: "no-store",
@@ -38,7 +39,7 @@ export async function getDashboardData(month: string): Promise<{
   const summaryJson = await summaryResponse.json();
   const summary = analyticsSummarySchema.parse(summaryJson);
 
-  const transactionsUrl = new URL(`/api/transactions?month=${month}`, baseUrl);
+  const transactionsUrl = new URL(`/api/transactions?month=${month}`, appBaseUrl);
   const transactionsResponse = await fetch(transactionsUrl, {
     headers: commonHeaders,
     cache: "no-store",

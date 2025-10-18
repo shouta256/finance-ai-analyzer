@@ -34,7 +34,7 @@ const querySchema = z
 export async function GET(request: NextRequest) {
   const headerToken = request.headers.get("authorization")?.trim();
   const cookieToken = request.cookies.get("sp_token")?.value?.trim();
-  const authorization =
+  const rawAuthorization =
     headerToken?.startsWith("Bearer ")
       ? headerToken
       : headerToken
@@ -42,9 +42,6 @@ export async function GET(request: NextRequest) {
         : cookieToken
           ? `Bearer ${cookieToken}`
           : null;
-  if (!authorization) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
-  }
 
   const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
   if (errorResponse) return errorResponse;
@@ -67,7 +64,7 @@ export async function GET(request: NextRequest) {
 
   const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, {
     method: "GET",
-    headers: { authorization },
+    headers: rawAuthorization ? { authorization: rawAuthorization } : undefined,
     baseUrlOverride,
   });
   const body = transactionsListSchema.parse(result);

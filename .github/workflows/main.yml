@@ -28,10 +28,19 @@ jobs:
         with:
           node-version: 18
           cache: 'pnpm'
-          cache-dependency-path: apps/web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install deps (apps/web)
-        run: pnpm -C apps/web install --frozen-lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f apps/web/pnpm-lock.yaml ]; then
+            echo "Found apps/web/pnpm-lock.yaml -> using --frozen-lockfile"
+            pnpm -C apps/web install --frozen-lockfile
+          else
+            echo "apps/web/pnpm-lock.yaml not found -> using --no-frozen-lockfile"
+            pnpm -C apps/web install --no-frozen-lockfile
+          fi
 
       - name: Run unit tests (apps/web)
         run: pnpm -C apps/web test

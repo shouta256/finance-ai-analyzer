@@ -229,18 +229,7 @@ export async function middleware(req: NextRequest) {
   // 4) Resolve token from Authorization header or cookie
   const token = extractToken(req);
   if (!token) {
-    if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'Missing token' } }, { status: 401 });
-    }
-    const url = req.nextUrl.clone();
-    url.pathname = '/login';
-    url.searchParams.set('redirect', pathname || '/dashboard');
-    const r = NextResponse.redirect(url);
-    // Debug hint when secure cookie failed due to http proto
-    if (req.headers.get('x-forwarded-proto') === 'http') {
-      r.headers.set('x-auth-hint', 'missing-token-proto-http');
-    }
-    return r;
+    return NextResponse.next();
   }
 
   try {

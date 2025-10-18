@@ -37,6 +37,9 @@ class AnalyticsServiceTest {
     @Mock
     private AiHighlightService aiHighlightService;
 
+    @Mock
+    private SafeToSpendCalculator safeToSpendCalculator;
+
     private AnalyticsService analyticsService;
 
     private final UUID userId = UUID.randomUUID();
@@ -44,7 +47,7 @@ class AnalyticsServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        analyticsService = new AnalyticsService(transactionRepository, authenticatedUserProvider, rlsGuard, anomalyDetectionService, aiHighlightService);
+        analyticsService = new AnalyticsService(transactionRepository, authenticatedUserProvider, rlsGuard, anomalyDetectionService, aiHighlightService, safeToSpendCalculator);
     }
 
     @Test
@@ -60,6 +63,24 @@ class AnalyticsServiceTest {
         when(anomalyDetectionService.detectAnomalies(transactions)).thenReturn(List.of());
         when(aiHighlightService.generateHighlight(userId, month, transactions, List.of(), false))
                 .thenReturn(new AnalyticsSummary.AiHighlight("title", "summary", AnalyticsSummary.AiHighlight.Sentiment.NEUTRAL, List.of()));
+        when(safeToSpendCalculator.calculate(userId, month, transactions))
+                .thenReturn(new AnalyticsSummary.SafeToSpend(
+                        month.atDay(1),
+                        month.atEndOfMonth(),
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(500.00),
+                        BigDecimal.valueOf(80.00),
+                        BigDecimal.valueOf(90.00),
+                        BigDecimal.valueOf(20.00),
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        10,
+                        BigDecimal.valueOf(600.00),
+                        BigDecimal.valueOf(200.00),
+                        BigDecimal.valueOf(400.00),
+                        false,
+                        List.of("note")
+                ));
 
         AnalyticsSummary summary = analyticsService.getSummary(month);
 
@@ -67,6 +88,45 @@ class AnalyticsServiceTest {
         assertThat(summary.totals().expense()).isEqualByComparingTo(BigDecimal.valueOf(-188.65));
         assertThat(summary.merchants()).hasSize(3);
         assertThat(summary.categories()).isNotEmpty();
+        assertThat(summary.safeToSpend()).isNotNull();
+    }
+
+    @Test
+    void includesCategoriesWhenExpensesAccidentallyStoredAsPositive() {
+        YearMonth month = YearMonth.of(2024, 4);
+        List<Transaction> transactions = List.of(
+                transaction("Legacy Rent Co", 1800.00, "Housing"),
+                transaction("Payroll", 4200.0, "Income")
+        );
+        when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
+        when(transactionRepository.findByUserIdAndMonth(userId, month)).thenReturn(transactions);
+        when(anomalyDetectionService.detectAnomalies(transactions)).thenReturn(List.of());
+        when(aiHighlightService.generateHighlight(userId, month, transactions, List.of(), false))
+                .thenReturn(new AnalyticsSummary.AiHighlight("title", "summary", AnalyticsSummary.AiHighlight.Sentiment.NEUTRAL, List.of()));
+        when(safeToSpendCalculator.calculate(userId, month, transactions))
+                .thenReturn(new AnalyticsSummary.SafeToSpend(
+                        month.atDay(1),
+                        month.atEndOfMonth(),
+                        BigDecimal.valueOf(120.00),
+                        BigDecimal.valueOf(500.00),
+                        BigDecimal.valueOf(80.00),
+                        BigDecimal.valueOf(90.00),
+                        BigDecimal.valueOf(20.00),
+                        BigDecimal.ONE,
+                        BigDecimal.ONE,
+                        10,
+                        BigDecimal.valueOf(600.00),
+                        BigDecimal.valueOf(200.00),
+                        BigDecimal.valueOf(400.00),
+                        false,
+                        List.of()
+                ));
+
+        AnalyticsSummary summary = analyticsService.getSummary(month);
+
+        assertThat(summary.categories())
+                .extracting(AnalyticsSummary.CategoryBreakdown::category)
+                .contains("Housing");
     }
 
     private Transaction transaction(String merchant, double amount) {
@@ -80,6 +140,24 @@ class AnalyticsServiceTest {
                 "USD",
                 Instant.parse("2024-03-15T12:00:00Z"),
                 Instant.parse("2024-03-15T11:00:00Z"),
+                false,
+                category,
+                merchant,
+                Optional.empty(),
+                Optional.empty()
+        );
+    }
+
+    private Transaction transaction(String merchant, double amount, String category) {
+        return new Transaction(
+                UUID.randomUUID(),
+                userId,
+                UUID.randomUUID(),
+                merchant,
+                BigDecimal.valueOf(amount),
+                "USD",
+                Instant.parse("2024-04-15T12:00:00Z"),
+                Instant.parse("2024-04-15T11:00:00Z"),
                 false,
                 category,
                 merchant,

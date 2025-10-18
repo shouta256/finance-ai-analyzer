@@ -25,19 +25,22 @@ public class AnalyticsService {
     private final RlsGuard rlsGuard;
     private final AnomalyDetectionService anomalyDetectionService;
     private final AiHighlightService aiHighlightService;
+    private final SafeToSpendCalculator safeToSpendCalculator;
 
     public AnalyticsService(
             TransactionRepository transactionRepository,
             AuthenticatedUserProvider authenticatedUserProvider,
             RlsGuard rlsGuard,
             AnomalyDetectionService anomalyDetectionService,
-            AiHighlightService aiHighlightService
+            AiHighlightService aiHighlightService,
+            SafeToSpendCalculator safeToSpendCalculator
     ) {
         this.transactionRepository = transactionRepository;
         this.authenticatedUserProvider = authenticatedUserProvider;
         this.rlsGuard = rlsGuard;
         this.anomalyDetectionService = anomalyDetectionService;
         this.aiHighlightService = aiHighlightService;
+        this.safeToSpendCalculator = safeToSpendCalculator;
     }
 
     public AnalyticsSummary getSummary(YearMonth month) {
@@ -65,7 +68,8 @@ public class AnalyticsService {
         String traceId = RequestContextHolder.get()
                 .map(RequestContextHolder.RequestContext::traceId)
                 .orElse(null);
-        return new AnalyticsSummary(month, totals, categories, merchants, anomalies, highlight, traceId);
+        AnalyticsSummary.SafeToSpend safeToSpend = safeToSpendCalculator.calculate(userId, month, transactions);
+        return new AnalyticsSummary(month, totals, categories, merchants, anomalies, highlight, safeToSpend, traceId);
     }
 
     private AnalyticsSummary.Totals calculateTotals(List<Transaction> transactions) {
@@ -87,19 +91,40 @@ public class AnalyticsService {
         Map<String, BigDecimal> grouped = transactions.stream()
                 .collect(Collectors.groupingBy(Transaction::category,
                         Collectors.reducing(BigDecimal.ZERO, Transaction::amount, BigDecimal::add)));
-        BigDecimal totalExpenses = grouped.values().stream()
-                .filter(value -> value.compareTo(BigDecimal.ZERO) < 0)
+        Map<String, BigDecimal> normalized = grouped.entrySet().stream()
+                .map(entry -> {
+                    String category = entry.getKey();
+                    BigDecimal amount = entry.getValue();
+                    if (amount == null) {
+                        return Map.entry(category, BigDecimal.ZERO);
+                    }
+                    if (amount.compareTo(BigDecimal.ZERO) >= 0) {
+                        if (isIncomeCategory(category)) {
+                            return Map.entry(category, BigDecimal.ZERO);
+                        }
+                        amount = amount.negate();
+                    }
+                    return Map.entry(category, amount);
+                })
+                .filter(entry -> entry.getValue().compareTo(BigDecimal.ZERO) < 0)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        BigDecimal totalExpenses = normalized.values().stream()
                 .map(BigDecimal::abs)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         return grouped.entrySet().stream()
-                .filter(entry -> entry.getValue().compareTo(BigDecimal.ZERO) < 0)
                 .map(entry -> {
-                    BigDecimal amount = entry.getValue();
+                    BigDecimal amount = normalized.getOrDefault(entry.getKey(), BigDecimal.ZERO);
+                    if (amount.compareTo(BigDecimal.ZERO) == 0) {
+                        return null;
+                    }
                     BigDecimal percentage = totalExpenses.compareTo(BigDecimal.ZERO) == 0
                             ? BigDecimal.ZERO
                             : amount.abs().multiply(BigDecimal.valueOf(100)).divide(totalExpenses, 2, RoundingMode.HALF_UP);
                     return new AnalyticsSummary.CategoryBreakdown(entry.getKey(), amount.setScale(2, RoundingMode.HALF_UP), percentage);
                 })
+                .filter(result -> result != null)
                 .sorted(Comparator.comparing((AnalyticsSummary.CategoryBreakdown breakdown) -> breakdown.amount().abs()).reversed())
                 .limit(8)
                 .toList();
@@ -120,5 +145,20 @@ public class AnalyticsService {
                 .sorted(Comparator.comparing((AnalyticsSummary.MerchantBreakdown breakdown) -> breakdown.amount().abs()).reversed())
                 .limit(5)
                 .toList();
+    }
+
+    private boolean isIncomeCategory(String category) {
+        if (category == null) {
+            return false;
+        }
+        String normalized = category.trim().toLowerCase();
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        return normalized.contains("income")
+                || normalized.contains("salary")
+                || normalized.contains("payroll")
+                || normalized.contains("transfer")
+                || normalized.contains("refund");
     }
 }

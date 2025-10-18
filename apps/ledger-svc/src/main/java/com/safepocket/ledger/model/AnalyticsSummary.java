@@ -11,6 +11,7 @@ public record AnalyticsSummary(
         List<MerchantBreakdown> merchants,
         List<AnomalyInsight> anomalies,
         AiHighlight aiHighlight,
+        SafeToSpend safeToSpend,
         String traceId
 ) {
     public record Totals(BigDecimal income, BigDecimal expense, BigDecimal net) {
@@ -40,5 +41,24 @@ public record AnalyticsSummary(
             NEUTRAL,
             NEGATIVE
         }
+    }
+
+    public record SafeToSpend(
+            java.time.LocalDate cycleStart,
+            java.time.LocalDate cycleEnd,
+            BigDecimal safeToSpendToday,
+            BigDecimal hardCap,
+            BigDecimal dailyBase,
+            BigDecimal dailyAdjusted,
+            BigDecimal rollToday,
+            BigDecimal paceRatio,
+            BigDecimal adjustmentFactor,
+            int daysRemaining,
+            BigDecimal variableBudget,
+            BigDecimal variableSpent,
+            BigDecimal remainingVariableBudget,
+            boolean danger,
+            List<String> notes
+    ) {
     }
 }

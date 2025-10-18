@@ -5,6 +5,7 @@ import com.safepocket.ledger.controller.dto.AnalyticsSummaryResponseDto;
 import com.safepocket.ledger.model.AnalyticsSummary;
 import java.math.BigDecimal;
 import java.time.YearMonth;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,7 +62,47 @@ public class AnalyticsController {
                         summary.aiHighlight().sentiment().name(),
                         summary.aiHighlight().recommendations()
                 ),
+                mapSafeToSpend(summary.safeToSpend()),
                 summary.traceId()
+        );
+    }
+
+    private AnalyticsSummaryResponseDto.SafeToSpend mapSafeToSpend(AnalyticsSummary.SafeToSpend safeToSpend) {
+        if (safeToSpend == null) {
+            return new AnalyticsSummaryResponseDto.SafeToSpend(
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    0,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    false,
+                    List.of()
+            );
+        }
+        return new AnalyticsSummaryResponseDto.SafeToSpend(
+                safeToSpend.cycleStart(),
+                safeToSpend.cycleEnd(),
+                safeToSpend.safeToSpendToday(),
+                safeToSpend.hardCap(),
+                safeToSpend.dailyBase(),
+                safeToSpend.dailyAdjusted(),
+                safeToSpend.rollToday(),
+                safeToSpend.paceRatio(),
+                safeToSpend.adjustmentFactor(),
+                safeToSpend.daysRemaining(),
+                safeToSpend.variableBudget(),
+                safeToSpend.variableSpent(),
+                safeToSpend.remainingVariableBudget(),
+                safeToSpend.danger(),
+                safeToSpend.notes()
         );
     }
 }

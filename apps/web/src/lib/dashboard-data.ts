@@ -9,57 +9,65 @@ export async function getDashboardData(month: string): Promise<{
   summary: AnalyticsSummary;
   transactions: TransactionsList;
 }> {
-  const headerList = headers();
-  const cookieStore = cookies();
-  const token = cookieStore.get("sp_token")?.value;
-  const cookieHeader = cookieStore
-    .getAll()
-    .map((entry) => `${entry.name}=${entry.value}`)
-    .join("; ");
-  const protocol = headerList.get("x-forwarded-proto") ?? "http";
-  const host = headerList.get("host") ?? "localhost:3000";
-  const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${protocol}://${host}`;
-  const commonHeaders = new Headers();
-  if (cookieHeader) {
-    commonHeaders.set("cookie", cookieHeader);
-  }
-  if (token) {
-    commonHeaders.set("authorization", `Bearer ${token}`);
-  }
+  try {
+    const headerList = headers();
+    const cookieStore = cookies();
+    const token = cookieStore.get("sp_token")?.value;
+    const cookieHeader = cookieStore
+      .getAll()
+      .map((entry) => `${entry.name}=${entry.value}`)
+      .join("; ");
+    const protocol = headerList.get("x-forwarded-proto") ?? "http";
+    const host = headerList.get("host") ?? "localhost:3000";
+    const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${protocol}://${host}`;
+    const commonHeaders = new Headers();
+    if (cookieHeader) {
+      commonHeaders.set("cookie", cookieHeader);
+    }
+    if (token) {
+      commonHeaders.set("authorization", `Bearer ${token}`);
+    }
 
-  const summaryUrl = new URL(`/api/analytics/summary?month=${month}`, appBaseUrl);
-  const summaryResponse = await fetch(summaryUrl, {
-    headers: commonHeaders,
-    cache: "no-store",
-  });
-  if (!summaryResponse.ok) {
-    const details = await safeJson(summaryResponse);
-    throw new Error(details ?? `Failed to load analytics: ${summaryResponse.statusText}`);
-  }
-  const summaryJson = await summaryResponse.json();
-  const summary = analyticsSummarySchema.parse(summaryJson);
+    const summaryUrl = new URL(`/api/analytics/summary?month=${month}`, appBaseUrl);
+    const summaryResponse = await fetch(summaryUrl, {
+      headers: commonHeaders,
+      cache: "no-store",
+    });
+    if (!summaryResponse.ok) {
+      const details = await safeJson(summaryResponse);
+      throw new Error(details ?? `Failed to load analytics: ${summaryResponse.statusText}`);
+    }
+    const summaryJson = await summaryResponse.json();
+    const summary = analyticsSummarySchema.parse(summaryJson);
 
-  const transactionsUrl = new URL(`/api/transactions?month=${month}`, appBaseUrl);
-  const transactionsResponse = await fetch(transactionsUrl, {
-    headers: commonHeaders,
-    cache: "no-store",
-  });
-  if (!transactionsResponse.ok) {
-    const details = await safeJson(transactionsResponse);
-    throw new Error(details ?? `Failed to load transactions: ${transactionsResponse.statusText}`);
+    const transactionsUrl = new URL(`/api/transactions?month=${month}`, appBaseUrl);
+    const transactionsResponse = await fetch(transactionsUrl, {
+      headers: commonHeaders,
+      cache: "no-store",
+    });
+    if (!transactionsResponse.ok) {
+      const details = await safeJson(transactionsResponse);
+      throw new Error(details ?? `Failed to load transactions: ${transactionsResponse.statusText}`);
+    }
+    const transactionsJson = await transactionsResponse.json();
+    const parsedTransactions = transactionsListSchema.parse(transactionsJson);
+    const normalizedPeriod = {
+      month: parsedTransactions.period?.month ?? parsedTransactions.month ?? month,
+      from: parsedTransactions.period?.from ?? null,
+      to: parsedTransactions.period?.to ?? null,
+    };
+    const transactions = {
+      ...parsedTransactions,
+      period: normalizedPeriod,
+    };
+    return { summary, transactions };
+  } catch (error) {
+    console.error("[dashboard] データ取得に失敗しました。スタブデータを使用します。", error);
+    return {
+      summary: buildFallbackSummary(month),
+      transactions: buildFallbackTransactions(month),
+    };
   }
-  const transactionsJson = await transactionsResponse.json();
-  const parsedTransactions = transactionsListSchema.parse(transactionsJson);
-  const normalizedPeriod = {
-    month: parsedTransactions.period?.month ?? parsedTransactions.month ?? month,
-    from: parsedTransactions.period?.from ?? null,
-    to: parsedTransactions.period?.to ?? null,
-  };
-  const transactions = {
-    ...parsedTransactions,
-    period: normalizedPeriod,
-  };
-  return { summary, transactions };
 }
 
 async function safeJson(response: Response): Promise<string | null> {
@@ -72,4 +80,63 @@ async function safeJson(response: Response): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function buildFallbackSummary(month: string): AnalyticsSummary {
+  const today = new Date();
+  const cycleStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const cycleEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0));
+  const toIso = (date: Date) => date.toISOString().slice(0, 10);
+  return {
+    month,
+    totals: { income: 0, expense: 0, net: 0 },
+    byCategory: [],
+    topMerchants: [],
+    anomalies: [],
+    aiHighlight: {
+      title: "データ待機中",
+      summary: "API からのデータを待機しています。連携が完了するとここにハイライトが表示されます。",
+      sentiment: "NEUTRAL",
+      recommendations: ["口座連携を確認してください", "取引同期を実行してください"],
+    },
+    safeToSpend: {
+      cycleStart: toIso(cycleStart),
+      cycleEnd: toIso(cycleEnd),
+      safeToSpendToday: 0,
+      hardCap: 0,
+      dailyBase: 0,
+      dailyAdjusted: 0,
+      rollToday: 0,
+      paceRatio: 0,
+      adjustmentFactor: 1,
+      daysRemaining: Math.max(1, Math.ceil((cycleEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))),
+      variableBudget: 0,
+      variableSpent: 0,
+      remainingVariableBudget: 0,
+      danger: false,
+      notes: ["API 応答が未設定のため、プレースホルダを表示しています。"],
+    },
+    traceId: undefined,
+  };
+}
+
+function buildFallbackTransactions(month: string): TransactionsList {
+  return {
+    month,
+    period: {
+      month,
+      from: null,
+      to: null,
+    },
+    transactions: [],
+    aggregates: {
+      incomeTotal: 0,
+      expenseTotal: 0,
+      netTotal: 0,
+      monthNet: {},
+      categoryTotals: {},
+      count: 0,
+    },
+    traceId: undefined,
+  };
 }

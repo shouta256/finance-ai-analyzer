@@ -92,8 +92,11 @@ export async function GET(request: NextRequest) {
         const label = `${occurred.getUTCFullYear()}-${String(occurred.getUTCMonth() + 1).padStart(2, "0")}`;
         monthNet.set(label, (monthNet.get(label) ?? 0) + tx.amount);
       }
-      const category = tx.category;
-      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + tx.amount);
+      // Only include expenses (negative amounts) in categoryTotals for spending mix chart
+      if (tx.amount < 0) {
+        const category = tx.category;
+        categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + tx.amount);
+      }
       if (tx.amount > 0) incomeTotal += tx.amount;
       if (tx.amount < 0) expenseTotal += tx.amount;
     }

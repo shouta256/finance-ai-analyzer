@@ -9,7 +9,7 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
-import type { ChartData, ChartOptions, Plugin } from "chart.js";
+import type { Chart, ChartData, ChartOptions, Plugin } from "chart.js";
 import { Doughnut, Line } from "react-chartjs-2";
 
 ChartJS.register(
@@ -72,6 +72,32 @@ export function ChartsSection({ categoryData, categoryOptions, trendData, trendO
     } satisfies ChartOptions<"doughnut">;
   }, [categoryOptions, categoryData, spendingScore, scoreLabel]);
 
+  const createNetGradient = (chart: Chart, opacity: number) => {
+    const { ctx, chartArea } = chart;
+    if (!chartArea) {
+      return `rgba(37,99,235,${opacity})`;
+    }
+    const gradient = ctx.createLinearGradient(chartArea.left, chartArea.bottom, chartArea.right, chartArea.top);
+    gradient.addColorStop(0, `rgba(59,130,246,${opacity})`);
+    gradient.addColorStop(0.5, `rgba(168,85,247,${opacity})`);
+    gradient.addColorStop(1, `rgba(236,72,153,${opacity})`);
+    return gradient;
+  };
+
+  const netChartData = useMemo(() => {
+    if (!trendData) return null;
+    return {
+      ...trendData,
+      datasets: trendData.datasets.map((dataset) => ({
+        ...dataset,
+        borderColor: (ctx: { chart: Chart }) => createNetGradient(ctx.chart, 0.95),
+        backgroundColor: (ctx: { chart: Chart }) => createNetGradient(ctx.chart, 0.18),
+        pointBackgroundColor: "#2563eb",
+        pointBorderColor: "transparent",
+      })),
+    };
+  }, [trendData]);
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="min-h-[280px] rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
@@ -89,8 +115,8 @@ export function ChartsSection({ categoryData, categoryOptions, trendData, trendO
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Net trend</h2>
         <p className="text-sm text-slate-500">Monthly net movement based on the selected period.</p>
         <div className="mt-4 h-56">
-          {trendData ? (
-            <Line data={trendData} options={trendOptions} />
+          {netChartData ? (
+            <Line data={netChartData} options={trendOptions} />
           ) : (
             <p className="text-sm text-slate-500">Add more transactions or expand the range to see a trend.</p>
           )}

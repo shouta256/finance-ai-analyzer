@@ -104,11 +104,12 @@ jobs:
       - name: Publish pg layer
         id: publish_layer
         run: |
+          ARCH=${{ vars.LAMBDA_ARCHITECTURE || 'x86_64' }}
           LAYER_ARN=$(aws lambda publish-layer-version \
             --layer-name safepocket-pg-node20 \
             --description "pg client for Safepocket" \
             --compatible-runtimes nodejs20.x \
-            --compatible-architectures x86_64 \
+            --compatible-architectures ${ARCH} \
             --zip-file fileb://dist/pg-layer.zip \
             --query 'LayerVersionArn' \
             --output text)
@@ -116,12 +117,14 @@ jobs:
 
       - name: Update Lambda code
         run: |
+          FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME || 'hello-http' }}
           aws lambda update-function-code \
-            --function-name hello-http \
+            --function-name "$FUNCTION_NAME" \
             --zip-file fileb://dist/lambda.zip
 
       - name: Attach latest layer
         run: |
+          FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME || 'hello-http' }}
           aws lambda update-function-configuration \
-            --function-name hello-http \
+            --function-name "$FUNCTION_NAME" \
             --layers ${{ steps.publish_layer.outputs.layer_arn }}

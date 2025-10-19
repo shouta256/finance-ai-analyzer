@@ -48,7 +48,7 @@ export default function CallbackClient() {
       try {
         setStatus("pending");
         setMessage("Exchanging authorization code...");
-        const url = new URL("/auth/callback", API_BASE);
+        const url = buildApiUrl("/auth/callback");
         url.searchParams.set("code", codeValue);
         url.searchParams.set("response", "json");
         url.searchParams.set("state", state);
@@ -117,4 +117,10 @@ async function safeJson(response: Response): Promise<any | null> {
   } catch {
     return null;
   }
+}
+
+function buildApiUrl(path: string): URL {
+  const base = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
+  const normalisedPath = path.startsWith("/") ? path : `/${path}`;
+  return new URL(`${base}${normalisedPath}`);
 }

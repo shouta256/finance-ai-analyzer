@@ -530,6 +530,12 @@ async function handleAuthToken(event) {
     params.set("code", body.code);
     params.set("redirect_uri", redirectUri);
     if (body.codeVerifier) params.set("code_verifier", body.codeVerifier);
+    console.log("[lambda] token exchange request", {
+      redirectUri,
+      hasCodeVerifier: Boolean(body.codeVerifier),
+      hasClientSecret: Boolean(cognito.clientSecret && cognito.clientSecret.trim()),
+      domain: cognito.domain,
+    });
   } else {
     if (!body.refreshToken) throw createHttpError(400, "refreshToken is required for refresh_token");
     params.set("refresh_token", body.refreshToken);

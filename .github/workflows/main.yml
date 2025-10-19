@@ -93,8 +93,11 @@ jobs:
           set -euo pipefail
           mkdir -p dist/lambda
           cp infra/lambda/index.js dist/lambda/
-          npm install aws-sdk --prefix dist/lambda
-          (cd dist/lambda && zip -r ../lambda.zip .)
+          # Create package.json and install dependencies inside the target directory
+          (cd dist/lambda && \
+            npm init -y && \
+            npm install aws-sdk && \
+            zip -r ../lambda.zip ./*)
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4

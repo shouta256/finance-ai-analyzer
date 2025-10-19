@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ledgerFetch } from '@/src/lib/api-client';
+
+export const runtime = 'nodejs';
 
 /*
  * Cognito Hosted UI redirect URI endpoint.
@@ -54,77 +55,115 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Delegate token exchange to ledger service (ensures identical configuration across environments)
-    const exchangeBody = {
-      grantType: 'authorization_code' as const,
+    const tokenResponse = await exchangeAuthorizationCode({
+      domain: userPoolDomain,
+      clientId,
+      clientSecret,
       code,
       redirectUri,
-    };
-
-    const exchange = await ledgerFetch<{
-      accessToken: string;
-      idToken?: string | null;
-      refreshToken?: string | null;
-      expiresIn: number;
-      tokenType: string;
-      scope?: string | null;
-    }>("/auth/token", {
-      method: "POST",
-      body: JSON.stringify(exchangeBody),
-      headers: { "content-type": "application/json" },
     });
 
-    const token = exchange.accessToken || exchange.idToken;
-    if (!token) {
-      return NextResponse.json({ error: { code: 'NO_TOKEN', message: 'No id/access token returned' } }, { status: 500 });
-    }
-
     const redirectTarget = safeRedirectPath(state);
-
-    // Detect protocol to decide secure flag. NODE_ENV alone fails when HTTPS ends at the ALB but the app serves HTTP.
     const forwardedProto = req.headers.get('x-forwarded-proto');
     const proto = forwardedProto || (req.nextUrl.protocol.replace(':', '')) || 'https';
     const secureCookie = proto === 'https';
 
-    // Use effectiveOrigin (x-forwarded-host if present) to avoid redirecting to 0.0.0.0:3000
     const res = NextResponse.redirect(new URL(redirectTarget, effectiveOrigin));
-    // Cookie scopes entire app domain – use canonical sp_token (middleware expects this)
-    res.cookies.set('sp_token', token, {
+    const maxAge = Number.parseInt(String(tokenResponse.expires_in ?? 3600), 10) || 3600;
+    const cookieOptions: Parameters<typeof res.cookies.set>[2] = {
       httpOnly: true,
       secure: secureCookie,
       sameSite: 'lax',
       path: '/',
-      maxAge: 3600, // 1h (Cognito token default 1h)
-    });
-    if (exchange.refreshToken) {
-      res.cookies.set('sp_refresh', exchange.refreshToken, {
-        httpOnly: true,
-        secure: secureCookie,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 30 * 24 * 60 * 60, // 30 days typical
+      maxAge,
+    };
+
+    const accessToken = tokenResponse.access_token ?? tokenResponse.id_token;
+    if (!accessToken) {
+      return NextResponse.json({ error: { code: 'NO_TOKEN', message: 'No id/access token returned' } }, { status: 500 });
+    }
+    res.cookies.set('sp_token', accessToken, cookieOptions);
+    res.cookies.set('sp_at', tokenResponse.access_token ?? accessToken, cookieOptions);
+    if (tokenResponse.id_token) {
+      res.cookies.set('sp_it', tokenResponse.id_token, cookieOptions);
+    }
+    if (tokenResponse.refresh_token) {
+      res.cookies.set('sp_rt', tokenResponse.refresh_token, {
+        ...cookieOptions,
+        maxAge: 30 * 24 * 60 * 60,
       });
     }
-    // Optional: set legacy cookie for temporary diagnostics (middleware ignores this)
-    // res.cookies.set('safepocket_token', token, { httpOnly: true, secure: secureCookie, sameSite: 'lax', path: '/', maxAge: 3600 });
-    // Removed previous JSON debug cookie (safepocket_token_flags) because browsers reject complex/JSON cookie values.
-    // If needed, surface debug info via a temporary header (not cached) for manual inspection.
-    res.headers.set('x-safepocket-cookie-secure', String(secureCookie));
-    res.headers.set('x-safepocket-proto', proto);
-    // Optional debug: expose token_use for quick validation (non-HTTP only; removed on refresh)
+
+    // Optional debug cookie for token_use (non-HTTP to inspect quickly)
     try {
-      const [, payloadB64] = token.split('.');
+      const [, payloadB64] = accessToken.split('.');
       const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
       if (payload.token_use) {
-        res.cookies.set('safepocket_token_use', String(payload.token_use), { path: '/', maxAge: 120, httpOnly: false });
+        res.cookies.set('safepocket_token_use', String(payload.token_use), {
+          path: '/',
+          maxAge: 120,
+          httpOnly: false,
+          sameSite: 'lax',
+          secure: secureCookie,
+        });
       }
     } catch {
-      // ignore
+      // ignore malformed JWTs
     }
+
+    res.headers.set('x-safepocket-cookie-secure', String(secureCookie));
+    res.headers.set('x-safepocket-proto', proto);
     return res;
-  } catch (e) {
-    return NextResponse.json({ error: { code: 'EXCHANGE_ERROR', message: (e as Error).message } }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Auth callback failed';
+    return NextResponse.json({ error: { code: 'EXCHANGE_ERROR', message } }, { status: 500 });
   }
+}
+
+async function exchangeAuthorizationCode(params: {
+  domain: string;
+  clientId: string;
+  clientSecret?: string;
+  code: string;
+  redirectUri: string;
+}) {
+  const { domain, clientId, clientSecret, code, redirectUri } = params;
+  const url = buildCognitoUrl(domain, '/oauth2/token');
+  const body = new URLSearchParams();
+  body.set('grant_type', 'authorization_code');
+  body.set('client_id', clientId);
+  body.set('redirect_uri', redirectUri);
+  body.set('code', code);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+  if (clientSecret) {
+    headers.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: body.toString(),
+  });
+
+  const text = await response.text();
+  let payload: any = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // ignore parse errors; payload stays {}
+    }
+  }
+
+  if (!response.ok) {
+    const errorDescription = payload?.error_description || payload?.error || `Token exchange failed (${response.status})`;
+    throw new Error(errorDescription);
+  }
+
+  return payload;
 }
 
 function buildCognitoUrl(domain: string | null | undefined, path: string): string {

@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -47,7 +47,7 @@ export default function AuthCallbackPage() {
 
     const controller = new AbortController();
 
-    async function exchange() {
+    async function exchange(code: string) {
       try {
         setStatus("pending");
         setMessage("Exchanging authorization code...");
@@ -86,7 +86,7 @@ export default function AuthCallbackPage() {
       }
     }
 
-    exchange();
+    exchange(code);
     return () => controller.abort();
   }, [router, searchParams, state]);
 

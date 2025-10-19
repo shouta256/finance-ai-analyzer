@@ -122,6 +122,12 @@ jobs:
             --function-name "$FUNCTION_NAME" \
             --zip-file fileb://dist/lambda.zip
 
+      - name: Wait for Lambda to stabilize
+        run: |
+          FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME || 'hello-http' }}
+          # Wait until the previous update has completed to avoid ResourceConflictException
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+
       - name: Attach latest layer
         run: |
           FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME || 'hello-http' }}

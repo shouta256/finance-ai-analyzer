@@ -1,5 +1,6 @@
 import { env } from "./env";
 import { chatResponseSchema } from "./schemas";
+import { getStoredAccessToken } from "./auth-storage";
 
 export class LedgerApiError extends Error {
   status: number;
@@ -45,13 +46,19 @@ export async function ledgerFetch<T>(
   }
   // Auto-inject Authorization from sp_token cookie if not already present (server-side only)
   if (!headers.has("authorization")) {
-    try {
-      // Dynamically import next/headers only in server runtime
-      const mod = await import("next/headers");
-      const token = mod.cookies().get("sp_token")?.value;
-      if (token) headers.set("authorization", `Bearer ${token}`);
-    } catch {
-      // ignore if not in a Next.js server context
+    if (typeof window !== "undefined") {
+      const token = getStoredAccessToken();
+      if (token) {
+        headers.set("authorization", `Bearer ${token}`);
+      }
+    } else {
+      try {
+        const mod = await import("next/headers");
+        const token = mod.cookies().get("sp_token")?.value;
+        if (token) headers.set("authorization", `Bearer ${token}`);
+      } catch {
+        // ignore if not in a Next.js server context
+      }
     }
   }
   const base = baseUrlOverride ?? env.LEDGER_SERVICE_URL;

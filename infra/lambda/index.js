@@ -808,6 +808,11 @@ async function handleAuthCallback(event) {
     throw createHttpError(400, "Authorization code missing from query string");
   }
 
+  const wantsJson =
+    (query.response && query.response.toLowerCase() === "json") ||
+    (query.format && query.format.toLowerCase() === "json") ||
+    (event.headers?.accept || event.headers?.Accept || "").includes("application/json");
+
   const config = await loadConfig();
   const { cognito } = config;
   if (!cognito.domain || !cognito.clientId || !cognito.redirectUri) {
@@ -867,6 +872,15 @@ async function handleAuthCallback(event) {
   }
 
   const state = typeof query.state === "string" && query.state.startsWith("/") ? query.state : "/dashboard";
+  if (wantsJson) {
+    return respond(event, 200, {
+      accessToken: tokenData.access_token ?? null,
+      idToken: tokenData.id_token ?? null,
+      refreshToken: tokenData.refresh_token ?? null,
+      expiresIn: tokenData.expires_in ?? 3600,
+      tokenType: tokenData.token_type ?? "Bearer",
+    }, { headers: { "cache-control": "no-store" } });
+  }
   return respond(event, 302, null, {
     headers: {
       Location: state,

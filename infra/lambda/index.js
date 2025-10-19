@@ -546,7 +546,13 @@ async function handleAuthToken(event) {
     body: params.toString(),
   });
   const text = await resp.text();
-  if (!resp.ok) throw createHttpError(resp.status, text || "Token exchange failed");
+  if (!resp.ok) {
+    console.error("[lambda] Cognito token exchange failed", {
+      status: resp.status,
+      body: text,
+    });
+    throw createHttpError(resp.status, text || "Token exchange failed");
+  }
   const json = text ? JSON.parse(text) : {};
   if (!json.access_token && !json.id_token) throw createHttpError(502, "Cognito response missing tokens");
   return buildResponse(200, {

@@ -20,11 +20,15 @@ const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
 
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization,x-request-trace",
-  "Access-Control-Allow-Credentials": "true",
 };
+
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes("*");
 
 let configPromise;
 let pgPool = null;
@@ -44,6 +48,55 @@ function createHttpError(status, message) {
   const error = new Error(message);
   error.statusCode = status;
   return error;
+}
+
+function resolveCorsOrigin(event) {
+  const originHeader = event.headers?.origin || event.headers?.Origin;
+  if (!originHeader) {
+    if (ALLOW_ANY_ORIGIN) return undefined;
+    return ALLOWED_ORIGINS[0];
+  }
+  if (ALLOW_ANY_ORIGIN) {
+    return originHeader;
+  }
+  const match = ALLOWED_ORIGINS.find((allowed) => allowed.toLowerCase() === originHeader.toLowerCase());
+  return match ? originHeader : ALLOWED_ORIGINS[0];
+}
+
+function respond(event, statusCode, body, options = {}) {
+  return buildResponse(statusCode, body, { ...options, corsOrigin: resolveCorsOrigin(event) });
+}
+
+function buildResponse(statusCode, body, options = {}) {
+  const { headers: extraHeaders = {}, cookies, corsOrigin } = options;
+  const headers = { ...RESPONSE_HEADERS, ...extraHeaders };
+
+  let originValue = corsOrigin;
+  if (!originValue) {
+    if (headers["Access-Control-Allow-Origin"]) {
+      originValue = headers["Access-Control-Allow-Origin"]; // respect caller override
+    } else if (ALLOW_ANY_ORIGIN) {
+      originValue = "*";
+    } else if (ALLOWED_ORIGINS.length > 0) {
+      originValue = ALLOWED_ORIGINS[0];
+    }
+  }
+  if (originValue) {
+    headers["Access-Control-Allow-Origin"] = originValue;
+    if (originValue !== "*") {
+      headers["Access-Control-Allow-Credentials"] = "true";
+    }
+  }
+
+  const response = {
+    statusCode,
+    headers,
+    body: body === undefined || body === null ? "" : JSON.stringify(body),
+  };
+  if (Array.isArray(cookies) && cookies.length > 0) {
+    response.cookies = cookies;
+  }
+  return response;
 }
 
 async function fetchSecret(name) {
@@ -467,7 +520,7 @@ async function handleAnalyticsSummary(event, query) {
   const { fromDate, toDate, monthLabel } = parseRange(query);
   const transactions = await queryTransactions(payload.sub, fromDate, toDate);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
-  return buildResponse(200, summarise(transactions, fromDate, toDate, monthLabel, traceId));
+  return respond(event, 200, summarise(transactions, fromDate, toDate, monthLabel, traceId));
 }
 
 async function handleTransactions(event, query) {
@@ -478,7 +531,7 @@ async function handleTransactions(event, query) {
   const pageSize = Math.min(Math.max(parseInt(query.pageSize || "15", 10), 1), 100);
   const start = page * pageSize;
   const paged = transactions.slice(start, start + pageSize);
-  return buildResponse(200, {
+  return respond(event, 200, {
     transactions: paged,
     period: {
       month: monthLabel,
@@ -515,12 +568,18 @@ async function handleAccounts(event) {
       };
     })
   );
-  return buildResponse(200, { accounts, traceId: event.requestContext?.requestId || crypto.randomUUID() });
+  return respond(event, 200, { accounts, traceId: event.requestContext?.requestId || crypto.randomUUID() });
 }
 
 async function handleAuthToken(event) {
   const body = parseJsonBody(event);
   const grantType = body.grantType || body.grant_type;
+  console.info("[/auth/token] request received", {
+    grantType,
+    hasCode: Boolean(body.code),
+    hasCodeVerifier: Boolean(body.codeVerifier),
+    hasRefreshToken: Boolean(body.refreshToken),
+  });
   if (grantType !== "authorization_code" && grantType !== "refresh_token") {
     throw createHttpError(400, "grantType must be authorization_code or refresh_token");
   }
@@ -556,7 +615,14 @@ async function handleAuthToken(event) {
     headers.Authorization = `Basic ${Buffer.from(`${cognito.clientId}:${cognito.clientSecret}`).toString("base64")}`;
   }
 
-  const resp = await fetch(`${cognito.domain}/oauth2/token`, {
+  const tokenUrl = `${cognito.domain}/oauth2/token`;
+  console.log("[lambda] token exchange request", {
+    tokenUrl,
+    grantType,
+    hasClientSecret: Boolean(cognito.clientSecret && cognito.clientSecret.trim()),
+    redirectUri: params.get("redirect_uri"),
+  });
+  const resp = await fetch(tokenUrl, {
     method: "POST",
     headers,
     body: params.toString(),
@@ -571,7 +637,7 @@ async function handleAuthToken(event) {
   }
   const json = text ? JSON.parse(text) : {};
   if (!json.access_token && !json.id_token) throw createHttpError(502, "Cognito response missing tokens");
-  return buildResponse(200, {
+  return respond(event, 200, {
     accessToken: json.access_token,
     idToken: json.id_token,
     refreshToken: json.refresh_token,
@@ -594,7 +660,6 @@ async function handleAuthCallback(event) {
     throw createHttpError(500, "Cognito configuration missing for auth callback");
   }
 
-  // Exchange authorization code for tokens
   const params = new URLSearchParams();
   params.set("grant_type", "authorization_code");
   params.set("client_id", cognito.clientId);
@@ -606,45 +671,58 @@ async function handleAuthCallback(event) {
     headers.Authorization = `Basic ${Buffer.from(`${cognito.clientId}:${cognito.clientSecret}`).toString("base64")}`;
   }
 
-  const resp = await fetch(`${cognito.domain}/oauth2/token`, {
+  const tokenUrl = `${cognito.domain}/oauth2/token`;
+  console.info("[/auth/callback] exchanging code", { tokenUrl, redirectUri: cognito.redirectUri });
+  const resp = await fetch(tokenUrl, {
     method: "POST",
     headers,
     body: params.toString(),
   });
 
-  const tokenData = await resp.json();
+  const text = await resp.text();
+  let tokenData = {};
+  if (text) {
+    try {
+      tokenData = JSON.parse(text);
+    } catch (error) {
+      console.warn("[/auth/callback] failed to parse token response", { message: error.message });
+    }
+  }
+
   if (!resp.ok) {
     console.error("[lambda] Cognito token exchange failed on callback", {
       status: resp.status,
       body: tokenData,
     });
-    throw createHttpError(resp.status, tokenData.error_description || "Token exchange failed");
+    const description = tokenData?.error_description || tokenData?.error || "Token exchange failed";
+    throw createHttpError(resp.status, description);
   }
 
   const cookies = [];
+  const maxAge = Number.parseInt(tokenData.expires_in, 10) || 3600;
+  const cookieAttributes = "Path=/; SameSite=Lax; Secure";
   if (tokenData.access_token) {
-    cookies.push(`sp_at=${tokenData.access_token}; Path=/; Max-Age=${tokenData.expires_in}; SameSite=Lax; Secure`);
+    cookies.push(`sp_at=${tokenData.access_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);
   }
   if (tokenData.id_token) {
-    cookies.push(`sp_it=${tokenData.id_token}; Path=/; Max-Age=${tokenData.expires_in}; SameSite=Lax; Secure`);
+    cookies.push(`sp_it=${tokenData.id_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);
   }
   if (tokenData.refresh_token) {
-    cookies.push(`sp_rt=${tokenData.refresh_token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=2592000`); // 30 days
+    cookies.push(`sp_rt=${tokenData.refresh_token}; ${cookieAttributes}; HttpOnly; Max-Age=${30 * 24 * 60 * 60}`);
   }
 
-  return {
-    statusCode: 302,
+  const state = typeof query.state === "string" && query.state.startsWith("/") ? query.state : "/dashboard";
+  return respond(event, 302, null, {
     headers: {
-      Location: '/dashboard',
-      'Set-Cookie': cookies,
+      Location: state,
     },
-    body: '',
-  };
+    cookies,
+  });
 }
 
 async function handleTransactionsSync(event) {
   await authenticate(event);
-  return buildResponse(202, {
+  return respond(event, 202, {
     status: "STARTED",
     syncedCount: 0,
     pendingCount: 0,
@@ -654,7 +732,7 @@ async function handleTransactionsSync(event) {
 
 async function handleTransactionsReset(event) {
   await authenticate(event);
-  return buildResponse(202, {
+  return respond(event, 202, {
     status: "ACCEPTED",
     traceId: event.requestContext?.requestId || crypto.randomUUID(),
   });
@@ -676,10 +754,10 @@ exports.handler = async (event) => {
     const query = event.queryStringParameters || {};
 
     if (method === "GET" && (path === "/" || path === "")) {
-      return buildResponse(200, { status: "ok" });
+      return respond(event, 200, { status: "ok" });
     }
     if (method === "GET" && path === "/health") {
-      return buildResponse(200, { status: "ok" });
+      return respond(event, 200, { status: "ok" });
     }
     if (method === "POST" && path === "/auth/token") {
       return await handleAuthToken(event);
@@ -703,11 +781,11 @@ exports.handler = async (event) => {
       return await handleAccounts(event);
     }
 
-    return buildResponse(404, { error: "Not Found" });
+    return respond(event, 404, { error: "Not Found" });
   } catch (error) {
     console.error("[lambda] handler error", error);
     const status = error.statusCode || error.status || 500;
-    return buildResponse(status, {
+    return respond(event, status, {
       error: { code: "LAMBDA_ERROR", message: error.message || "Internal Server Error" },
     });
   }

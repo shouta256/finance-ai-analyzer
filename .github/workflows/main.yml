@@ -26,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
 
@@ -63,3 +63,65 @@ jobs:
 
       - name: Run tests (ledger-svc)
         run: ./apps/ledger-svc/gradlew -p apps/ledger-svc test
+
+  deploy-lambda:
+    name: Deploy Lambda (hello-http)
+    needs: [web-ci, backend-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Lambda layer (pg)
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/layer/nodejs
+          npm install pg --prefix dist/layer/nodejs
+          (cd dist/layer && zip -r ../pg-layer.zip nodejs)
+
+      - name: Package Lambda source
+        run: |
+          set -euo pipefail
+          mkdir -p dist/lambda
+          cp infra/lambda/index.js dist/lambda/
+          (cd dist/lambda && zip ../lambda.zip index.js)
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Publish pg layer
+        id: publish_layer
+        run: |
+          LAYER_ARN=$(aws lambda publish-layer-version \
+            --layer-name safepocket-pg-node20 \
+            --description "pg client for Safepocket" \
+            --compatible-runtimes nodejs20.x \
+            --compatible-architectures x86_64 \
+            --zip-file fileb://dist/pg-layer.zip \
+            --query 'LayerVersionArn' \
+            --output text)
+          echo "layer_arn=$LAYER_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Update Lambda code
+        run: |
+          aws lambda update-function-code \
+            --function-name hello-http \
+            --zip-file fileb://dist/lambda.zip
+
+      - name: Attach latest layer
+        run: |
+          aws lambda update-function-configuration \
+            --function-name hello-http \
+            --layers ${{ steps.publish_layer.outputs.layer_arn }}

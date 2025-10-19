@@ -12,6 +12,9 @@ apps/web/.turbo
 apps/web/.vercel
 apps/web/dist
 apps/web/.swc
+dist/
+lambda-layer-pg/nodejs
+lambda-layer-pg/pg-layer.zip
 apps/ledger-svc/.gradle
 apps/ledger-svc/build
 apps/ledger-svc/out

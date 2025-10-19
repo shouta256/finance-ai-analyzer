@@ -55,7 +55,8 @@ export default function CallbackClient() {
 
         const response = await fetch(url.toString(), {
           method: "GET",
-          headers: { Accept: "application/json", "cache-control": "no-store" },
+          headers: { Accept: "application/json" },
+          cache: "no-store",
           signal: controller.signal,
         });
         if (!response.ok) {

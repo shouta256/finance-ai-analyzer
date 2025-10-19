@@ -1,6 +1,16 @@
 "use strict";
 
 const crypto = require("crypto");
+if (typeof crypto.randomUUID !== "function") {
+  const { randomBytes } = crypto;
+  crypto.randomUUID = function randomUUID() {
+    const bytes = randomBytes(16);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // v4 UUID
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+    const hex = bytes.toString("hex");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
+}
 const AWS = require("aws-sdk");
 const secretsManager = new AWS.SecretsManager();
 

@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const config = {
-  experimental: {
-    typedRoutes: true,
-  },
   reactStrictMode: true,
   webpack: (cfg, { nextRuntime }) => {
     if (nextRuntime === 'edge') {

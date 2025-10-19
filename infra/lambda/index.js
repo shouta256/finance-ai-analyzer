@@ -581,6 +581,67 @@ async function handleAuthToken(event) {
   });
 }
 
+async function handleAuthCallback(event) {
+  const query = event.queryStringParameters || {};
+  const code = query.code;
+  if (!code) {
+    throw createHttpError(400, "Authorization code missing from query string");
+  }
+
+  const config = await loadConfig();
+  const { cognito } = config;
+  if (!cognito.domain || !cognito.clientId || !cognito.redirectUri) {
+    throw createHttpError(500, "Cognito configuration missing for auth callback");
+  }
+
+  // Exchange authorization code for tokens
+  const params = new URLSearchParams();
+  params.set("grant_type", "authorization_code");
+  params.set("client_id", cognito.clientId);
+  params.set("redirect_uri", cognito.redirectUri);
+  params.set("code", code);
+
+  const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  if (cognito.clientSecret) {
+    headers.Authorization = `Basic ${Buffer.from(`${cognito.clientId}:${cognito.clientSecret}`).toString("base64")}`;
+  }
+
+  const resp = await fetch(`${cognito.domain}/oauth2/token`, {
+    method: "POST",
+    headers,
+    body: params.toString(),
+  });
+
+  const tokenData = await resp.json();
+  if (!resp.ok) {
+    console.error("[lambda] Cognito token exchange failed on callback", {
+      status: resp.status,
+      body: tokenData,
+    });
+    throw createHttpError(resp.status, tokenData.error_description || "Token exchange failed");
+  }
+
+  const cookies = [];
+  if (tokenData.access_token) {
+    cookies.push(`sp_at=${tokenData.access_token}; Path=/; Max-Age=${tokenData.expires_in}; SameSite=Lax; Secure`);
+  }
+  if (tokenData.id_token) {
+    cookies.push(`sp_it=${tokenData.id_token}; Path=/; Max-Age=${tokenData.expires_in}; SameSite=Lax; Secure`);
+  }
+  if (tokenData.refresh_token) {
+    cookies.push(`sp_rt=${tokenData.refresh_token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=2592000`); // 30 days
+  }
+
+  return {
+    statusCode: 302,
+    headers: {
+      Location: '/dashboard',
+      'Set-Cookie': cookies,
+    },
+    body: '',
+  };
+}
+
 async function handleTransactionsSync(event) {
   await authenticate(event);
   return buildResponse(202, {
@@ -622,6 +683,9 @@ exports.handler = async (event) => {
     }
     if (method === "POST" && path === "/auth/token") {
       return await handleAuthToken(event);
+    }
+    if (method === "GET" && path === "/auth/callback") {
+      return await handleAuthCallback(event);
     }
     if (method === "GET" && path === "/analytics/summary") {
       return await handleAnalyticsSummary(event, query);

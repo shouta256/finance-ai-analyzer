@@ -15,10 +15,10 @@ export async function GET(req: NextRequest) {
   const effectiveOrigin = fwdHost ? `${fwdProto || 'https'}://${fwdHost}` : req.nextUrl.origin;
 
   // Prefer backend vars; fallback to public ones if not defined (production frontend-only deploy case)
-  const userPoolDomain = process.env.COGNITO_DOMAIN || process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
-  const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-  const clientSecret = process.env.COGNITO_CLIENT_SECRET; // no public fallback for secret
-  const configuredRedirect = process.env.COGNITO_REDIRECT_URI || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI;
+  const userPoolDomain = sanitizeEnv(process.env.COGNITO_DOMAIN || process.env.NEXT_PUBLIC_COGNITO_DOMAIN);
+  const clientId = sanitizeEnv(process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID);
+  const clientSecret = sanitizeEnv(process.env.COGNITO_CLIENT_SECRET);
+  const configuredRedirect = sanitizeEnv(process.env.COGNITO_REDIRECT_URI || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI);
   // Base (raw) value: configured one or current origin callback
   const rawRedirect = configuredRedirect || `${effectiveOrigin}/auth/callback`;
   // Host safeguard: if we are accessed via a non-localhost host but the configured redirect points to localhost
@@ -163,4 +163,12 @@ function safeRedirectPath(raw: string): string {
   // Avoid open redirects – restrict to dashboard area for now
   if (!raw.startsWith('/dashboard')) return '/dashboard';
   return raw;
+}
+
+function sanitizeEnv(value: string | undefined | null): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : undefined;
 }

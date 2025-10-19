@@ -94,7 +94,7 @@ jobs:
           mkdir -p dist/lambda
           cp infra/lambda/index.js dist/lambda/
           npm install aws-sdk --prefix dist/lambda
-          (cd dist/lambda && zip ../lambda.zip index.js)
+          (cd dist/lambda && zip -r ../lambda.zip .)
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4

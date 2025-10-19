@@ -4,7 +4,6 @@ const config = {
     typedRoutes: true,
   },
   reactStrictMode: true,
-  output: 'standalone',
   webpack: (cfg, { nextRuntime }) => {
     if (nextRuntime === 'edge') {
       cfg.resolve.fallback = {

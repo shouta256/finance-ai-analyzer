@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ledgerFetch } from '@/src/lib/api-client';
 
 /*
  * Cognito Hosted UI redirect URI endpoint.
@@ -53,58 +54,27 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const basicAuth = clientSecret ? Buffer.from(`${clientId}:${clientSecret}`).toString('base64') : undefined;
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
+    // Delegate token exchange to ledger service (ensures identical configuration across environments)
+    const exchangeBody = {
+      grantType: 'authorization_code' as const,
       code,
-      client_id: clientId,
-      redirect_uri: redirectUri,
+      redirectUri,
+    };
+
+    const exchange = await ledgerFetch<{
+      accessToken: string;
+      idToken?: string | null;
+      refreshToken?: string | null;
+      expiresIn: number;
+      tokenType: string;
+      scope?: string | null;
+    }>("/auth/token", {
+      method: "POST",
+      body: JSON.stringify(exchangeBody),
+      headers: { "content-type": "application/json" },
     });
 
-    const tokenEndpoint = buildCognitoUrl(userPoolDomain, "/oauth2/token");
-    const resp = await fetch(tokenEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...(basicAuth ? { Authorization: `Basic ${basicAuth}` } : {}),
-      },
-      body: body.toString(),
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      if (text.includes('invalid_client')) {
-        return NextResponse.json({
-          error: {
-            code: 'TOKEN_EXCHANGE_FAILED',
-            message: text,
-            hints: [
-              'Check App Client ID matches exactly (no hidden whitespace).',
-              'If the App Client has a secret, ensure COGNITO_CLIENT_SECRET is set in the deployment (NEXT_PUBLIC_* cannot hold the secret).',
-              'If the App Client has NO secret, make sure it is configured as a public client (no client secret required).',
-              'Verify token endpoint allowed grant types include authorization_code.',
-              'Ensure redirect URI in App Client settings matches exactly the one used here: ' + redirectUri,
-            ],
-            configSnapshot: {
-              domain: userPoolDomain,
-              clientId: clientId?.slice(0,4) + '...' + clientId?.slice(-4),
-              hasSecret: Boolean(clientSecret),
-              redirectUri,
-              configuredRedirect,
-              rawRedirect,
-              fwdHost,
-              fwdProto,
-              effectiveOrigin,
-            },
-          }
-        }, { status: resp.status });
-      }
-      return NextResponse.json({ error: { code: 'TOKEN_EXCHANGE_FAILED', message: text } }, { status: resp.status });
-    }
-
-    const json = await resp.json();
-    // Prefer access_token (resource server audience) and fallback to id_token if no access token.
-    const token = json.access_token || json.id_token;
+    const token = exchange.accessToken || exchange.idToken;
     if (!token) {
       return NextResponse.json({ error: { code: 'NO_TOKEN', message: 'No id/access token returned' } }, { status: 500 });
     }
@@ -126,6 +96,15 @@ export async function GET(req: NextRequest) {
       path: '/',
       maxAge: 3600, // 1h (Cognito token default 1h)
     });
+    if (exchange.refreshToken) {
+      res.cookies.set('sp_refresh', exchange.refreshToken, {
+        httpOnly: true,
+        secure: secureCookie,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60, // 30 days typical
+      });
+    }
     // Optional: set legacy cookie for temporary diagnostics (middleware ignores this)
     // res.cookies.set('safepocket_token', token, { httpOnly: true, secure: secureCookie, sameSite: 'lax', path: '/', maxAge: 3600 });
     // Removed previous JSON debug cookie (safepocket_token_flags) because browsers reject complex/JSON cookie values.

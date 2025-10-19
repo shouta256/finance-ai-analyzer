@@ -110,13 +110,56 @@ async function parseChatResponse(res: Response): Promise<import("./schemas").Cha
   return chatResponseSchema.parse(payload);
 }
 
-async function buildError(response: Response) {
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = { error: { message: response.statusText } };
+function pickFirstMessage(...candidates: Array<unknown>): string | undefined {
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
   }
-  const message = (payload as { error?: { message?: string } })?.error?.message ?? "Ledger API error";
-  return new LedgerApiError(message, response.status, payload);
+  return undefined;
+}
+
+async function buildError(response: Response) {
+  let text: string | undefined;
+  try {
+    text = await response.text();
+  } catch {
+    text = undefined;
+  }
+
+  let payload: unknown = undefined;
+  if (text && text.length > 0) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
+  }
+
+  const errorNode =
+    payload && typeof payload === "object"
+      ? (payload as { error?: unknown }).error
+      : undefined;
+  const errorNodeObj = typeof errorNode === "object" && errorNode !== null ? (errorNode as Record<string, unknown>) : undefined;
+
+  const message =
+    pickFirstMessage(
+      errorNodeObj?.message,
+      errorNodeObj?.error_description,
+      errorNodeObj?.description,
+      typeof errorNode === "string" ? errorNode : undefined,
+      payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>).error_description
+        : undefined,
+      payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>).description
+        : undefined,
+      payload && typeof payload === "object" ? (payload as Record<string, unknown>).message : undefined,
+      typeof payload === "string" ? payload : undefined,
+      response.statusText,
+      text,
+    ) ?? "Ledger API error";
+
+  return new LedgerApiError(message, response.status, payload ?? text);
 }

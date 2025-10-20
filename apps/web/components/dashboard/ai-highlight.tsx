@@ -10,15 +10,42 @@ interface AiHighlightCardProps {
   topCategory?: { category: string; amount: number };
   topMerchant?: { merchant: string; amount: number };
   sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
+  onGenerate?: () => void;
+  generateDisabled?: boolean;
 }
 
 export function AiHighlightCard(props: AiHighlightCardProps) {
-  const { aiReady, analyticsLabel, summary, netValue, anomalyCount, topCategory, topMerchant, sentiment } = props;
+  const {
+    aiReady,
+    analyticsLabel,
+    summary,
+    netValue,
+    anomalyCount,
+    topCategory,
+    topMerchant,
+    sentiment,
+    onGenerate,
+    generateDisabled,
+  } = props;
   return (
     <section className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
       <h2 className="text-lg font-semibold tracking-tight text-slate-900">AI Monthly Highlight</h2>
       {!aiReady ? (
-        <p className="mt-2 text-sm text-slate-500">Click "Generate AI Summary" to create an AI highlight for {analyticsLabel}.</p>
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-500">
+            Click the button to generate an AI highlight for {analyticsLabel}.
+          </p>
+          {onGenerate ? (
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={generateDisabled}
+              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              Generate AI Summary
+            </button>
+          ) : null}
+        </div>
       ) : (
         <>
           <div className="flex items-center gap-2">

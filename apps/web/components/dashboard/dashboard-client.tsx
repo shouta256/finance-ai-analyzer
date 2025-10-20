@@ -706,6 +706,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           topCategory={topCategory}
           topMerchant={topMerchant}
           sentiment={sentimentTone}
+          onGenerate={handleGenerateAi}
+          generateDisabled={generatingAi || syncing || linking || sandboxLoading}
         />
       </div>
 

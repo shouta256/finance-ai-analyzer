@@ -1,12 +1,13 @@
-# GitHub Secrets設定手順
+# GitHub Secrets Setup Guide
 
-## ⚠️ 必須: 以下のSecretsをGitHubリポジトリに追加してください
+## ⚠️ Required Secrets
 
-https://github.com/shouta256/finance-ai-analyzer/settings/secrets/actions
+Add the following secrets to the repository:  
+`https://github.com/shouta256/finance-ai-analyzer/settings/secrets/actions`
 
-### iOS/ネイティブアプリ用のCognito設定
+### Cognito (Native App)
 
-以下の3つのSecretを追加：
+Add these three secrets:
 
 #### 1. COGNITO_DOMAIN
 ```
@@ -26,19 +27,19 @@ Name: COGNITO_REDIRECT_URI_NATIVE
 Value: safepocket://auth/callback
 ```
 
-## デプロイ手順
+## Deployment Steps
 
-1. 上記のSecretsを追加
-2. このブランチをmainにプッシュ：
+1. Add the secrets above.
+2. Push the branch to main:
    ```bash
    git push origin main
    ```
-3. GitHub Actionsが自動的にデプロイを実行
-4. デプロイ完了後（約5-10分）、iOSアプリでログインをテスト
+3. GitHub Actions triggers the deployment automatically.
+4. After deployment (about 5–10 minutes), test login on the iOS app.
 
-## 確認方法
+## Verification
 
-デプロイ完了後、以下のコマンドでテスト：
+Run the following request after the deployment finishes:
 
 ```bash
 curl -X POST https://api.shota256.me/api/auth/token \
@@ -51,16 +52,16 @@ curl -X POST https://api.shota256.me/api/auth/token \
   }'
 ```
 
-期待される結果：
-- ❌ `"reason": "Cognito domain not configured"` → Secrets未設定
-- ✅ その他のエラー（INVALID_CODE等） → Secrets設定済み（正常）
+Expected results:
+- ❌ `"reason": "Cognito domain not configured"` → secrets missing
+- ✅ Any other error (INVALID_CODE, etc.) → secrets configured correctly
 
-## トラブルシューティング
+## Troubleshooting
 
-### Secretsが反映されない場合
-1. GitHub Actionsのログを確認: https://github.com/shouta256/finance-ai-analyzer/actions
-2. "Preflight required backend env vars" ステップでエラーが出ていないか確認
-3. ECSタスクの環境変数を確認:
+### Secrets not applied
+1. Check GitHub Actions logs: https://github.com/shouta256/finance-ai-analyzer/actions
+2. Confirm the “Preflight required backend env vars” step passes.
+3. Inspect ECS task definition environment variables:
    ```bash
    aws ecs describe-task-definition \
      --task-definition safepocket-ledger-svc \
@@ -68,7 +69,7 @@ curl -X POST https://api.shota256.me/api/auth/token \
      --output table
    ```
 
-### デプロイが失敗する場合
-- GitHub Actionsのログを確認
-- Secretsの名前が正確に一致しているか確認（大文字小文字も）
-- Secretsの値に余分なスペースや改行が含まれていないか確認
+### Deployment fails
+- Review GitHub Actions logs.
+- Ensure secret names match exactly (case-sensitive).
+- Confirm there are no trailing spaces or newlines in secret values.

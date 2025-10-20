@@ -11,14 +11,13 @@ const COLOR_CLASSES = {
 
 const COLOR_NAMES = Object.keys(COLOR_CLASSES);
 
-// カテゴリ文字列から色を決定する
 export function getCategoryColorClass(category: string): string {
-  // 簡単なハッシュ関数でカテゴリ文字列を数値に変換
+  // Convert category string into a numeric hash
   let hash = 0;
   for (let i = 0; i < category.length; i++) {
     hash = category.charCodeAt(i) + ((hash << 5) - hash);
   }
-  // 負にならないようにし、色の数で割った余りをインデックスとする
+  // Use a non-negative index derived from the hash
   const index = Math.abs(hash % COLOR_NAMES.length);
   const colorName = COLOR_NAMES[index] as keyof typeof COLOR_CLASSES;
   return COLOR_CLASSES[colorName];

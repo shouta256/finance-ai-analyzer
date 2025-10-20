@@ -62,7 +62,7 @@ export async function getDashboardData(month: string): Promise<{
     };
     return { summary, transactions };
   } catch (error) {
-    console.error("[dashboard] データ取得に失敗しました。スタブデータを使用します。", error);
+    console.error("[dashboard] Failed to load data. Falling back to stub values.", error);
     return {
       summary: buildFallbackSummary(month),
       transactions: buildFallbackTransactions(month),
@@ -94,10 +94,10 @@ function buildFallbackSummary(month: string): AnalyticsSummary {
     topMerchants: [],
     anomalies: [],
     aiHighlight: {
-      title: "データ待機中",
-      summary: "API からのデータを待機しています。連携が完了するとここにハイライトが表示されます。",
+      title: "Waiting for data",
+      summary: "API data is not available yet. Once connected, highlights will appear here.",
       sentiment: "NEUTRAL",
-      recommendations: ["口座連携を確認してください", "取引同期を実行してください"],
+      recommendations: ["Verify account connections", "Trigger a transaction sync"],
     },
     safeToSpend: {
       cycleStart: toIso(cycleStart),
@@ -114,7 +114,7 @@ function buildFallbackSummary(month: string): AnalyticsSummary {
       variableSpent: 0,
       remainingVariableBudget: 0,
       danger: false,
-      notes: ["API 応答が未設定のため、プレースホルダを表示しています。"],
+      notes: ["Placeholder data is displayed because the API response is not configured."],
     },
     traceId: undefined,
   };

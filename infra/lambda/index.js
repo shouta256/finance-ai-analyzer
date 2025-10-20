@@ -29,6 +29,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes("*");
+const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
 
 let configPromise;
 let pgPool = null;
@@ -187,7 +188,7 @@ async function ensurePgPool() {
   try {
     ({ Pool } = require("pg"));
   } catch (error) {
-    throw new Error("pg モジュールを Layer で提供するか ZIP に同梱してください");
+    throw new Error("The pg module must be provided via Lambda Layer or bundled with the function zip.");
   }
 
   if (db.connectionString) {
@@ -204,7 +205,7 @@ async function ensurePgPool() {
   }
 
   if (!db.host) {
-    throw new Error("DATABASE_URL もしくは DB_HOST/DB_USER/DB_PASSWORD/DB_NAME を設定してください");
+    throw new Error("Specify DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME before querying the database.");
   }
 
   pgPool = new Pool({
@@ -463,9 +464,9 @@ function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
     anomalies: [],
     aiHighlight: {
       title: "Summary unavailable",
-      summary: "AI ハイライトはまだ有効化されていません。",
+      summary: "AI-powered highlights are not enabled yet.",
       sentiment: "NEUTRAL",
-      recommendations: ["口座同期を確認してください", "必要に応じてカテゴリーを整理してください"],
+      recommendations: ["Verify account sync", "Review categories if needed"],
     },
     safeToSpend: {
       cycleStart: toIsoDate(cycleStart),
@@ -635,7 +636,8 @@ async function handleAnalyticsSummary(event, query) {
   try {
     transactions = await queryTransactions(payload.sub, fromDate, toDate);
   } catch (error) {
-    console.error("[lambda] analytics summary fallback", { message: error.message, stack: error.stack });
+    if (!ENABLE_STUBS) throw error;
+    console.warn("[lambda] analytics summary fallback", { message: error.message });
     transactions = buildStubTransactions(payload.sub, fromDate, toDate);
     usingStub = true;
   }
@@ -656,7 +658,8 @@ async function handleTransactions(event, query) {
   try {
     transactions = await queryTransactions(payload.sub, fromDate, toDate);
   } catch (error) {
-    console.error("[lambda] transactions fallback", { message: error.message, stack: error.stack });
+    if (!ENABLE_STUBS) throw error;
+    console.warn("[lambda] transactions fallback", { message: error.message });
     transactions = buildStubTransactions(payload.sub, fromDate, toDate);
     usingStub = true;
   }
@@ -710,7 +713,8 @@ async function handleAccounts(event) {
       })
     );
   } catch (error) {
-    console.error("[lambda] accounts fallback", { message: error.message, stack: error.stack });
+    if (!ENABLE_STUBS) throw error;
+    console.warn("[lambda] accounts fallback", { message: error.message });
     accounts = buildStubAccounts(payload.sub);
     usingStub = true;
   }
@@ -905,6 +909,9 @@ async function handleChat(event) {
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
 
   if (method === "GET") {
+    if (!ENABLE_STUBS) {
+      throw createHttpError(501, "Chat service is not configured");
+    }
     const conversationId = event.queryStringParameters?.conversationId || crypto.randomUUID();
     const stub = buildStubChatResponse(conversationId);
     stub.traceId = traceId;
@@ -912,6 +919,9 @@ async function handleChat(event) {
   }
 
   if (method === "POST") {
+    if (!ENABLE_STUBS) {
+      throw createHttpError(501, "Chat service is not configured");
+    }
     let body = {};
     try {
       body = parseJsonBody(event);

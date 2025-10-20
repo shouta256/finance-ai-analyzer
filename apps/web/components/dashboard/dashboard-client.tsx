@@ -20,7 +20,6 @@ import { PeriodModal } from "./period-modal";
 import { TotalsGrid } from "./totals-grid";
 import { ChartsSection } from "./charts-section";
 import { AiHighlightCard, AnomaliesTable } from "./ai-highlight";
-import { SafeToSpendCard } from "./safe-to-spend-card";
 import { TransactionsTable } from "./transactions-table";
 import { DashboardActionsModal } from "./actions-modal";
 import { InlineError } from "./inline-error";
@@ -107,7 +106,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const topMerchant = topMerchants[0];
   const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
   const sentimentTone = useMemo(() => state.summary.aiHighlight.sentiment, [state.summary.aiHighlight.sentiment]);
-  const safeToSpend = useMemo(() => state.summary.safeToSpend, [state.summary.safeToSpend]);
 
   const customRangeError = useMemo(() => {
     if (customFromMonth && customToMonth && customFromMonth > customToMonth) {
@@ -297,6 +295,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             data,
             borderColor: "#2563eb",
             backgroundColor: "rgba(37, 99, 235, 0.1)",
+            borderWidth: 7,
             tension: 0.3,
             fill: true,
             pointRadius: 0,
@@ -675,11 +674,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
           <TotalsGrid totals={viewTotals} />
         </div>
-        {safeToSpend ? (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-            <SafeToSpendCard data={safeToSpend} />
-          </div>
-        ) : null}
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
           <DashboardViewPeriod
             rangeMode={rangeMode}

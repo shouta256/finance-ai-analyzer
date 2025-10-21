@@ -324,11 +324,11 @@ async function queryTransactions(userId, fromDate, toDate) {
               t.description
        FROM transactions t
        JOIN merchants m ON t.merchant_id = m.id
-       WHERE t.user_id = $1
-         AND t.occurred_at >= $2
-         AND t.occurred_at < $3
+       WHERE t.user_id = current_setting('appsec.user_id', true)::uuid
+         AND t.occurred_at >= $1
+         AND t.occurred_at < $2
        ORDER BY t.occurred_at DESC`,
-      [userId, fromDate.toISOString(), toDate.toISOString()],
+      [fromDate.toISOString(), toDate.toISOString()],
     ),
   );
   return res.rows.map((row) => ({
@@ -646,10 +646,9 @@ async function handleAccounts(event) {
                 COALESCE(SUM(t.amount::numeric), 0) AS balance
          FROM accounts a
          LEFT JOIN transactions t ON t.account_id = a.id
-         WHERE a.user_id = $1
+         WHERE a.user_id = current_setting('appsec.user_id', true)::uuid
          GROUP BY a.id
          ORDER BY a.created_at DESC`,
-        [payload.sub],
       );
       return res.rows.map((row) => ({
         id: row.id,

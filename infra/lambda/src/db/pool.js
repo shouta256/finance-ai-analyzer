@@ -167,7 +167,7 @@ async function withUserClient(userId, callback) {
   let timeoutId;
   const timeoutMs = Number.isFinite(DB_OPERATION_TIMEOUT_MS) ? DB_OPERATION_TIMEOUT_MS : 9000;
   try {
-    await client.query("SET appsec.user_id = $1", [userId]);
+    await client.query("select set_config($1, $2, true)", ["appsec.user_id", userId]);
     const meta = pool.__safepocket ?? {};
     if (meta.statementTimeout) {
       const statementTimeout = Number.parseInt(meta.statementTimeout, 10);

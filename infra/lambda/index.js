@@ -13,7 +13,7 @@ if (typeof crypto.randomUUID !== "function") {
 }
 const AWS = require("aws-sdk");
 const secretsManager = new AWS.SecretsManager();
-const { ensurePgPool } = require("./src/db/pool");
+const { withUserClient } = require("./src/db/pool");
 const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
 const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
@@ -307,26 +307,27 @@ function round(value) {
 }
 
 async function queryTransactions(userId, fromDate, toDate) {
-  const pool = await ensurePgPool();
-  const res = await pool.query(
-    `SELECT t.id,
-            t.user_id,
-            t.account_id,
-            m.name AS merchant_name,
-            t.amount::numeric,
-            t.currency,
-            t.occurred_at AT TIME ZONE 'UTC' AS occurred_at,
-            t.authorized_at AT TIME ZONE 'UTC' AS authorized_at,
-            t.pending,
-            t.category,
-            t.description
-     FROM transactions t
-     JOIN merchants m ON t.merchant_id = m.id
-     WHERE t.user_id = $1
-       AND t.occurred_at >= $2
-       AND t.occurred_at < $3
-     ORDER BY t.occurred_at DESC`,
-    [userId, fromDate.toISOString(), toDate.toISOString()]
+  const res = await withUserClient(userId, (client) =>
+    client.query(
+      `SELECT t.id,
+              t.user_id,
+              t.account_id,
+              m.name AS merchant_name,
+              t.amount::numeric,
+              t.currency,
+              t.occurred_at AT TIME ZONE 'UTC' AS occurred_at,
+              t.authorized_at AT TIME ZONE 'UTC' AS authorized_at,
+              t.pending,
+              t.category,
+              t.description
+       FROM transactions t
+       JOIN merchants m ON t.merchant_id = m.id
+       WHERE t.user_id = $1
+         AND t.occurred_at >= $2
+         AND t.occurred_at < $3
+       ORDER BY t.occurred_at DESC`,
+      [userId, fromDate.toISOString(), toDate.toISOString()],
+    ),
   );
   return res.rows.map((row) => ({
     id: row.id,
@@ -634,29 +635,29 @@ async function handleAccounts(event) {
   let accounts;
   let usingStub = false;
   try {
-    const pool = await ensurePgPool();
-    const res = await pool.query(
-      `SELECT id, name, institution, created_at AT TIME ZONE 'UTC' AS created_at
-       FROM accounts WHERE user_id = $1 ORDER BY created_at DESC`,
-      [payload.sub]
-    );
-    accounts = await Promise.all(
-      res.rows.map(async (row) => {
-        const balanceRes = await pool.query(
-          `SELECT COALESCE(SUM(amount::numeric),0) AS balance FROM transactions WHERE account_id = $1`,
-          [row.id]
-        );
-        const balance = balanceRes.rows[0] ? Number(balanceRes.rows[0].balance) : 0;
-        return {
-          id: row.id,
-          name: row.name,
-          institution: row.institution,
-          balance: round(balance),
-          currency: "USD",
-          createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
-        };
-      })
-    );
+    accounts = await withUserClient(payload.sub, async (client) => {
+      const res = await client.query(
+        `SELECT a.id,
+                a.name,
+                a.institution,
+                a.created_at AT TIME ZONE 'UTC' AS created_at,
+                COALESCE(SUM(t.amount::numeric), 0) AS balance
+         FROM accounts a
+         LEFT JOIN transactions t ON t.account_id = a.id
+         WHERE a.user_id = $1
+         GROUP BY a.id
+         ORDER BY a.created_at DESC`,
+        [payload.sub],
+      );
+      return res.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        institution: row.institution,
+        balance: round(row.balance),
+        currency: "USD",
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      }));
+    });
   } catch (error) {
     if (!ENABLE_STUBS) throw error;
     console.warn("[lambda] accounts fallback", { message: error.message });
@@ -953,10 +954,15 @@ exports.handler = async (event) => {
     return respond(event, 404, { error: "Not Found" });
   } catch (error) {
     console.error("[lambda] handler error", error);
-    const status = error.statusCode || error.status || 500;
+    const timeoutTriggered = error && error.code === "DB_OPERATION_TIMEOUT";
+    const status = timeoutTriggered ? 504 : error.statusCode || error.status || 500;
     return respond(event, status, {
       error: {
-        code: error instanceof SchemaNotMigratedError ? "DB_SCHEMA_NOT_READY" : "LAMBDA_ERROR",
+        code: timeoutTriggered
+          ? "DB_TIMEOUT"
+          : error instanceof SchemaNotMigratedError
+            ? "DB_SCHEMA_NOT_READY"
+            : "LAMBDA_ERROR",
         message: error.message || "Internal Server Error",
       },
     });

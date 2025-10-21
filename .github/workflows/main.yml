@@ -156,6 +156,7 @@ jobs:
             .NODE_PATH = $node_path |
             .CONFIG_BUMP = $config_bump
           ')
+          ENV_PAYLOAD=$(jq -n --argjson vars "$UPDATED_ENV" '{Variables: $vars}')
           aws lambda update-function-configuration \
             --function-name "$FUNCTION_NAME" \
-            --environment "Variables=$UPDATED_ENV"
+            --environment "$ENV_PAYLOAD"

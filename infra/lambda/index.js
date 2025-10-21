@@ -1,5 +1,7 @@
 "use strict";
 
+require("./src/bootstrap/fetch-debug");
+
 const crypto = require("crypto");
 if (typeof crypto.randomUUID !== "function") {
   const { randomBytes } = crypto;

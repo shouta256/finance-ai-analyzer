@@ -152,6 +152,14 @@ async function closePool() {
   }
 }
 
+async function setLocalConfig(client, key, value) {
+  if (value == null) {
+    throw new Error(`setLocalConfig requires a value for ${key}`);
+  }
+  const stringValue = String(value);
+  await client.query("SELECT set_config($1, $2, true)", [key, stringValue]);
+}
+
 async function withUserClient(userId, callback) {
   if (!userId) {
     throw new Error("userId is required to establish RLS context");
@@ -170,11 +178,11 @@ async function withUserClient(userId, callback) {
     await client.query("BEGIN");
     transactionActive = true;
     const meta = pool.__safepocket ?? {};
-    await client.query("SET LOCAL appsec.user_id = $1", [userId]);
+    await setLocalConfig(client, "appsec.user_id", userId);
     if (meta.statementTimeout) {
       const statementTimeout = Number.parseInt(meta.statementTimeout, 10);
       if (Number.isFinite(statementTimeout) && statementTimeout > 0) {
-        await client.query("SET LOCAL statement_timeout = $1", [statementTimeout]);
+        await setLocalConfig(client, "statement_timeout", statementTimeout);
       }
     }
     const operation = Promise.resolve(callback(client, meta));

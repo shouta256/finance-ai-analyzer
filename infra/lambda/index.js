@@ -3,7 +3,14 @@
 require("./src/bootstrap/fetch-debug");
 
 const crypto = require("crypto");
-const { createRemoteJWKSet, jwtVerify, errors: JoseErrors } = require("jose");
+let CognitoJwtVerifier;
+try {
+  ({ CognitoJwtVerifier } = require("aws-jwt-verify"));
+} catch (error) {
+  console.warn("[lambda] aws-jwt-verify module not found. Install the layer to enable Cognito JWT verification.", {
+    message: error?.message,
+  });
+}
 if (typeof crypto.randomUUID !== "function") {
   const { randomBytes } = crypto;
   crypto.randomUUID = function randomUUID() {
@@ -36,7 +43,7 @@ const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.include
 const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
 
 let configPromise;
-const jwksCache = new Map();
+const cognitoVerifierCache = new Map();
 
 function stripTrailingSlash(value) {
   if (!value) return value;
@@ -139,9 +146,26 @@ async function loadConfig() {
       process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI ||
       cognitoSecret?.redirectUri ||
       cognitoSecret?.redirect_uri;
-    const cognitoIssuer = process.env.COGNITO_ISSUER || cognitoSecret?.issuer;
+    const cognitoRegion =
+      process.env.COGNITO_REGION || cognitoSecret?.region || cognitoSecret?.regionId || cognitoSecret?.region_id;
+    let cognitoIssuer = process.env.COGNITO_ISSUER || cognitoSecret?.issuer;
     const cognitoAudience =
       process.env.COGNITO_AUDIENCE || cognitoSecret?.audience || cognitoClientId || cognitoSecret?.clientId;
+    let cognitoUserPoolId =
+      process.env.COGNITO_USER_POOL_ID ||
+      cognitoSecret?.userPoolId ||
+      cognitoSecret?.user_pool_id ||
+      (cognitoIssuer ? cognitoIssuer.split("/").pop() : undefined);
+
+    const derivedRegion =
+      cognitoRegion ||
+      (cognitoUserPoolId && cognitoUserPoolId.includes("_") ? cognitoUserPoolId.split("_")[0] : undefined);
+    if (!cognitoIssuer && derivedRegion && cognitoUserPoolId) {
+      cognitoIssuer = `https://cognito-idp.${derivedRegion}.amazonaws.com/${cognitoUserPoolId}`;
+    }
+    if (!cognitoUserPoolId && cognitoIssuer) {
+      cognitoUserPoolId = cognitoIssuer.split("/").pop();
+    }
     const cognitoJwksUrl =
       process.env.COGNITO_JWKS_URL ||
       cognitoSecret?.jwksUrl ||
@@ -160,6 +184,8 @@ async function loadConfig() {
         clientSecret: cognitoClientSecret,
         redirectUri: cognitoRedirectUri,
         issuer: cognitoIssuer,
+        userPoolId: cognitoUserPoolId,
+        region: derivedRegion,
         audienceList: (cognitoAudience || "")
           .split(",")
           .map((s) => s.trim())
@@ -172,14 +198,43 @@ async function loadConfig() {
   return configPromise;
 }
 
-function getRemoteJwks(jwksUrl) {
-  if (!jwksUrl) throw new Error("JWKS URL not configured");
-  let remote = jwksCache.get(jwksUrl);
-  if (!remote) {
-    remote = createRemoteJWKSet(new URL(jwksUrl));
-    jwksCache.set(jwksUrl, remote);
+function normaliseClientIds(ids) {
+  if (!Array.isArray(ids)) return undefined;
+  const unique = Array.from(new Set(ids.filter((value) => typeof value === "string" && value.trim().length > 0)));
+  if (unique.length === 0) return undefined;
+  return unique.length === 1 ? unique[0] : unique;
+}
+
+function getCognitoVerifiers(cognito) {
+  if (!CognitoJwtVerifier) {
+    throw createHttpError(500, "aws-jwt-verify module not available");
   }
-  return remote;
+  if (!cognito.userPoolId) {
+    throw createHttpError(500, "Cognito userPoolId not configured");
+  }
+  const clientIdOption = normaliseClientIds(cognito.audienceList);
+  const cacheKey = JSON.stringify({
+    pool: cognito.userPoolId,
+    clientId: clientIdOption,
+  });
+  let entry = cognitoVerifierCache.get(cacheKey);
+  if (!entry) {
+    const baseOptions = clientIdOption ? { clientId: clientIdOption } : {};
+    entry = {
+      id: CognitoJwtVerifier.create({
+        userPoolId: cognito.userPoolId,
+        tokenUse: "id",
+        ...baseOptions,
+      }),
+      access: CognitoJwtVerifier.create({
+        userPoolId: cognito.userPoolId,
+        tokenUse: "access",
+        ...baseOptions,
+      }),
+    };
+    cognitoVerifierCache.set(cacheKey, entry);
+  }
+  return entry;
 }
 
 function parseCookies(event) {
@@ -213,42 +268,42 @@ async function authenticate(event) {
 
 async function verifyJwt(token) {
   const { cognito } = await loadConfig();
-  const jwks = getRemoteJwks(cognito.jwksUrl);
-  let payload;
+  const verifiers = getCognitoVerifiers(cognito);
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw createHttpError(401, "Malformed JWT");
+  }
+  let decoded;
   try {
-    const verification = await jwtVerify(token, jwks, cognito.issuer ? { issuer: cognito.issuer } : undefined);
-    payload = verification.payload || {};
-  } catch (error) {
-    if (error instanceof JoseErrors.JWTExpired) {
-      throw createHttpError(401, "Token expired");
-    }
-    if (error instanceof JoseErrors.JWTClaimValidationFailed) {
-      throw createHttpError(401, error.message || "Token validation failed");
-    }
-    if (error instanceof JoseErrors.JWSSignatureVerificationFailed) {
-      throw createHttpError(401, "Invalid signature");
-    }
-    if (error instanceof JoseErrors.JWKSNoMatchingKey) {
-      throw createHttpError(401, "Unable to find matching JWKS key");
-    }
-    throw createHttpError(401, "Token verification failed");
+    decoded = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    throw createHttpError(401, "Malformed JWT");
   }
-  if (cognito.audienceList.length > 0) {
-    let ok = false;
-    if (Array.isArray(payload.aud)) {
-      ok = payload.aud.some((aud) => cognito.audienceList.includes(aud));
-    } else if (typeof payload.aud === "string") {
-      ok = cognito.audienceList.includes(payload.aud);
-    }
-    const clientId = payload.client_id;
-    if (!ok && !(clientId && payload.token_use === "access" && cognito.audienceList.includes(clientId))) {
-      throw createHttpError(401, "Audience/client_id mismatch");
+  const preferredOrder = decoded?.token_use === "access" ? ["access", "id"] : ["id", "access"];
+  let lastError;
+  for (const kind of preferredOrder) {
+    try {
+      const verifier = kind === "access" ? verifiers.access : verifiers.id;
+      const verified = await verifier.verify(token);
+      if (cognito.issuer && verified?.iss !== cognito.issuer) {
+        throw createHttpError(401, "Issuer mismatch");
+      }
+      if (!verified?.sub) {
+        throw createHttpError(401, "Token missing subject");
+      }
+      return verified;
+    } catch (error) {
+      lastError = error;
     }
   }
-  if (!payload.sub) {
-    throw createHttpError(401, "Token missing subject");
+  const handledError =
+    lastError && typeof lastError === "object" && "statusCode" in lastError && typeof lastError.statusCode === "number"
+      ? lastError
+      : null;
+  if (handledError) {
+    throw handledError;
   }
-  return payload;
+  throw createHttpError(401, "Token verification failed");
 }
 
 function parseJsonBody(event) {

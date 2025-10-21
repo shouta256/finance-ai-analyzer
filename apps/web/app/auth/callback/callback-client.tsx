@@ -100,7 +100,7 @@ export default function CallbackClient() {
             <p>If this problem persists, please relaunch the login flow.</p>
             <button
               type="button"
-              onClick={() => router.replace(`/login?redirect=${encodeURIComponent(state)}`)}
+              onClick={() => router.replace(`/login?redirect=${encodeURIComponent(state)}&authError=1`)}
               className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
             >
               Back to Login

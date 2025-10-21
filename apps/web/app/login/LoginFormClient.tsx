@@ -53,6 +53,7 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
   const searchParams = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const suppressAutoLaunch = searchParams?.get("authError") === "1";
 
   const handleDevLogin = () => {
     startTransition(async () => {
@@ -72,6 +73,13 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
     }
     setMessage(null);
     const redirectUri = resolveRedirectUri(configuredRedirect);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("authError");
+      window.history.replaceState({}, "", url.toString());
+    } catch {
+      // ignore history errors in non-browser contexts
+    }
     const params = new URLSearchParams({
       client_id: clientId,
       response_type: "code",
@@ -84,11 +92,11 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
   };
 
   useEffect(() => {
-    if (cognitoEnabled && showCognito) {
+    if (cognitoEnabled && showCognito && !suppressAutoLaunch) {
       handleCognito();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cognitoEnabled, showCognito]);
+  }, [cognitoEnabled, showCognito, suppressAutoLaunch]);
 
   const debugEnabled = authDebug || searchParams.get("authdebug") === "1";
 

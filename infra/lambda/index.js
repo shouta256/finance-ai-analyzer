@@ -22,6 +22,7 @@ if (typeof crypto.randomUUID !== "function") {
   };
 }
 const AWS = require("aws-sdk");
+const dns = require("dns").promises;
 const secretsManager = new AWS.SecretsManager();
 const { withUserClient } = require("./src/db/pool");
 const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
@@ -725,6 +726,23 @@ async function handleAccounts(event) {
   );
 }
 
+async function handleDnsDiagnostics(event) {
+  const result = {};
+  const recordHosts = [
+    ["exampleA", "example.com"],
+    ["apexA", "plaid.com"],
+    ["apiA", "api.plaid.com"],
+  ];
+  for (const [label, host] of recordHosts) {
+    try {
+      result[label] = await dns.resolve4(host);
+    } catch (error) {
+      result[`${label}_err`] = error?.code || String(error);
+    }
+  }
+  return respond(event, 200, result);
+}
+
 async function handleAuthToken(event) {
   const body = parseJsonBody(event);
   const grantType = body.grantType || body.grant_type;
@@ -999,6 +1017,9 @@ exports.handler = async (event) => {
     }
     if (method === "GET" && path === "/accounts") {
       return await handleAccounts(event);
+    }
+    if (method === "GET" && path === "/diagnostics/dns") {
+      return await handleDnsDiagnostics(event);
     }
 
     return respond(event, 404, { error: "Not Found" });

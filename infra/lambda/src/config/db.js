@@ -9,6 +9,19 @@ function toInt(value, fallback) {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "") continue;
+      return trimmed;
+    }
+    return value;
+  }
+  return undefined;
+}
+
 function parseBool(value, fallback) {
   if (value === undefined || value === null || value === "") return fallback;
   const normalized = String(value).trim().toLowerCase();
@@ -97,28 +110,56 @@ function loadDbConfig() {
     }
   }
 
-  const host = process.env.SAFEPOCKET_DB_HOST || parsed.host;
-  const port = toInt(process.env.SAFEPOCKET_DB_PORT, parsed.port || 5432);
-  const user = process.env.SAFEPOCKET_DB_USER || parsed.user;
-  const password =
-    process.env.SAFEPOCKET_DB_PASSWORD !== undefined ? process.env.SAFEPOCKET_DB_PASSWORD : parsed.password;
-  const database = process.env.SAFEPOCKET_DB_NAME || parsed.database;
+  const host = firstNonEmpty(
+    process.env.SAFEPOCKET_DB_HOST,
+    parsed.host,
+    process.env.PGHOST,
+    process.env.DB_HOST,
+    process.env.RDS_HOSTNAME,
+  );
+  const port = toInt(
+    firstNonEmpty(process.env.SAFEPOCKET_DB_PORT, parsed.port, process.env.PGPORT, process.env.DB_PORT, process.env.RDS_PORT),
+    5432,
+  );
+  const user = firstNonEmpty(
+    process.env.SAFEPOCKET_DB_USER,
+    parsed.user,
+    process.env.PGUSER,
+    process.env.DB_USER,
+    process.env.RDS_USERNAME,
+  );
+  const rawPassword = firstNonEmpty(
+    process.env.SAFEPOCKET_DB_PASSWORD,
+    parsed.password,
+    process.env.PGPASSWORD,
+    process.env.DB_PASSWORD,
+    process.env.RDS_PASSWORD,
+  );
+  const database = firstNonEmpty(
+    process.env.SAFEPOCKET_DB_NAME,
+    parsed.database,
+    process.env.PGDATABASE,
+    process.env.DB_NAME,
+    process.env.RDS_DB_NAME,
+  );
 
   if (!host) {
-    throw new Error("Database host is not configured. Set SAFEPOCKET_DB_HOST or SAFEPOCKET_DATABASE_URL.");
+    throw new Error(
+      "Database host is not configured. Set SAFEPOCKET_DB_HOST, PGHOST, RDS_HOSTNAME, or SAFEPOCKET_DATABASE_URL.",
+    );
   }
   if (!user) {
-    throw new Error("Database user is not configured. Set SAFEPOCKET_DB_USER or SAFEPOCKET_DATABASE_URL.");
+    throw new Error("Database user is not configured. Set SAFEPOCKET_DB_USER, PGUSER, or SAFEPOCKET_DATABASE_URL.");
   }
   if (!database) {
-    throw new Error("Database name is not configured. Set SAFEPOCKET_DB_NAME or SAFEPOCKET_DATABASE_URL.");
+    throw new Error("Database name is not configured. Set SAFEPOCKET_DB_NAME, PGDATABASE, or SAFEPOCKET_DATABASE_URL.");
   }
 
   const config = {
     host,
     port,
     user,
-    password,
+    password: rawPassword,
     database,
     max: toInt(process.env.SAFEPOCKET_DB_POOL_MAX, 6),
     idleTimeoutMillis: toInt(process.env.SAFEPOCKET_DB_IDLE_TIMEOUT_MS, 30000),

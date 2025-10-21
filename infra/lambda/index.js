@@ -13,9 +13,10 @@ if (typeof crypto.randomUUID !== "function") {
 }
 const AWS = require("aws-sdk");
 const secretsManager = new AWS.SecretsManager();
+const { pool } = require("./src/db/pool");
+const { schemaGuard, SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
 const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
-const SECRET_DB = process.env.SECRET_DB_NAME || "/safepocket/db";
 const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
 
 const RESPONSE_HEADERS = {
@@ -32,7 +33,6 @@ const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.include
 const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
 
 let configPromise;
-let pgPool = null;
 const jwksCache = new Map();
 
 function stripTrailingSlash(value) {
@@ -115,9 +115,8 @@ async function fetchSecret(name) {
 async function loadConfig() {
   if (configPromise) return configPromise;
   configPromise = (async () => {
-    const [cognitoSecret, dbSecret, plaidSecret] = await Promise.all([
+    const [cognitoSecret, plaidSecret] = await Promise.all([
       fetchSecret(SECRET_COGNITO),
-      fetchSecret(SECRET_DB),
       fetchSecret(SECRET_PLAID),
     ]);
 
@@ -145,16 +144,6 @@ async function loadConfig() {
       cognitoSecret?.jwksUrl ||
       (cognitoDomain ? `${stripTrailingSlash(ensureHttps(cognitoDomain))}/.well-known/jwks.json` : undefined);
 
-    const dbConfig = {
-      connectionString: process.env.DATABASE_URL || dbSecret?.connectionString,
-      host: process.env.DB_HOST || dbSecret?.host,
-      port: parseInt(process.env.DB_PORT || dbSecret?.port || "5432", 10),
-      user: process.env.DB_USER || dbSecret?.username || dbSecret?.user,
-      password: process.env.DB_PASSWORD || dbSecret?.password,
-      database: process.env.DB_NAME || dbSecret?.dbname || dbSecret?.database,
-      ssl: process.env.DB_SSL ?? dbSecret?.ssl,
-    };
-
     const plaidConfig = {
       clientId: process.env.PLAID_CLIENT_ID || plaidSecret?.clientId || plaidSecret?.client_id,
       clientSecret: process.env.PLAID_CLIENT_SECRET || plaidSecret?.clientSecret || plaidSecret?.client_secret,
@@ -174,54 +163,10 @@ async function loadConfig() {
           .filter(Boolean),
         jwksUrl: cognitoJwksUrl,
       },
-      db: dbConfig,
       plaid: plaidConfig,
     };
   })();
   return configPromise;
-}
-
-async function ensurePgPool() {
-  if (pgPool) return pgPool;
-  const { db } = await loadConfig();
-  let Pool;
-  try {
-    ({ Pool } = require("pg"));
-  } catch (error) {
-    throw new Error("The pg module must be provided via Lambda Layer or bundled with the function zip.");
-  }
-
-  if (db.connectionString) {
-    pgPool = new Pool({
-      connectionString: db.connectionString,
-      ssl:
-        db.ssl === "false" || db.ssl === false
-          ? undefined
-          : {
-              rejectUnauthorized: false,
-            },
-    });
-    return pgPool;
-  }
-
-  if (!db.host) {
-    throw new Error("Specify DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME before querying the database.");
-  }
-
-  pgPool = new Pool({
-    host: db.host,
-    port: db.port,
-    user: db.user,
-    password: db.password,
-    database: db.database,
-    ssl:
-      db.ssl === "false" || db.ssl === false
-        ? undefined
-        : {
-            rejectUnauthorized: false,
-          },
-  });
-  return pgPool;
 }
 
 async function getJwks(jwksUrl) {

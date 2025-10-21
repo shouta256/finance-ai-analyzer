@@ -140,3 +140,22 @@ jobs:
           aws lambda update-function-configuration \
             --function-name "$FUNCTION_NAME" \
             --layers ${{ steps.publish_layer.outputs.layer_arn }}
+
+      - name: Refresh Lambda environment (CONFIG_BUMP)
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME || 'hello-http' }}
+          CONFIG_BUMP=$(date +%s)
+          NODE_PATH_VALUE="/opt/nodejs/node_modules:/opt/nodejs/node20/node_modules"
+          EXISTING_ENV=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --query 'Environment.Variables' \
+            --output json)
+          UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c --arg node_path "$NODE_PATH_VALUE" --arg config_bump "$CONFIG_BUMP" '
+            (. // {}) |
+            .NODE_PATH = $node_path |
+            .CONFIG_BUMP = $config_bump
+          ')
+          aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --environment "Variables=$UPDATED_ENV"

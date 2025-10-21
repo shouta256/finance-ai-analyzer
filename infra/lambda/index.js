@@ -13,8 +13,8 @@ if (typeof crypto.randomUUID !== "function") {
 }
 const AWS = require("aws-sdk");
 const secretsManager = new AWS.SecretsManager();
-const { pool } = require("./src/db/pool");
-const { schemaGuard, SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
+const { ensurePgPool } = require("./src/db/pool");
+const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
 const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
 const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
@@ -955,7 +955,10 @@ exports.handler = async (event) => {
     console.error("[lambda] handler error", error);
     const status = error.statusCode || error.status || 500;
     return respond(event, status, {
-      error: { code: "LAMBDA_ERROR", message: error.message || "Internal Server Error" },
+      error: {
+        code: error instanceof SchemaNotMigratedError ? "DB_SCHEMA_NOT_READY" : "LAMBDA_ERROR",
+        message: error.message || "Internal Server Error",
+      },
     });
   }
 };

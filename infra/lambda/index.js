@@ -173,20 +173,50 @@ async function loadConfig() {
       (cognitoDomain ? `${stripTrailingSlash(ensureHttps(cognitoDomain))}/.well-known/jwks.json` : undefined);
 
     const plaidEnv = process.env.PLAID_ENV || plaidSecret?.env || plaidSecret?.environment || "sandbox";
+    const normalizeString = (value) =>
+      typeof value === "string" ? value.trim() : value;
     const plaidConfig = {
-      clientId: process.env.PLAID_CLIENT_ID || plaidSecret?.clientId || plaidSecret?.client_id,
-      clientSecret: process.env.PLAID_CLIENT_SECRET || plaidSecret?.clientSecret || plaidSecret?.client_secret,
+      clientId: normalizeString(
+        process.env.PLAID_CLIENT_ID ||
+          plaidSecret?.clientId ||
+          plaidSecret?.client_id,
+      ),
+      clientSecret: normalizeString(
+        process.env.PLAID_CLIENT_SECRET ||
+          process.env.PLAID_SECRET ||
+          plaidSecret?.clientSecret ||
+          plaidSecret?.client_secret ||
+          plaidSecret?.secret,
+      ),
       env: plaidEnv,
       baseUrl:
         process.env.PLAID_BASE_URL ||
         plaidSecret?.baseUrl ||
         (plaidEnv === "sandbox" ? "https://sandbox.plaid.com" : "https://production.plaid.com"),
-      products: process.env.PLAID_PRODUCTS || plaidSecret?.products || "transactions",
-      countryCodes: process.env.PLAID_COUNTRY_CODES || plaidSecret?.countryCodes || "US",
-      redirectUri: process.env.PLAID_REDIRECT_URI || plaidSecret?.redirectUri || "",
-      webhookUrl: process.env.PLAID_WEBHOOK_URL || plaidSecret?.webhookUrl || "",
-      webhookSecret: process.env.PLAID_WEBHOOK_SECRET || plaidSecret?.webhookSecret || "",
-      clientName: process.env.PLAID_CLIENT_NAME || plaidSecret?.clientName || "Safepocket",
+      products:
+        process.env.PLAID_PRODUCTS ||
+        plaidSecret?.products ||
+        "transactions",
+      countryCodes:
+        process.env.PLAID_COUNTRY_CODES ||
+        plaidSecret?.countryCodes ||
+        "US",
+      redirectUri:
+        process.env.PLAID_REDIRECT_URI ||
+        plaidSecret?.redirectUri ||
+        "",
+      webhookUrl:
+        process.env.PLAID_WEBHOOK_URL ||
+        plaidSecret?.webhookUrl ||
+        "",
+      webhookSecret:
+        process.env.PLAID_WEBHOOK_SECRET ||
+        plaidSecret?.webhookSecret ||
+        "",
+      clientName:
+        process.env.PLAID_CLIENT_NAME ||
+        plaidSecret?.clientName ||
+        "Safepocket",
     };
 
     return {

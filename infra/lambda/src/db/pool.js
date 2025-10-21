@@ -163,20 +163,21 @@ async function withUserClient(userId, callback) {
   if (acquireDuration > 1000) {
     console.info("[lambda] PG client acquisition slow", { durationMs: acquireDuration });
   }
-  let contextEstablished = false;
   let timeoutId;
+  let transactionActive = false;
   const timeoutMs = Number.isFinite(DB_OPERATION_TIMEOUT_MS) ? DB_OPERATION_TIMEOUT_MS : 9000;
   try {
-    await client.query("select set_config($1, $2, true)", ["appsec.user_id", userId]);
+    await client.query("BEGIN");
+    transactionActive = true;
     const meta = pool.__safepocket ?? {};
+    await client.query("SET LOCAL appsec.user_id = $1", [userId]);
     if (meta.statementTimeout) {
       const statementTimeout = Number.parseInt(meta.statementTimeout, 10);
       if (Number.isFinite(statementTimeout) && statementTimeout > 0) {
-        await client.query(`SET LOCAL statement_timeout = ${statementTimeout}`);
+        await client.query("SET LOCAL statement_timeout = $1", [statementTimeout]);
       }
     }
-    contextEstablished = true;
-    const operation = callback(client, meta);
+    const operation = Promise.resolve(callback(client, meta));
     const watchdog = new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(
@@ -186,18 +187,31 @@ async function withUserClient(userId, callback) {
         );
       }, timeoutMs);
     });
-    return await Promise.race([operation, watchdog]);
+    const result = await Promise.race([operation, watchdog]);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+    await client.query("COMMIT");
+    transactionActive = false;
+    return result;
   } catch (error) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+    if (transactionActive) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.warn("[lambda] failed to rollback transaction", rollbackError);
+      } finally {
+        transactionActive = false;
+      }
+    }
     throw error;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
-    if (contextEstablished) {
-      try {
-        await client.query("RESET appsec.user_id");
-      } catch (resetError) {
-        console.warn("[lambda] failed to reset appsec.user_id context", resetError);
-      }
-    }
     client.release();
   }
 }

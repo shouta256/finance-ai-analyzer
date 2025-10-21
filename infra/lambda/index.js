@@ -172,10 +172,21 @@ async function loadConfig() {
       cognitoSecret?.jwksUrl ||
       (cognitoDomain ? `${stripTrailingSlash(ensureHttps(cognitoDomain))}/.well-known/jwks.json` : undefined);
 
+    const plaidEnv = process.env.PLAID_ENV || plaidSecret?.env || plaidSecret?.environment || "sandbox";
     const plaidConfig = {
       clientId: process.env.PLAID_CLIENT_ID || plaidSecret?.clientId || plaidSecret?.client_id,
       clientSecret: process.env.PLAID_CLIENT_SECRET || plaidSecret?.clientSecret || plaidSecret?.client_secret,
-      env: process.env.PLAID_ENV || plaidSecret?.env || plaidSecret?.environment || "sandbox",
+      env: plaidEnv,
+      baseUrl:
+        process.env.PLAID_BASE_URL ||
+        plaidSecret?.baseUrl ||
+        (plaidEnv === "sandbox" ? "https://sandbox.plaid.com" : "https://production.plaid.com"),
+      products: process.env.PLAID_PRODUCTS || plaidSecret?.products || "transactions",
+      countryCodes: process.env.PLAID_COUNTRY_CODES || plaidSecret?.countryCodes || "US",
+      redirectUri: process.env.PLAID_REDIRECT_URI || plaidSecret?.redirectUri || "",
+      webhookUrl: process.env.PLAID_WEBHOOK_URL || plaidSecret?.webhookUrl || "",
+      webhookSecret: process.env.PLAID_WEBHOOK_SECRET || plaidSecret?.webhookSecret || "",
+      clientName: process.env.PLAID_CLIENT_NAME || plaidSecret?.clientName || "Safepocket",
     };
 
     return {
@@ -726,6 +737,125 @@ async function handleAccounts(event) {
   );
 }
 
+function parseList(value, fallback) {
+  if (!value) return fallback;
+  if (Array.isArray(value)) return value.length > 0 ? value : fallback;
+  const parts = String(value)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : fallback;
+}
+
+async function plaidFetch(config, path, body) {
+  if (!config?.clientId || !config?.clientSecret) {
+    throw createHttpError(500, "Plaid client credentials not configured");
+  }
+  const headers = {
+    "content-type": "application/json",
+    "Plaid-Version": process.env.PLAID_VERSION || "2020-09-14",
+  };
+  const payload = {
+    client_id: config.clientId,
+    secret: config.clientSecret,
+    ...body,
+  };
+  const res = await fetch(`${config.baseUrl || "https://sandbox.plaid.com"}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = text;
+  }
+  if (!res.ok) {
+    const err = createHttpError(res.status, json?.error_message || json?.message || `Plaid request failed (${path})`);
+    err.payload = json;
+    throw err;
+  }
+  return json;
+}
+
+async function handlePlaidLinkToken(event) {
+  const payload = await authenticate(event);
+  const { plaid } = await loadConfig();
+  const products = parseList(plaid.products, ["transactions"]);
+  const countryCodes = parseList(plaid.countryCodes, ["US"]);
+  const request = {
+    user: { client_user_id: payload.sub },
+    client_name: plaid.clientName || "Safepocket",
+    language: "en",
+    products,
+    country_codes: countryCodes,
+  };
+  if (plaid.redirectUri) request.redirect_uri = plaid.redirectUri;
+  if (plaid.webhookUrl) request.webhook = plaid.webhookUrl;
+  try {
+    const response = await plaidFetch(plaid, "/link/token/create", request);
+    return respond(event, 200, {
+      linkToken: response.link_token,
+      expiration: response.expiration,
+      requestId: response.request_id,
+    });
+  } catch (error) {
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "PLAID_LINK_TOKEN_FAILED",
+        message: error?.message || "Failed to create Plaid link token",
+        details: error?.payload,
+      },
+    });
+  }
+}
+
+async function handlePlaidExchange(event) {
+  const payload = await authenticate(event);
+  let body = {};
+  try {
+    body = parseJsonBody(event);
+  } catch {
+    return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "Invalid JSON body" } });
+  }
+  const publicToken = body.publicToken || body.public_token;
+  if (!publicToken || typeof publicToken !== "string") {
+    return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "publicToken is required" } });
+  }
+  const { plaid } = await loadConfig();
+  try {
+    const exchange = await plaidFetch(plaid, "/item/public_token/exchange", { public_token: publicToken });
+    await withUserClient(payload.sub, async (client) => {
+      await client.query(
+        `INSERT INTO plaid_items (user_id, item_id, encrypted_access_token, linked_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (user_id)
+         DO UPDATE SET item_id = EXCLUDED.item_id,
+                       encrypted_access_token = EXCLUDED.encrypted_access_token,
+                       linked_at = now()`,
+        [payload.sub, exchange.item_id, exchange.access_token],
+      );
+    });
+    return respond(event, 200, {
+      itemId: exchange.item_id,
+      status: "SUCCESS",
+      requestId: exchange.request_id ?? null,
+    });
+  } catch (error) {
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "PLAID_EXCHANGE_FAILED",
+        message: error?.message || "Failed to exchange Plaid public token",
+        details: error?.payload,
+      },
+    });
+  }
+}
+
 async function handleDnsDiagnostics(event) {
   const result = {};
   const recordHosts = [
@@ -1017,6 +1147,12 @@ exports.handler = async (event) => {
     }
     if (method === "GET" && path === "/accounts") {
       return await handleAccounts(event);
+    }
+    if (method === "POST" && path === "/plaid/link-token") {
+      return await handlePlaidLinkToken(event);
+    }
+    if (method === "POST" && path === "/plaid/exchange") {
+      return await handlePlaidExchange(event);
     }
     if (method === "GET" && path === "/diagnostics/dns") {
       return await handleDnsDiagnostics(event);

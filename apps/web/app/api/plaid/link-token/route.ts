@@ -16,7 +16,16 @@ function mapError(error: unknown): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
-  const authorization = request.headers.get("authorization");
+  const headerToken = request.headers.get("authorization")?.trim();
+  const cookieToken = request.cookies.get("sp_token")?.value?.trim();
+  const authorization =
+    headerToken?.startsWith("Bearer ")
+      ? headerToken
+      : headerToken
+        ? `Bearer ${headerToken}`
+        : cookieToken
+          ? `Bearer ${cookieToken}`
+          : null;
   if (!authorization) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   }

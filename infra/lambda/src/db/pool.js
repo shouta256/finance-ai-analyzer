@@ -3,11 +3,18 @@
 const { Pool } = require("pg");
 const AWS = require("aws-sdk");
 const { loadDbConfig } = require("../config/db");
-const { schemaGuard, SchemaNotMigratedError } = require("../bootstrap/schemaGuard");
+const { schemaGuard } = require("../bootstrap/schemaGuard");
 
 let poolInstance = null;
 let guardPromise = null;
 let secretPromise = null;
+
+const DEFAULT_QUERY_TIMEOUT_MS = 15000;
+const DEFAULT_STATEMENT_TIMEOUT_MS = 15000;
+const DB_OPERATION_TIMEOUT_MS = Number.parseInt(
+  process.env.SAFEPOCKET_DB_OPERATION_TIMEOUT_MS || "9000",
+  10,
+);
 
 function getDbSecretName() {
   return (
@@ -32,6 +39,7 @@ async function hydrateDbConfigFromSecret() {
   }
   const secretsManager = new AWS.SecretsManager();
   secretPromise = (async () => {
+    const startedAt = Date.now();
     try {
       const res = await secretsManager.getSecretValue({ SecretId: secretName }).promise();
       const payload = res.SecretString ?? Buffer.from(res.SecretBinary, "base64").toString("utf8");
@@ -70,6 +78,8 @@ async function hydrateDbConfigFromSecret() {
           }
         }
       }
+      const elapsedMs = Date.now() - startedAt;
+      console.info("[lambda] DB secret loaded", { secretName, elapsedMs });
     } catch (error) {
       console.warn(`[lambda] unable to hydrate DB config from secret ${secretName}: ${error.message}`);
     }
@@ -88,8 +98,15 @@ function createPool() {
     max: config.max,
   });
   const instance = new Pool(config);
+  instance.__safepocket = {
+    queryTimeout: config.query_timeout || DEFAULT_QUERY_TIMEOUT_MS,
+    statementTimeout: config.statement_timeout || DEFAULT_STATEMENT_TIMEOUT_MS,
+  };
   instance.on("error", (error) => {
     console.error("[lambda] unexpected PostgreSQL error", error);
+  });
+  instance.on("connect", () => {
+    console.info("[lambda] PostgreSQL client connected");
   });
   return instance;
 }
@@ -135,11 +152,62 @@ async function closePool() {
   }
 }
 
+async function withUserClient(userId, callback) {
+  if (!userId) {
+    throw new Error("userId is required to establish RLS context");
+  }
+  const pool = await ensurePgPool();
+  const acquireStarted = Date.now();
+  const client = await pool.connect();
+  const acquireDuration = Date.now() - acquireStarted;
+  if (acquireDuration > 1000) {
+    console.info("[lambda] PG client acquisition slow", { durationMs: acquireDuration });
+  }
+  let contextEstablished = false;
+  let timeoutId;
+  const timeoutMs = Number.isFinite(DB_OPERATION_TIMEOUT_MS) ? DB_OPERATION_TIMEOUT_MS : 9000;
+  try {
+    await client.query("SET appsec.user_id = $1", [userId]);
+    const meta = pool.__safepocket ?? {};
+    if (meta.statementTimeout) {
+      const statementTimeout = Number.parseInt(meta.statementTimeout, 10);
+      if (Number.isFinite(statementTimeout) && statementTimeout > 0) {
+        await client.query(`SET LOCAL statement_timeout = ${statementTimeout}`);
+      }
+    }
+    contextEstablished = true;
+    const operation = callback(client, meta);
+    const watchdog = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          Object.assign(new Error(`Database operation timed out after ${timeoutMs} ms`), {
+            code: "DB_OPERATION_TIMEOUT",
+          }),
+        );
+      }, timeoutMs);
+    });
+    return await Promise.race([operation, watchdog]);
+  } catch (error) {
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (contextEstablished) {
+      try {
+        await client.query("RESET appsec.user_id");
+      } catch (resetError) {
+        console.warn("[lambda] failed to reset appsec.user_id context", resetError);
+      }
+    }
+    client.release();
+  }
+}
+
 module.exports = {
   ensurePgPool,
   getPool,
   closePool,
   loadDbConfig,
+  withUserClient,
   pool: {
     get instance() {
       return poolInstance;

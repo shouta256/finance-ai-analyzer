@@ -3,6 +3,7 @@
 require("./src/bootstrap/fetch-debug");
 
 const crypto = require("crypto");
+const { createRemoteJWKSet, jwtVerify, errors: JoseErrors } = require("jose");
 if (typeof crypto.randomUUID !== "function") {
   const { randomBytes } = crypto;
   crypto.randomUUID = function randomUUID() {
@@ -171,18 +172,14 @@ async function loadConfig() {
   return configPromise;
 }
 
-async function getJwks(jwksUrl) {
+function getRemoteJwks(jwksUrl) {
   if (!jwksUrl) throw new Error("JWKS URL not configured");
-  const cached = jwksCache.get(jwksUrl);
-  const now = Date.now();
-  if (cached && now - cached.fetchedAt < 5 * 60 * 1000) {
-    return cached.value;
+  let remote = jwksCache.get(jwksUrl);
+  if (!remote) {
+    remote = createRemoteJWKSet(new URL(jwksUrl));
+    jwksCache.set(jwksUrl, remote);
   }
-  const res = await fetch(jwksUrl);
-  if (!res.ok) throw new Error(`Failed to fetch JWKS: ${res.status}`);
-  const json = await res.json();
-  jwksCache.set(jwksUrl, { value: json, fetchedAt: now });
-  return json;
+  return remote;
 }
 
 function parseCookies(event) {
@@ -216,28 +213,25 @@ async function authenticate(event) {
 
 async function verifyJwt(token) {
   const { cognito } = await loadConfig();
-  const [headerB64, payloadB64, signatureB64] = token.split(".");
-  if (!headerB64 || !payloadB64 || !signatureB64) {
-    throw createHttpError(401, "Malformed JWT");
-  }
-
-  const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8"));
-  const jwks = await getJwks(cognito.jwksUrl);
-  const key = jwks.keys.find((k) => k.kid === header.kid);
-  if (!key) throw createHttpError(401, "Unable to find matching JWKS key");
-
-  const publicKey = crypto.createPublicKey({ key, format: "jwk" });
-  const verifier = crypto.createVerify("RSA-SHA256");
-  verifier.update(`${headerB64}.${payloadB64}`);
-  verifier.end();
-  const signature = Buffer.from(signatureB64, "base64url");
-  if (!verifier.verify(publicKey, signature)) {
-    throw createHttpError(401, "Invalid signature");
-  }
-
-  const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
-  if (cognito.issuer && payload.iss !== cognito.issuer) {
-    throw createHttpError(401, "Issuer mismatch");
+  const jwks = getRemoteJwks(cognito.jwksUrl);
+  let payload;
+  try {
+    const verification = await jwtVerify(token, jwks, cognito.issuer ? { issuer: cognito.issuer } : undefined);
+    payload = verification.payload || {};
+  } catch (error) {
+    if (error instanceof JoseErrors.JWTExpired) {
+      throw createHttpError(401, "Token expired");
+    }
+    if (error instanceof JoseErrors.JWTClaimValidationFailed) {
+      throw createHttpError(401, error.message || "Token validation failed");
+    }
+    if (error instanceof JoseErrors.JWSSignatureVerificationFailed) {
+      throw createHttpError(401, "Invalid signature");
+    }
+    if (error instanceof JoseErrors.JWKSNoMatchingKey) {
+      throw createHttpError(401, "Unable to find matching JWKS key");
+    }
+    throw createHttpError(401, "Token verification failed");
   }
   if (cognito.audienceList.length > 0) {
     let ok = false;

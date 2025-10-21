@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers";
 import { ledgerFetch } from "@/src/lib/api-client";
 import { plaidLinkTokenSchema } from "@/src/lib/schemas";
 import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
@@ -17,7 +18,12 @@ function mapError(error: unknown): NextResponse {
 
 export async function POST(request: NextRequest) {
   const headerToken = request.headers.get("authorization")?.trim();
-  const cookieToken = request.cookies.get("sp_token")?.value?.trim();
+  let cookieToken;
+  try {
+    cookieToken = cookies().get("sp_token")?.value?.trim();
+  } catch {
+    cookieToken = undefined;
+  }
   const authorization =
     headerToken?.startsWith("Bearer ")
       ? headerToken

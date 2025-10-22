@@ -29,6 +29,11 @@ const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
 const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
 const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
+const LEDGER_BASE_URL =
+  process.env.LEDGER_SERVICE_INTERNAL_URL ||
+  process.env.LEDGER_SERVICE_URL ||
+  process.env.NEXT_PUBLIC_LEDGER_BASE;
+const LEDGER_PATH_PREFIX = process.env.LEDGER_SERVICE_PATH_PREFIX || "";
 
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
@@ -291,6 +296,20 @@ function parseCookies(event) {
     });
   }
   return map;
+}
+
+function extractAuthorizationHeader(event) {
+  const headers = event.headers || {};
+  const raw = headers.authorization || headers.Authorization;
+  if (raw && raw.trim()) {
+    return raw.startsWith("Bearer ") ? raw.trim() : `Bearer ${raw.trim()}`;
+  }
+  const cookies = parseCookies(event);
+  const token = cookies.get("sp_token");
+  if (token && token.trim()) {
+    return `Bearer ${token.trim()}`;
+  }
+  return null;
 }
 
 async function authenticate(event) {
@@ -777,80 +796,53 @@ function parseList(value, fallback) {
   return parts.length > 0 ? parts : fallback;
 }
 
-async function plaidFetch(config, path, body) {
-  if (!config?.clientId || !config?.clientSecret) {
-    throw createHttpError(500, "Plaid client credentials not configured");
+async function handlePlaidLinkToken(event) {
+function buildLedgerUrl(path) {
+  if (!LEDGER_BASE_URL) {
+    throw createHttpError(500, "Ledger service base URL is not configured");
   }
-  const headers = {
-    "content-type": "application/json",
-    "Plaid-Version": process.env.PLAID_VERSION || "2020-09-14",
-  };
-  const payload = {
-    client_id: config.clientId,
-    secret: config.clientSecret,
-    ...body,
-  };
-  const res = await fetch(`${config.baseUrl || "https://sandbox.plaid.com"}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
+  const prefix = LEDGER_PATH_PREFIX ? `/${LEDGER_PATH_PREFIX.replace(/^\/+|\/+$/g, "")}` : "";
+  const normalisedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${LEDGER_BASE_URL.replace(/\/+$/, "")}${prefix}${normalisedPath}`;
+}
+
+async function fetchLedgerJson(path, options = {}) {
+  const url = buildLedgerUrl(path);
+  const res = await fetch(url, options);
   const text = await res.text();
-  let json;
-  try {
-    json = text ? JSON.parse(text) : {};
-  } catch {
-    json = text;
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
   }
   if (!res.ok) {
-    console.error("[plaid] request failed", {
-      path,
-      status: res.status,
-      statusText: res.statusText,
-      response: json,
-    });
-    const err = createHttpError(res.status, json?.error_message || json?.message || `Plaid request failed (${path})`);
-    err.payload = json;
+    const err = createHttpError(res.status, typeof payload === "string" ? payload : (payload?.error?.message || payload?.message || "Ledger service request failed"));
+    err.payload = payload;
     throw err;
   }
-  return json;
+  return { status: res.status, payload: payload ?? {} };
 }
 
 async function handlePlaidLinkToken(event) {
-  const payload = await authenticate(event);
-  const { plaid } = await loadConfig();
-  console.info("[plaid] link token request", {
-    env: plaid.env,
-    baseUrl: plaid.baseUrl,
-    clientIdPresent: Boolean(plaid.clientId),
-    clientSecretLength: plaid.clientSecret ? plaid.clientSecret.length : 0,
-    products: plaid.products,
-    countryCodes: plaid.countryCodes,
-    redirectUriPresent: Boolean(plaid.redirectUri),
-  });
-  const products = parseList(plaid.products, ["transactions"]);
-  const countryCodes = parseList(plaid.countryCodes, ["US"]);
-  const clientUserId = (() => {
-    if (typeof payload.sub === "string" && payload.sub.trim().length > 0) {
-      return payload.sub.replace(/-/g, "").slice(0, 24);
-    }
-    return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-  })();
-  const request = {
-    user: { client_user_id: clientUserId },
-    client_name: plaid.clientName || "Safepocket",
-    language: "en",
-    products,
-    country_codes: countryCodes,
-  };
-  if (plaid.redirectUri) request.redirect_uri = plaid.redirectUri;
-  if (plaid.webhookUrl) request.webhook = plaid.webhookUrl;
+  await authenticate(event);
+  const authorization = extractAuthorizationHeader(event);
+  if (!authorization) {
+    return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
+  }
   try {
-    const response = await plaidFetch(plaid, "/link/token/create", request);
-    return respond(event, 200, {
-      linkToken: response.link_token,
-      expiration: response.expiration,
-      requestId: response.request_id,
+    const { status, payload } = await fetchLedgerJson("/plaid/link-token", {
+      method: "POST",
+      headers: {
+        authorization: authorization,
+      },
+    });
+    return respond(event, status, {
+      linkToken: payload.linkToken ?? payload.link_token,
+      expiration: payload.expiration,
+      requestId: payload.requestId ?? payload.request_id ?? null,
     });
   } catch (error) {
     const status = error?.statusCode || error?.status || 500;
@@ -865,7 +857,7 @@ async function handlePlaidLinkToken(event) {
 }
 
 async function handlePlaidExchange(event) {
-  const payload = await authenticate(event);
+  await authenticate(event);
   let body = {};
   try {
     body = parseJsonBody(event);
@@ -876,30 +868,23 @@ async function handlePlaidExchange(event) {
   if (!publicToken || typeof publicToken !== "string") {
     return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "publicToken is required" } });
   }
-  const { plaid } = await loadConfig();
-  console.info("[plaid] public token exchange", {
-    env: plaid.env,
-    baseUrl: plaid.baseUrl,
-    clientIdPresent: Boolean(plaid.clientId),
-    clientSecretLength: plaid.clientSecret ? plaid.clientSecret.length : 0,
-  });
+  const authorization = extractAuthorizationHeader(event);
+  if (!authorization) {
+    return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
+  }
   try {
-    const exchange = await plaidFetch(plaid, "/item/public_token/exchange", { public_token: publicToken });
-    await withUserClient(payload.sub, async (client) => {
-      await client.query(
-        `INSERT INTO plaid_items (user_id, item_id, encrypted_access_token, linked_at)
-         VALUES ($1, $2, $3, now())
-         ON CONFLICT (user_id)
-         DO UPDATE SET item_id = EXCLUDED.item_id,
-                       encrypted_access_token = EXCLUDED.encrypted_access_token,
-                       linked_at = now()`,
-        [payload.sub, exchange.item_id, exchange.access_token],
-      );
+    const { status, payload } = await fetchLedgerJson("/plaid/exchange", {
+      method: "POST",
+      headers: {
+        authorization,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ publicToken }),
     });
-    return respond(event, 200, {
-      itemId: exchange.item_id,
-      status: "SUCCESS",
-      requestId: exchange.request_id ?? null,
+    return respond(event, status, {
+      itemId: payload.itemId ?? payload.item_id,
+      status: payload.status ?? "SUCCESS",
+      requestId: payload.traceId ?? payload.requestId ?? null,
     });
   } catch (error) {
     const status = error?.statusCode || error?.status || 500;
@@ -1141,12 +1126,36 @@ async function handleChat(event) {
 
 async function handleTransactionsSync(event) {
   await authenticate(event);
-  return respond(event, 202, {
-    status: "STARTED",
-    syncedCount: 0,
-    pendingCount: 0,
-    traceId: event.requestContext?.requestId || crypto.randomUUID(),
-  });
+  const authorization = extractAuthorizationHeader(event);
+  if (!authorization) {
+    return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
+  }
+  let body = {};
+  try {
+    body = parseJsonBody(event);
+  } catch {
+    body = {};
+  }
+  try {
+    const { status, payload } = await fetchLedgerJson("/transactions/sync", {
+      method: "POST",
+      headers: {
+        authorization,
+        "content-type": "application/json",
+      },
+      body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
+    });
+    return respond(event, status, payload);
+  } catch (error) {
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "TRANSACTIONS_SYNC_FAILED",
+        message: error?.message || "Failed to trigger transaction sync",
+        details: error?.payload,
+      },
+    });
+  }
 }
 
 async function handleTransactionsReset(event) {

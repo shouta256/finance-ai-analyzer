@@ -818,7 +818,17 @@ async function fetchLedgerJson(path, options = {}) {
   const timeoutMs = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    let res;
+    try {
+      res = await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (error && typeof error === "object" && error.name === "AbortError") {
+        const timeoutErr = createHttpError(504, "Ledger upstream request timed out");
+        timeoutErr.payload = { error: { code: "LEDGER_TIMEOUT", message: "Ledger upstream request timed out" } };
+        throw timeoutErr;
+      }
+      throw error;
+    }
     const text = await res.text();
     let payload = null;
     if (text) {

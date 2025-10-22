@@ -527,13 +527,26 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     });
   }
 
+  const [linkTokenState, setLinkTokenState] = useState<{ token: string; expiresAt: number } | null>(null);
+
+  async function ensureLinkToken() {
+    const now = Date.now();
+    if (linkTokenState && linkTokenState.expiresAt - 30_000 > now) {
+      return linkTokenState.token;
+    }
+    const created = await createPlaidLinkToken();
+    const expiresAt = now + 5 * 60 * 1000; // token TTL fallback
+    setLinkTokenState({ token: created.linkToken, expiresAt });
+    return created.linkToken;
+  }
+
   async function handleLink() {
     if (linking) return;
     setErrorState(null);
     setMessage(null);
     setLinking(true);
     try {
-      const token = await createPlaidLinkToken();
+      const linkToken = await ensureLinkToken();
       setMessage("Opening Plaid Link…");
       let plaid;
       try {
@@ -543,7 +556,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         plaid = await loadPlaidLink(45000);
       }
       const handler = plaid.create({
-        token: token.linkToken,
+        token: linkToken,
         onSuccess: async (publicToken: string) => {
           try {
             setMessage("Link successful. Finalising…");

@@ -803,7 +803,6 @@ function parseList(value, fallback) {
   return parts.length > 0 ? parts : fallback;
 }
 
-async function handlePlaidLinkToken(event) {
 function buildLedgerUrl(path) {
   if (!LEDGER_BASE_URL) {
     throw createHttpError(500, "Ledger service base URL is not configured");

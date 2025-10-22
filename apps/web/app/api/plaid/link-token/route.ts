@@ -4,6 +4,8 @@ import { ledgerFetch } from "@/src/lib/api-client";
 import { plaidLinkTokenSchema } from "@/src/lib/schemas";
 import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
+let inFlight: Promise<NextResponse> | null = null;
+
 function mapError(error: unknown): NextResponse {
   const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
   const payload = (error as { payload?: unknown })?.payload as { error?: { code?: string; message?: string; traceId?: string } } | undefined;
@@ -17,6 +19,9 @@ function mapError(error: unknown): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
+  if (inFlight) {
+    return inFlight;
+  }
   const headerToken = request.headers.get("authorization")?.trim();
   let cookieToken;
   try {
@@ -35,17 +40,27 @@ export async function POST(request: NextRequest) {
   if (!authorization) {
     return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
   }
+  const run = async () => {
+    try {
+      const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+      if (errorResponse) return errorResponse;
+      const result = await ledgerFetch<unknown>("/plaid/link-token", {
+        method: "POST",
+        headers: { authorization },
+        baseUrlOverride,
+      });
+      const body = plaidLinkTokenSchema.parse(result);
+      return NextResponse.json(body);
+    } catch (error) {
+      return mapError(error);
+    }
+  };
+
+  inFlight = run();
   try {
-    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
-    if (errorResponse) return errorResponse;
-    const result = await ledgerFetch<unknown>("/plaid/link-token", {
-      method: "POST",
-      headers: { authorization },
-      baseUrlOverride,
-    });
-    const body = plaidLinkTokenSchema.parse(result);
-    return NextResponse.json(body);
-  } catch (error) {
-    return mapError(error);
+    const response = await inFlight;
+    return response;
+  } finally {
+    inFlight = null;
   }
 }

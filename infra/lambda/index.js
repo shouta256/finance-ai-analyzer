@@ -368,11 +368,18 @@ async function verifyJwt(token) {
 }
 
 function parseJsonBody(event) {
-  if (!event.body) return {};
-  if (event.isBase64Encoded) {
-    return JSON.parse(Buffer.from(event.body, "base64").toString("utf8"));
+  if (!event?.body) return {};
+  const raw = event.isBase64Encoded
+    ? Buffer.from(event.body, "base64").toString("utf8")
+    : event.body;
+  if (!raw || raw.trim().length === 0) {
+    return {};
   }
-  return JSON.parse(event.body);
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw createHttpError(400, "Invalid JSON body");
+  }
 }
 
 function parseMonth(value) {

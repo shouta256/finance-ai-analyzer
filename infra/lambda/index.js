@@ -814,22 +814,27 @@ function buildLedgerUrl(path) {
 
 async function fetchLedgerJson(path, options = {}) {
   const url = buildLedgerUrl(path);
-  const res = await fetch(url, options);
-  const text = await res.text();
-  let payload = null;
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      payload = text;
+  const controller = AbortSignal.timeout(Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000"));
+  try {
+    const res = await fetch(url, { ...options, signal: controller });
+    const text = await res.text();
+    let payload = null;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = text;
+      }
     }
+    if (!res.ok) {
+      const err = createHttpError(res.status, typeof payload === "string" ? payload : (payload?.error?.message || payload?.message || "Ledger service request failed"));
+      err.payload = payload;
+      throw err;
+    }
+    return { status: res.status, payload: payload ?? {} };
+  } finally {
+    controller.abort();
   }
-  if (!res.ok) {
-    const err = createHttpError(res.status, typeof payload === "string" ? payload : (payload?.error?.message || payload?.message || "Ledger service request failed"));
-    err.payload = payload;
-    throw err;
-  }
-  return { status: res.status, payload: payload ?? {} };
 }
 
 async function handlePlaidLinkToken(event) {

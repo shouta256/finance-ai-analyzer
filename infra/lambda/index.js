@@ -815,8 +815,14 @@ async function handlePlaidLinkToken(event) {
   const { plaid } = await loadConfig();
   const products = parseList(plaid.products, ["transactions"]);
   const countryCodes = parseList(plaid.countryCodes, ["US"]);
+  const clientUserId = (() => {
+    if (typeof payload.sub === "string" && payload.sub.trim().length > 0) {
+      return payload.sub.replace(/-/g, "").slice(0, 24);
+    }
+    return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  })();
   const request = {
-    user: { client_user_id: payload.sub },
+    user: { client_user_id: clientUserId },
     client_name: plaid.clientName || "Safepocket",
     language: "en",
     products,

@@ -814,9 +814,11 @@ function buildLedgerUrl(path) {
 
 async function fetchLedgerJson(path, options = {}) {
   const url = buildLedgerUrl(path);
-  const controller = AbortSignal.timeout(Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000"));
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller });
+    const res = await fetch(url, { ...options, signal: controller.signal });
     const text = await res.text();
     let payload = null;
     if (text) {
@@ -833,6 +835,7 @@ async function fetchLedgerJson(path, options = {}) {
     }
     return { status: res.status, payload: payload ?? {} };
   } finally {
+    clearTimeout(timer);
     controller.abort();
   }
 }

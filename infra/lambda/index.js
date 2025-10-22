@@ -29,11 +29,8 @@ const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
 const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
 const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
-const LEDGER_BASE_URL =
-  process.env.LEDGER_SERVICE_INTERNAL_URL ||
-  process.env.LEDGER_SERVICE_URL ||
-  process.env.NEXT_PUBLIC_LEDGER_BASE;
-const LEDGER_PATH_PREFIX = process.env.LEDGER_SERVICE_PATH_PREFIX || "";
+const PLAID_TIMEOUT_MS = Number(process.env.PLAID_TIMEOUT_MS || "8000");
+const LEDGER_TIMEOUT_MS = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
 
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
@@ -803,33 +800,24 @@ function parseList(value, fallback) {
   return parts.length > 0 ? parts : fallback;
 }
 
-function buildLedgerUrl(path) {
-  if (!LEDGER_BASE_URL) {
-    throw createHttpError(500, "Ledger service base URL is not configured");
+async function plaidFetch(path, body) {
+  const { plaid } = await loadConfig();
+  if (!plaid.clientId || !plaid.clientSecret) {
+    throw createHttpError(500, "Plaid credentials not configured");
   }
-  const prefix = LEDGER_PATH_PREFIX ? `/${LEDGER_PATH_PREFIX.replace(/^\/+|\/+$/g, "")}` : "";
-  const normalisedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${LEDGER_BASE_URL.replace(/\/+$/, "")}${prefix}${normalisedPath}`;
-}
-
-async function fetchLedgerJson(path, options = {}) {
-  const url = buildLedgerUrl(path);
   const controller = new AbortController();
-  const timeoutMs = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), PLAID_TIMEOUT_MS);
   try {
-    let res;
-    try {
-      res = await fetch(url, { ...options, signal: controller.signal });
-    } catch (error) {
-      if (error && typeof error === "object" && error.name === "AbortError") {
-        const timeoutErr = createHttpError(504, "Ledger upstream request timed out");
-        timeoutErr.payload = { error: { code: "LEDGER_TIMEOUT", message: "Ledger upstream request timed out" } };
-        throw timeoutErr;
-      }
-      throw error;
-    }
-    const text = await res.text();
+    const response = await fetch(`${plaid.baseUrl || "https://sandbox.plaid.com"}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Plaid-Version": process.env.PLAID_VERSION || "2020-09-14",
+      },
+      body: JSON.stringify({ client_id: plaid.clientId, secret: plaid.clientSecret, ...body }),
+      signal: controller.signal,
+    });
+    const text = await response.text();
     let payload = null;
     if (text) {
       try {
@@ -838,12 +826,22 @@ async function fetchLedgerJson(path, options = {}) {
         payload = text;
       }
     }
-    if (!res.ok) {
-      const err = createHttpError(res.status, typeof payload === "string" ? payload : (payload?.error?.message || payload?.message || "Ledger service request failed"));
+    if (!response.ok) {
+      const err = createHttpError(
+        response.status,
+        typeof payload === "string" ? payload : payload?.error_message || payload?.message || "Plaid request failed",
+      );
       err.payload = payload;
       throw err;
     }
-    return { status: res.status, payload: payload ?? {} };
+    return payload ?? {};
+  } catch (error) {
+    if (error && typeof error === "object" && error.name === "AbortError") {
+      const timeoutErr = createHttpError(504, "Plaid request timed out");
+      timeoutErr.payload = { error: { code: "PLAID_TIMEOUT", message: "Plaid request timed out" } };
+      throw timeoutErr;
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
     controller.abort();
@@ -851,22 +849,28 @@ async function fetchLedgerJson(path, options = {}) {
 }
 
 async function handlePlaidLinkToken(event) {
-  await authenticate(event);
-  const authorization = extractAuthorizationHeader(event);
-  if (!authorization) {
-    return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
-  }
+  const payload = await authenticate(event);
+  const { plaid } = await loadConfig();
+  const products = parseList(plaid.products, ["transactions"]);
+  const countryCodes = parseList(plaid.countryCodes, ["US"]);
+  const clientUserId =
+    typeof payload.sub === "string" && payload.sub.trim().length > 0
+      ? payload.sub.replace(/-/g, "").slice(0, 24)
+      : crypto.randomUUID().replace(/-/g, "").slice(0, 24);
   try {
-    const { status, payload } = await fetchLedgerJson("/plaid/link-token", {
-      method: "POST",
-      headers: {
-        authorization: authorization,
-      },
+    const response = await plaidFetch("/link/token/create", {
+      user: { client_user_id: clientUserId },
+      client_name: plaid.clientName || "Safepocket",
+      language: "en",
+      products,
+      country_codes: countryCodes,
+      redirect_uri: plaid.redirectUri || undefined,
+      webhook: plaid.webhookUrl || undefined,
     });
-    return respond(event, status, {
-      linkToken: payload.linkToken ?? payload.link_token,
-      expiration: payload.expiration,
-      requestId: payload.requestId ?? payload.request_id ?? null,
+    return respond(event, 200, {
+      linkToken: response.link_token,
+      expiration: response.expiration,
+      requestId: response.request_id ?? null,
     });
   } catch (error) {
     const status = error?.statusCode || error?.status || 500;
@@ -882,33 +886,17 @@ async function handlePlaidLinkToken(event) {
 
 async function handlePlaidExchange(event) {
   await authenticate(event);
-  let body = {};
-  try {
-    body = parseJsonBody(event);
-  } catch {
-    return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "Invalid JSON body" } });
-  }
+  const body = parseJsonBody(event);
   const publicToken = body.publicToken || body.public_token;
   if (!publicToken || typeof publicToken !== "string") {
     return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "publicToken is required" } });
   }
-  const authorization = extractAuthorizationHeader(event);
-  if (!authorization) {
-    return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
-  }
   try {
-    const { status, payload } = await fetchLedgerJson("/plaid/exchange", {
-      method: "POST",
-      headers: {
-        authorization,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ publicToken }),
-    });
-    return respond(event, status, {
-      itemId: payload.itemId ?? payload.item_id,
-      status: payload.status ?? "SUCCESS",
-      requestId: payload.traceId ?? payload.requestId ?? null,
+    const response = await plaidFetch("/item/public_token/exchange", { public_token: publicToken });
+    return respond(event, 200, {
+      itemId: response.item_id,
+      status: "SUCCESS",
+      requestId: response.request_id ?? null,
     });
   } catch (error) {
     const status = error?.statusCode || error?.status || 500;
@@ -921,6 +909,54 @@ async function handlePlaidExchange(event) {
     });
   }
 }
+function resolveLedgerBaseUrl() {
+  const base =
+    process.env.LEDGER_SERVICE_INTERNAL_URL ||
+    process.env.LEDGER_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_LEDGER_BASE;
+  if (!base) {
+    throw createHttpError(500, "Ledger service base URL is not configured");
+  }
+  return base.replace(/\/+$/, "");
+}
+
+async function fetchLedgerJson(path, options = {}) {
+  const base = resolveLedgerBaseUrl();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LEDGER_TIMEOUT_MS);
+  try {
+    let response;
+    try {
+      response = await fetch(`${base}${path.startsWith("/") ? path : "/" + path}`, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (error && typeof error === "object" && error.name === "AbortError") {
+        const timeoutErr = createHttpError(504, "Ledger upstream request timed out");
+        timeoutErr.payload = { error: { code: "LEDGER_TIMEOUT", message: "Ledger upstream request timed out" } };
+        throw timeoutErr;
+      }
+      throw error;
+    }
+    const textBody = await response.text();
+    let payload = null;
+    if (textBody) {
+      try {
+        payload = JSON.parse(textBody);
+      } catch {
+        payload = textBody;
+      }
+    }
+    if (!response.ok) {
+      const err = createHttpError(response.status, typeof payload === "string" ? payload : payload?.error?.message || payload?.message || "Ledger service request failed");
+      err.payload = payload;
+      throw err;
+    }
+    return { status: response.status, payload: payload ?? {} };
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
+}
+
 
 async function handleDnsDiagnostics(event) {
   const result = {};

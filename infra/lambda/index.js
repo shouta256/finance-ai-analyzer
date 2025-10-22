@@ -803,6 +803,12 @@ async function plaidFetch(config, path, body) {
     json = text;
   }
   if (!res.ok) {
+    console.error("[plaid] request failed", {
+      path,
+      status: res.status,
+      statusText: res.statusText,
+      response: json,
+    });
     const err = createHttpError(res.status, json?.error_message || json?.message || `Plaid request failed (${path})`);
     err.payload = json;
     throw err;
@@ -813,6 +819,15 @@ async function plaidFetch(config, path, body) {
 async function handlePlaidLinkToken(event) {
   const payload = await authenticate(event);
   const { plaid } = await loadConfig();
+  console.info("[plaid] link token request", {
+    env: plaid.env,
+    baseUrl: plaid.baseUrl,
+    clientIdPresent: Boolean(plaid.clientId),
+    clientSecretLength: plaid.clientSecret ? plaid.clientSecret.length : 0,
+    products: plaid.products,
+    countryCodes: plaid.countryCodes,
+    redirectUriPresent: Boolean(plaid.redirectUri),
+  });
   const products = parseList(plaid.products, ["transactions"]);
   const countryCodes = parseList(plaid.countryCodes, ["US"]);
   const clientUserId = (() => {
@@ -862,6 +877,12 @@ async function handlePlaidExchange(event) {
     return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "publicToken is required" } });
   }
   const { plaid } = await loadConfig();
+  console.info("[plaid] public token exchange", {
+    env: plaid.env,
+    baseUrl: plaid.baseUrl,
+    clientIdPresent: Boolean(plaid.clientId),
+    clientSecretLength: plaid.clientSecret ? plaid.clientSecret.length : 0,
+  });
   try {
     const exchange = await plaidFetch(plaid, "/item/public_token/exchange", { public_token: publicToken });
     await withUserClient(payload.sub, async (client) => {

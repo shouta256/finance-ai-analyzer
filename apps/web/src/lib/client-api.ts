@@ -100,9 +100,33 @@ export async function resetTransactions(options: { unlinkPlaid?: boolean } = {})
   return transactionsResetResponseSchema.parse(parsed);
 }
 
+const TOKEN_REFRESH_BUFFER_MS = 30_000;
+let plaidLinkTokenCache: { token: string; expiresAt: number } | null = null;
+let plaidLinkTokenPending: Promise<{ linkToken: string; expiration: string; requestId?: string | null }> | null = null;
+
 export async function createPlaidLinkToken(): Promise<{ linkToken: string }> {
-  const res = await fetch(`/api/plaid/link-token`, { method: "POST" });
-  return handleJson(res, plaidLinkTokenSchema);
+  const now = Date.now();
+  if (plaidLinkTokenCache && plaidLinkTokenCache.expiresAt - TOKEN_REFRESH_BUFFER_MS > now) {
+    return { linkToken: plaidLinkTokenCache.token };
+  }
+  if (plaidLinkTokenPending) {
+    const pending = await plaidLinkTokenPending;
+    return { linkToken: pending.linkToken };
+  }
+  plaidLinkTokenPending = (async () => {
+    const res = await fetch(`/api/plaid/link-token`, { method: "POST" });
+    const parsed = await handleJson(res, plaidLinkTokenSchema);
+    const parsedExpiry = Date.parse(parsed.expiration);
+    const expiresAt = Number.isFinite(parsedExpiry) ? parsedExpiry : now + 4 * 60 * 1000;
+    plaidLinkTokenCache = { token: parsed.linkToken, expiresAt };
+    return parsed;
+  })();
+  try {
+    const parsed = await plaidLinkTokenPending;
+    return { linkToken: parsed.linkToken };
+  } finally {
+    plaidLinkTokenPending = null;
+  }
 }
 
 export async function exchangePlaidPublicToken(publicToken: string) {

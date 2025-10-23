@@ -173,10 +173,32 @@ function resolveUserProfile(authPayload) {
   return { email, fullName };
 }
 
+async function usersTableHasFullName(client) {
+  if (userTableSupportsFullName !== null) {
+    return userTableSupportsFullName;
+  }
+  try {
+    const res = await client.query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = current_schema()
+         AND table_name = 'users'
+         AND column_name = 'full_name'
+       LIMIT 1`,
+    );
+    userTableSupportsFullName = res.rowCount > 0;
+  } catch (error) {
+    console.warn("[lambda] failed to inspect users table columns", { message: error?.message });
+    userTableSupportsFullName = false;
+  }
+  return userTableSupportsFullName;
+}
+
 async function ensureUserRow(client, authPayload) {
   if (!authPayload?.sub) return;
   const { email, fullName } = resolveUserProfile(authPayload);
-  if (userTableSupportsFullName !== false) {
+  const hasFullNameColumn = await usersTableHasFullName(client);
+  if (hasFullNameColumn) {
     try {
       await client.query(
         `INSERT INTO users (id, email, full_name)
@@ -188,12 +210,10 @@ async function ensureUserRow(client, authPayload) {
       userTableSupportsFullName = true;
       return;
     } catch (error) {
-      if (error?.code === "42703" || (typeof error?.message === "string" && error.message.includes("full_name"))) {
-        console.warn("[lambda] users table missing full_name column, falling back to email-only upsert");
-        userTableSupportsFullName = false;
-      } else {
+      if (error?.code !== "42703" && !(typeof error?.message === "string" && error.message.includes("full_name"))) {
         throw error;
       }
+      userTableSupportsFullName = false;
     }
   }
 

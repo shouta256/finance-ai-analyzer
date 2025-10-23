@@ -3,7 +3,6 @@
 require("./src/bootstrap/fetch-debug");
 
 const crypto = require("crypto");
-const { importPKCS8, compactDecrypt, createRemoteJWKSet, jwtVerify, errors: joseErrors } = require("jose/dist/node/cjs");
 if (typeof crypto.randomUUID !== "function") {
   const { randomBytes } = crypto;
   crypto.randomUUID = function randomUUID() {
@@ -53,6 +52,20 @@ const cognitoJwkCache = new Map();
 let userTableSupportsFullName = null;
 let plaidTokenColumnName = null;
 const cognitoJweKeyCache = new Map();
+
+let joseRuntimePromise;
+function loadJoseRuntime() {
+  if (!joseRuntimePromise) {
+    joseRuntimePromise = import("jose").then((mod) => ({
+      importPKCS8: mod.importPKCS8,
+      compactDecrypt: mod.compactDecrypt,
+      createRemoteJWKSet: mod.createRemoteJWKSet,
+      jwtVerify: mod.jwtVerify,
+      errors: mod.errors,
+    }));
+  }
+  return joseRuntimePromise;
+}
 
 function stripTrailingSlash(value) {
   if (!value) return value;
@@ -176,6 +189,7 @@ async function getCognitoJweKey(cognito, alg) {
   const key = cacheKeyForJwe(alg, cognito.jwePrivateKey);
   let entry = cognitoJweKeyCache.get(key);
   if (!entry) {
+    const { importPKCS8 } = await loadJoseRuntime();
     entry = importPKCS8(cognito.jwePrivateKey, alg || "RSA-OAEP");
     cognitoJweKeyCache.set(key, entry);
   }
@@ -203,6 +217,7 @@ async function maybeDecryptJwt(token, cognito) {
     if (!cryptoKey) {
       throw createHttpError(401, "JWE private key unavailable");
     }
+    const { compactDecrypt } = await loadJoseRuntime();
     const { plaintext } = await compactDecrypt(token, cryptoKey);
     return Buffer.from(plaintext).toString("utf8");
   } catch (error) {
@@ -572,13 +587,14 @@ function resolveExpectedAudiences(cognito) {
   return [];
 }
 
-function getCognitoRemoteJwkSet(cognito) {
+async function getCognitoRemoteJwkSet(cognito) {
   if (!cognito?.jwksUrl) {
     throw createHttpError(500, "Cognito JWKS URL not configured");
   }
   const cacheKey = cognito.jwksUrl;
   let jwkSet = cognitoJwkCache.get(cacheKey);
   if (!jwkSet) {
+    const { createRemoteJWKSet } = await loadJoseRuntime();
     jwkSet = createRemoteJWKSet(new URL(cognito.jwksUrl), { timeoutDuration: 5000 });
     cognitoJwkCache.set(cacheKey, jwkSet);
   }
@@ -647,7 +663,8 @@ async function verifyJwt(token) {
     console.warn("[auth] non-JWT token received", { preview: trimmedToken.slice(0, 12) });
     throw createHttpError(401, "Unauthorized");
   }
-  const jwkSet = getCognitoRemoteJwkSet(cognito);
+  const { jwtVerify, errors: joseErrors } = await loadJoseRuntime();
+  const jwkSet = await getCognitoRemoteJwkSet(cognito);
   const audiences = resolveExpectedAudiences(cognito);
   const baseOptions = {};
   if (cognito.issuer) {

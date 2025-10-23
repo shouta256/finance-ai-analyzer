@@ -24,6 +24,7 @@ if (typeof crypto.randomUUID !== "function") {
 const AWS = require("aws-sdk");
 const dns = require("dns").promises;
 const secretsManager = new AWS.SecretsManager();
+const kms = new AWS.KMS();
 const { withUserClient } = require("./src/db/pool");
 const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
@@ -65,6 +66,105 @@ function stripTrailingSlash(value) {
 function ensureHttps(value) {
   if (!value) return value;
   return value.startsWith("http://") || value.startsWith("https://") ? value : `https://${value}`;
+}
+
+function parseSymmetricKey(raw) {
+  if (!raw) return null;
+  try {
+    if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length >= 44) {
+      const decoded = Buffer.from(raw, "base64");
+      if (decoded.length === 32) return decoded;
+    }
+    if (/^[0-9a-fA-F]+$/.test(raw) && raw.length === 64) {
+      return Buffer.from(raw, "hex");
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+const DATA_KEY_RAW = process.env.SAFEPOCKET_KMS_DATA_KEY || "";
+const KMS_KEY_ID = process.env.SAFEPOCKET_KMS_KEY_ID || "";
+const SYM_KEY = parseSymmetricKey(DATA_KEY_RAW);
+
+async function encryptSecret(plain) {
+  if (SYM_KEY) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", SYM_KEY, iv);
+    const encrypted = Buffer.concat([cipher.update(String(plain), "utf8"), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return `v1:gcm:${iv.toString("base64")}:${encrypted.toString("base64")}:${authTag.toString("base64")}`;
+  }
+  if (KMS_KEY_ID) {
+    const out = await kms
+      .encrypt({
+        KeyId: KMS_KEY_ID,
+        Plaintext: Buffer.from(String(plain), "utf8"),
+      })
+      .promise();
+    return `v1:kms:${out.CiphertextBlob.toString("base64")}`;
+  }
+  throw createHttpError(500, "Encryption key is not configured (set SAFEPOCKET_KMS_DATA_KEY or SAFEPOCKET_KMS_KEY_ID)");
+}
+
+async function decryptSecret(blob) {
+  if (!blob || typeof blob !== "string") return null;
+  const parts = blob.split(":");
+  if (parts[0] !== "v1") return null;
+  if (parts[1] === "gcm" && SYM_KEY) {
+    const iv = Buffer.from(parts[2], "base64");
+    const data = Buffer.from(parts[3], "base64");
+    const tag = Buffer.from(parts[4], "base64");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", SYM_KEY, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+    return decrypted.toString("utf8");
+  }
+  if (parts[1] === "kms" && KMS_KEY_ID) {
+    const decrypted = await kms
+      .decrypt({ CiphertextBlob: Buffer.from(parts[2], "base64") })
+      .promise();
+    return decrypted.Plaintext.toString("utf8");
+  }
+  throw createHttpError(500, "Unable to decrypt secret with current configuration");
+}
+
+function hashToUuid(value) {
+  const hash = crypto.createHash("sha256").update(String(value)).digest();
+  const bytes = Buffer.from(hash.slice(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function resolveUserProfile(authPayload) {
+  const fallbackEmail = authPayload?.sub ? `${authPayload.sub}@users.safepocket.local` : "user@safepocket.local";
+  const email =
+    typeof authPayload?.email === "string" && authPayload.email.includes("@") ? authPayload.email : fallbackEmail;
+  const rawName =
+    typeof authPayload?.name === "string" && authPayload.name.trim().length > 0
+      ? authPayload.name
+      : typeof authPayload?.preferred_username === "string" && authPayload.preferred_username.trim().length > 0
+        ? authPayload.preferred_username
+        : typeof authPayload?.["cognito:username"] === "string" && authPayload["cognito:username"].trim().length > 0
+          ? authPayload["cognito:username"]
+          : email;
+  const fullName = rawName.trim();
+  return { email, fullName };
+}
+
+async function ensureUserRow(client, authPayload) {
+  if (!authPayload?.sub) return;
+  const { email, fullName } = resolveUserProfile(authPayload);
+  await client.query(
+    `INSERT INTO users (id, email, full_name)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (id)
+     DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name`,
+    [authPayload.sub, email, fullName],
+  );
 }
 
 function normaliseOriginUrl(origin) {
@@ -969,20 +1069,34 @@ async function handlePlaidLinkToken(event) {
 }
 
 async function handlePlaidExchange(event) {
-  if (!isAuthOptional()) {
-    await authenticate(event);
-  }
+  const auth = await authenticate(event);
   const body = parseJsonBody(event);
   const publicToken = body.publicToken || body.public_token;
   if (!publicToken || typeof publicToken !== "string") {
     return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "publicToken is required" } });
   }
   try {
-    const response = await plaidFetch("/item/public_token/exchange", { public_token: publicToken });
+    const exchange = await plaidFetch("/item/public_token/exchange", { public_token: publicToken });
+    const accessToken = exchange.access_token;
+    const itemId = exchange.item_id;
+    if (!accessToken || !itemId) {
+      throw createHttpError(502, "Plaid exchange response missing access_token or item_id");
+    }
+    const encryptedToken = await encryptSecret(accessToken);
+    await withUserClient(auth.sub, async (client) => {
+      await ensureUserRow(client, auth);
+      await client.query(
+        `INSERT INTO plaid_items (user_id, item_id, encrypted_access_token, linked_at)
+         VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2, NOW())
+         ON CONFLICT (user_id)
+         DO UPDATE SET item_id = EXCLUDED.item_id, encrypted_access_token = EXCLUDED.encrypted_access_token, linked_at = NOW()`,
+        [itemId, encryptedToken],
+      );
+    });
     return respond(event, 200, {
-      itemId: response.item_id,
+      itemId,
       status: "SUCCESS",
-      requestId: response.request_id ?? null,
+      requestId: exchange.request_id ?? null,
     });
   } catch (error) {
     const status = error?.statusCode || error?.status || 500;
@@ -1286,11 +1400,227 @@ async function handleChat(event) {
 }
 
 async function handleTransactionsSync(event) {
-  await authenticate(event);
-  return respond(event, 202, {
-    status: "ACCEPTED",
-    traceId: event.requestContext?.requestId || crypto.randomUUID(),
-  });
+  const auth = await authenticate(event);
+  const now = new Date();
+  const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const fromIso = toIsoDate(start);
+  const toIso = toIsoDate(now);
+
+  try {
+    const result = await withUserClient(auth.sub, async (client) => {
+      await ensureUserRow(client, auth);
+      const { rows: items } = await client.query(
+        `SELECT item_id, encrypted_access_token
+         FROM plaid_items
+         WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+      );
+      if (!items || items.length === 0) {
+        return { items: 0, fetched: 0, upserted: 0 };
+      }
+
+      let fetched = 0;
+      let upserted = 0;
+
+      for (const item of items) {
+        const decryptedToken = await decryptSecret(item.encrypted_access_token);
+        if (!decryptedToken) {
+          console.warn("[lambda] plaid item missing decryptable token", { itemId: item.item_id });
+          continue;
+        }
+
+        let offset = 0;
+        let total = 0;
+        const collectedTransactions = [];
+        let accountsPayload = [];
+        const itemIdentifier = item.item_id || "unknown";
+
+        do {
+          const response = await plaidFetch("/transactions/get", {
+            access_token: decryptedToken,
+            start_date: fromIso,
+            end_date: toIso,
+            options: {
+              include_personal_finance_category: true,
+              count: 250,
+              offset,
+            },
+          });
+          if (offset === 0 && Array.isArray(response.accounts)) {
+            accountsPayload = response.accounts;
+          }
+          const batch = Array.isArray(response.transactions) ? response.transactions : [];
+          collectedTransactions.push(...batch);
+          const batchCount = batch.length;
+          offset += batchCount;
+          total =
+            typeof response.total_transactions === "number" && response.total_transactions > 0
+              ? response.total_transactions
+              : offset;
+          if (batchCount === 0) {
+            break;
+          }
+        } while (offset < total);
+
+        fetched += collectedTransactions.length;
+
+        const accountMap = new Map();
+        const merchantCache = new Map();
+
+        if (Array.isArray(accountsPayload)) {
+          for (const account of accountsPayload) {
+            if (!account || !account.account_id) continue;
+            const accountUuid = hashToUuid(`acct:${itemIdentifier}:${account.account_id}`);
+            const accountName =
+              (account.official_name && account.official_name.trim().length > 0
+                ? account.official_name
+                : account.name) || "Plaid Account";
+            const institution =
+              (account.subtype && account.subtype.trim().length > 0 ? `Plaid ${account.subtype}` : null) ||
+              (account.type && account.type.trim().length > 0 ? `Plaid ${account.type}` : "Plaid");
+            await client.query(
+              `INSERT INTO accounts (id, user_id, name, institution)
+               VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3)
+               ON CONFLICT (id)
+               DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
+              [accountUuid, accountName, institution],
+            );
+            accountMap.set(account.account_id, accountUuid);
+          }
+        }
+
+        for (const transaction of collectedTransactions) {
+          const merchantNameCandidate =
+            (transaction.merchant_name && transaction.merchant_name.trim().length > 0
+              ? transaction.merchant_name
+              : null) ||
+            (transaction.personal_finance_category &&
+            transaction.personal_finance_category.primary &&
+            transaction.personal_finance_category.primary.trim().length > 0
+              ? transaction.personal_finance_category.primary
+              : null) ||
+            (transaction.name && transaction.name.trim().length > 0 ? transaction.name : null) ||
+            "Unknown Merchant";
+
+          let merchantId = merchantCache.get(merchantNameCandidate);
+          if (!merchantId) {
+            const merchantUuid = hashToUuid(`merchant:${merchantNameCandidate}`);
+            try {
+              const merchantResult = await client.query(
+                `INSERT INTO merchants (id, name)
+                 VALUES ($1, $2)
+                 ON CONFLICT (name)
+                 DO UPDATE SET name = EXCLUDED.name
+                 RETURNING id`,
+                [merchantUuid, merchantNameCandidate],
+              );
+              merchantId = merchantResult.rows[0]?.id || merchantUuid;
+            } catch (error) {
+              console.warn("[lambda] merchant upsert fallback", { message: error?.message });
+              const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
+                merchantNameCandidate,
+              ]);
+              merchantId = fallback.rows[0]?.id || merchantUuid;
+            }
+            merchantCache.set(merchantNameCandidate, merchantId);
+          }
+
+          const plaidAccountId = transaction.account_id || "unknown";
+          let accountId = accountMap.get(plaidAccountId);
+          if (!accountId) {
+            accountId = hashToUuid(`acct:${itemIdentifier}:${plaidAccountId}`);
+            accountMap.set(plaidAccountId, accountId);
+            await client.query(
+              `INSERT INTO accounts (id, user_id, name, institution)
+               VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3)
+               ON CONFLICT (id)
+               DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
+              [accountId, "Plaid Account", "Plaid"],
+            );
+          }
+
+          const occurredAtIso = transaction.date
+            ? new Date(`${transaction.date}T00:00:00Z`).toISOString()
+            : new Date().toISOString();
+          const authorizedAtIso = transaction.authorized_date
+            ? new Date(`${transaction.authorized_date}T00:00:00Z`).toISOString()
+            : null;
+          const rawAmount = Number(transaction.amount || 0);
+          let amount = Number.isFinite(rawAmount) ? rawAmount : 0;
+          amount = amount >= 0 ? -Math.abs(amount) : Math.abs(amount);
+          const currency = (transaction.iso_currency_code || transaction.unofficial_currency_code || "USD").toUpperCase();
+          const pending = Boolean(transaction.pending);
+          const category =
+            (Array.isArray(transaction.category) && transaction.category.length > 0
+              ? transaction.category[0]
+              : null) ||
+            (transaction.personal_finance_category &&
+            transaction.personal_finance_category.detailed &&
+            transaction.personal_finance_category.detailed.trim().length > 0
+              ? transaction.personal_finance_category.detailed
+              : null) ||
+            "Uncategorized";
+          const description =
+            (transaction.name && transaction.name.trim().length > 0 ? transaction.name : null) ||
+            (transaction.merchant_name && transaction.merchant_name.trim().length > 0 ? transaction.merchant_name : null) ||
+            "Plaid transaction";
+          const transactionUuid = hashToUuid(`tx:${itemIdentifier}:${transaction.transaction_id || crypto.randomUUID()}`);
+
+          try {
+            await client.query(
+              `INSERT INTO transactions
+                 (id, user_id, account_id, merchant_id, amount, currency, occurred_at, authorized_at, pending, category, description)
+               VALUES
+                 ($1, current_setting('appsec.user_id', true)::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               ON CONFLICT (id)
+               DO UPDATE SET
+                 account_id = EXCLUDED.account_id,
+                 merchant_id = EXCLUDED.merchant_id,
+                 amount = EXCLUDED.amount,
+                 currency = EXCLUDED.currency,
+                 occurred_at = EXCLUDED.occurred_at,
+                 authorized_at = EXCLUDED.authorized_at,
+                 pending = EXCLUDED.pending,
+                 category = EXCLUDED.category,
+                 description = EXCLUDED.description`,
+              [
+                transactionUuid,
+                accountId,
+                merchantId,
+                amount,
+                currency,
+                occurredAtIso,
+                authorizedAtIso,
+                pending,
+                category,
+                description,
+              ],
+            );
+            upserted += 1;
+          } catch (error) {
+            console.warn("[lambda] transaction upsert skipped", { message: error?.message, transactionId: transactionUuid });
+          }
+        }
+      }
+
+      return { items: items.length, fetched, upserted };
+    });
+
+    return respond(event, 202, {
+      status: "ACCEPTED",
+      from: fromIso,
+      to: toIso,
+      ...result,
+      traceId: event.requestContext?.requestId || crypto.randomUUID(),
+    });
+  } catch (error) {
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "TRANSACTIONS_SYNC_FAILED",
+        message: error?.message || "Failed to sync transactions",
+      },
+    });
+  }
 }
 
 async function handleTransactionsReset(event) {

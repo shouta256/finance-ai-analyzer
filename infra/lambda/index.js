@@ -58,6 +58,7 @@ let configPromise;
 let configCacheKey;
 const cognitoVerifierCache = new Map();
 let userTableSupportsFullName = null;
+let plaidTokenColumnName = null;
 
 function stripTrailingSlash(value) {
   if (!value) return value;
@@ -140,6 +141,22 @@ function hashToUuid(value) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+async function withSavepoint(client, label, fn) {
+  const name = `sp_${label}_${crypto.randomUUID().replace(/-/g, "")}`;
+  await client.query(`SAVEPOINT ${name}`);
+  try {
+    const result = await fn();
+    await client.query(`RELEASE SAVEPOINT ${name}`);
+    return result;
+  } catch (error) {
+    await client
+      .query(`ROLLBACK TO SAVEPOINT ${name}`)
+      .catch((rollbackError) => console.warn("[lambda] failed to rollback savepoint", { label, message: rollbackError?.message }));
+    await client.query(`RELEASE SAVEPOINT ${name}`).catch(() => {});
+    throw error;
+  }
+}
+
 function resolveUserProfile(authPayload) {
   const fallbackEmail = authPayload?.sub ? `${authPayload.sub}@users.safepocket.local` : "user@safepocket.local";
   const email =
@@ -187,6 +204,30 @@ async function ensureUserRow(client, authPayload) {
      DO UPDATE SET email = EXCLUDED.email`,
     [authPayload.sub, email],
   );
+}
+
+async function resolvePlaidTokenColumn(client) {
+  if (plaidTokenColumnName) return plaidTokenColumnName;
+  const candidates = ["encrypted_access_token", "access_token_enc", "access_token"];
+  try {
+    const res = await client.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = current_schema()
+         AND table_name = 'plaid_items'
+         AND column_name = ANY($1::text[])`,
+      [candidates],
+    );
+    const found = res.rows.map((row) => row.column_name).find((name) => candidates.includes(name));
+    if (found) {
+      plaidTokenColumnName = found;
+      return plaidTokenColumnName;
+    }
+  } catch (error) {
+    console.warn("[lambda] failed to inspect plaid_items columns", { message: error?.message });
+  }
+  plaidTokenColumnName = "encrypted_access_token";
+  return plaidTokenColumnName;
 }
 
 function normaliseOriginUrl(origin) {
@@ -1107,13 +1148,13 @@ async function handlePlaidExchange(event) {
     const encryptedToken = await encryptSecret(accessToken);
     await withUserClient(auth.sub, async (client) => {
       await ensureUserRow(client, auth);
-      await client.query(
-        `INSERT INTO plaid_items (user_id, item_id, encrypted_access_token, linked_at)
-         VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2, NOW())
-         ON CONFLICT (user_id)
-         DO UPDATE SET item_id = EXCLUDED.item_id, encrypted_access_token = EXCLUDED.encrypted_access_token, linked_at = NOW()`,
-        [itemId, encryptedToken],
-      );
+      const tokenColumn = await resolvePlaidTokenColumn(client);
+      const insertSql = `
+        INSERT INTO plaid_items (user_id, item_id, ${tokenColumn}, linked_at)
+        VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2, NOW())
+        ON CONFLICT (user_id)
+        DO UPDATE SET item_id = EXCLUDED.item_id, ${tokenColumn} = EXCLUDED.${tokenColumn}, linked_at = NOW()`;
+      await client.query(insertSql, [itemId, encryptedToken]);
     });
     return respond(event, 200, {
       itemId,
@@ -1431,11 +1472,12 @@ async function handleTransactionsSync(event) {
   try {
     const result = await withUserClient(auth.sub, async (client) => {
       await ensureUserRow(client, auth);
-      const { rows: items } = await client.query(
-        `SELECT item_id, encrypted_access_token
-         FROM plaid_items
-         WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
-      );
+      const tokenColumn = await resolvePlaidTokenColumn(client);
+      const selectSql = `
+        SELECT item_id, ${tokenColumn} AS encrypted_token
+        FROM plaid_items
+        WHERE user_id = current_setting('appsec.user_id', true)::uuid`;
+      const { rows: items } = await client.query(selectSql);
       if (!items || items.length === 0) {
         return { items: 0, fetched: 0, upserted: 0 };
       }
@@ -1444,7 +1486,7 @@ async function handleTransactionsSync(event) {
       let upserted = 0;
 
       for (const item of items) {
-        const decryptedToken = await decryptSecret(item.encrypted_access_token);
+        const decryptedToken = await decryptSecret(item.encrypted_token);
         if (!decryptedToken) {
           console.warn("[lambda] plaid item missing decryptable token", { itemId: item.item_id });
           continue;
@@ -1527,13 +1569,15 @@ async function handleTransactionsSync(event) {
           if (!merchantId) {
             const merchantUuid = hashToUuid(`merchant:${merchantNameCandidate}`);
             try {
-              const merchantResult = await client.query(
-                `INSERT INTO merchants (id, name)
-                 VALUES ($1, $2)
-                 ON CONFLICT (name)
-                 DO UPDATE SET name = EXCLUDED.name
-                 RETURNING id`,
-                [merchantUuid, merchantNameCandidate],
+              const merchantResult = await withSavepoint(client, "merchant", () =>
+                client.query(
+                  `INSERT INTO merchants (id, name)
+                   VALUES ($1, $2)
+                   ON CONFLICT (name)
+                   DO UPDATE SET name = EXCLUDED.name
+                   RETURNING id`,
+                  [merchantUuid, merchantNameCandidate],
+                ),
               );
               merchantId = merchantResult.rows[0]?.id || merchantUuid;
             } catch (error) {
@@ -1588,34 +1632,36 @@ async function handleTransactionsSync(event) {
           const transactionUuid = hashToUuid(`tx:${itemIdentifier}:${transaction.transaction_id || crypto.randomUUID()}`);
 
           try {
-            await client.query(
-              `INSERT INTO transactions
-                 (id, user_id, account_id, merchant_id, amount, currency, occurred_at, authorized_at, pending, category, description)
-               VALUES
-                 ($1, current_setting('appsec.user_id', true)::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-               ON CONFLICT (id)
-               DO UPDATE SET
-                 account_id = EXCLUDED.account_id,
-                 merchant_id = EXCLUDED.merchant_id,
-                 amount = EXCLUDED.amount,
-                 currency = EXCLUDED.currency,
-                 occurred_at = EXCLUDED.occurred_at,
-                 authorized_at = EXCLUDED.authorized_at,
-                 pending = EXCLUDED.pending,
-                 category = EXCLUDED.category,
-                 description = EXCLUDED.description`,
-              [
-                transactionUuid,
-                accountId,
-                merchantId,
-                amount,
-                currency,
-                occurredAtIso,
-                authorizedAtIso,
-                pending,
-                category,
-                description,
-              ],
+            await withSavepoint(client, "txn", () =>
+              client.query(
+                `INSERT INTO transactions
+                   (id, user_id, account_id, merchant_id, amount, currency, occurred_at, authorized_at, pending, category, description)
+                 VALUES
+                   ($1, current_setting('appsec.user_id', true)::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (id)
+                 DO UPDATE SET
+                   account_id = EXCLUDED.account_id,
+                   merchant_id = EXCLUDED.merchant_id,
+                   amount = EXCLUDED.amount,
+                   currency = EXCLUDED.currency,
+                   occurred_at = EXCLUDED.occurred_at,
+                   authorized_at = EXCLUDED.authorized_at,
+                   pending = EXCLUDED.pending,
+                   category = EXCLUDED.category,
+                   description = EXCLUDED.description`,
+                [
+                  transactionUuid,
+                  accountId,
+                  merchantId,
+                  amount,
+                  currency,
+                  occurredAtIso,
+                  authorizedAtIso,
+                  pending,
+                  category,
+                  description,
+                ],
+              ),
             );
             upserted += 1;
           } catch (error) {

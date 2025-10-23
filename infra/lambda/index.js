@@ -1214,7 +1214,9 @@ async function handleChat(event) {
 }
 
 async function handleTransactionsSync(event) {
-  await authenticate(event);
+  if (!isAuthOptional()) {
+    await authenticate(event);
+  }
   const authorization = extractAuthorizationHeader(event);
   if (!authorization) {
     return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });

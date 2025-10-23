@@ -18,6 +18,8 @@ interface LoginFormClientProps {
   config: LoginFormConfig;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ? process.env.NEXT_PUBLIC_API_BASE.trim().replace(/\/+$/, "") : undefined;
+
 function buildCognitoUrl(domain: string, path = ""): string {
   const trimmed = domain.trim().replace(/\/+$/, "");
   const hasProtocol = trimmed.startsWith("http://") || trimmed.startsWith("https://");
@@ -25,26 +27,40 @@ function buildCognitoUrl(domain: string, path = ""): string {
   return `${base}${path}`;
 }
 
-function resolveRedirectUri(configured?: string): string {
-  if (typeof window === "undefined") return configured || "";
-  const currentHost = window.location.host;
-  const prodLike = !currentHost.startsWith("localhost") && !currentHost.startsWith("127.0.0.1");
-  if (configured) {
-    try {
-      const url = new URL(configured);
-      if (url.host === currentHost) return configured;
-      const looksLocal = url.host.startsWith("localhost") || url.host.startsWith("127.0.0.1");
-      if (prodLike && looksLocal) {
-        return `${window.location.origin}/auth/callback`;
-      }
-      if (!prodLike && !looksLocal) {
-        return `${window.location.origin}/auth/callback`;
-      }
-    } catch {
-      // ignore malformed and fallback
-    }
+function normalizeRedirectCandidate(value?: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
   }
-  return `${window.location.origin}/auth/callback`;
+}
+
+function deriveApiCallbackUri(base?: string): string | undefined {
+  if (!base) return undefined;
+  try {
+    const url = new URL(base);
+    const cleanedPath = url.pathname.replace(/\/+$/, "");
+    url.pathname = `${cleanedPath}/auth/callback`.replace(/\/{2,}/g, "/");
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveRedirectUri(configured?: string): string {
+  const apiCallback = deriveApiCallbackUri(API_BASE);
+  if (apiCallback) return apiCallback;
+  const normalizedConfigured = normalizeRedirectCandidate(configured);
+  if (normalizedConfigured) return normalizedConfigured;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/auth/callback`;
+  }
+  return "";
 }
 
 export default function LoginFormClient({ config }: LoginFormClientProps) {
@@ -73,6 +89,10 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
     }
     setMessage(null);
     const redirectUri = resolveRedirectUri(configuredRedirect);
+    if (!redirectUri) {
+      setMessage("Unable to resolve redirect URI. Please configure NEXT_PUBLIC_API_BASE.");
+      return;
+    }
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete("authError");
@@ -128,6 +148,7 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
             <p className="mb-1 font-semibold">[Auth Debug]</p>
             <p>cognitoEnabled: {String(cognitoEnabled)}</p>
             <p>domain: {domain || "(missing)"}</p>
+            <p>apiBase: {API_BASE || "(missing)"}</p>
             <p>clientId: {clientId || "(missing)"}</p>
             <p>configured redirectUri: {configuredRedirect || "(none)"}</p>
             <p>computed redirectUri: {resolveRedirectUri(configuredRedirect)}</p>

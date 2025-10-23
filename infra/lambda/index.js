@@ -1474,6 +1474,18 @@ function coerceBoolean(value) {
   return false;
 }
 
+async function upsertAccount(client, accountId, name, institution) {
+  await withSavepoint(client, "account", () =>
+    client.query(
+      `INSERT INTO accounts (id, user_id, name, institution)
+       VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3)
+       ON CONFLICT (id)
+       DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
+      [accountId, name, institution],
+    ),
+  );
+}
+
 async function handleTransactionsSync(event) {
   const auth = await authenticate(event);
   let options = {};
@@ -1571,13 +1583,7 @@ async function handleTransactionsSync(event) {
         }
 
         for (const [accountId, template] of accountMap.entries()) {
-          await client.query(
-            `INSERT INTO accounts (id, user_id, name, institution, created_at)
-             VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3, NOW())
-             ON CONFLICT (id)
-             DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
-            [accountId, template.name, template.institution],
-          );
+          await upsertAccount(client, accountId, template.name, template.institution);
         }
 
         const merchantCache = new Map();
@@ -1752,13 +1758,7 @@ async function handleTransactionsSync(event) {
             const institution =
               (account.subtype && account.subtype.trim().length > 0 ? `Plaid ${account.subtype}` : null) ||
               (account.type && account.type.trim().length > 0 ? `Plaid ${account.type}` : "Plaid");
-            await client.query(
-              `INSERT INTO accounts (id, user_id, name, institution)
-               VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3)
-               ON CONFLICT (id)
-               DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
-              [accountUuid, accountName, institution],
-            );
+            await upsertAccount(client, accountUuid, accountName, institution);
             accountMap.set(account.account_id, accountUuid);
           }
         }
@@ -1806,13 +1806,7 @@ async function handleTransactionsSync(event) {
           if (!accountId) {
             accountId = hashToUuid(`acct:${itemIdentifier}:${plaidAccountId}`);
             accountMap.set(plaidAccountId, accountId);
-            await client.query(
-              `INSERT INTO accounts (id, user_id, name, institution)
-               VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3)
-               ON CONFLICT (id)
-               DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
-              [accountId, "Plaid Account", "Plaid"],
-            );
+            await upsertAccount(client, accountId, "Plaid Account", "Plaid");
           }
 
           const occurredAtIso = transaction.date

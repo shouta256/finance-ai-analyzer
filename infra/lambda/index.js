@@ -1322,7 +1322,7 @@ async function handleAuthCallback(event) {
 
   const cookies = [];
   const maxAge = Number.parseInt(tokenData.expires_in, 10) || 3600;
-  const cookieAttributes = "Path=/; SameSite=Lax; Secure";
+  const cookieAttributes = "Path=/; SameSite=None; Secure";
   if (tokenData.access_token) {
     cookies.push(`sp_at=${tokenData.access_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);
     cookies.push(`sp_token=${tokenData.access_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);

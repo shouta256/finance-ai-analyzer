@@ -190,7 +190,7 @@ async function getCognitoJweKey(cognito, alg) {
   let entry = cognitoJweKeyCache.get(key);
   if (!entry) {
     const { importPKCS8 } = await loadJoseRuntime();
-    entry = importPKCS8(cognito.jwePrivateKey, alg || "RSA-OAEP");
+    entry = await importPKCS8(cognito.jwePrivateKey, alg || "RSA-OAEP");
     cognitoJweKeyCache.set(key, entry);
   }
   return entry;

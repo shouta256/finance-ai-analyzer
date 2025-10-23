@@ -3,7 +3,7 @@
 require("./src/bootstrap/fetch-debug");
 
 const crypto = require("crypto");
-const { importPKCS8, compactDecrypt, createRemoteJWKSet, jwtVerify, errors: joseErrors } = require("jose");
+const { importPKCS8, compactDecrypt, createRemoteJWKSet, jwtVerify, errors: joseErrors } = require("jose/dist/node/cjs");
 if (typeof crypto.randomUUID !== "function") {
   const { randomBytes } = crypto;
   crypto.randomUUID = function randomUUID() {

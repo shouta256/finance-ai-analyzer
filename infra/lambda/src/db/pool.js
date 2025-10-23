@@ -24,7 +24,7 @@ function getDbSecretName() {
     process.env.DB_SECRET_NAME ||
     process.env.SECRET_DB ||
     process.env.SECRET_DATABASE ||
-    null
+    "/safepocket/db"
   );
 }
 

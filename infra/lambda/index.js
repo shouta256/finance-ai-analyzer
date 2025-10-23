@@ -1096,7 +1096,7 @@ async function plaidFetch(path, body) {
 }
 
 async function handlePlaidLinkToken(event) {
-  const payload = isAuthOptional() ? { sub: "anon" } : await authenticate(event);
+  const payload = isAuthOptional() ? { sub: ANON_USER_ID } : await authenticate(event);
   const { plaid } = await loadConfig();
   const products = parseList(plaid.products, ["transactions"]);
   const countryCodes = parseList(plaid.countryCodes, ["US"]);
@@ -1607,11 +1607,22 @@ async function handleTransactionsSync(event) {
               );
               merchantId = inserted.rows[0]?.id || merchantUuid;
             } catch (error) {
-              console.warn("[lambda] demo merchant upsert fallback", { message: error?.message });
-              const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
-                merchantName,
-              ]);
-              merchantId = fallback.rows[0]?.id || merchantUuid;
+        console.warn("[lambda] demo merchant upsert fallback", { message: error?.message });
+        const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
+          merchantName,
+        ]);
+        if (fallback.rows[0]?.id) {
+          merchantId = fallback.rows[0].id;
+        } else {
+          const inserted = await client.query(
+            `INSERT INTO merchants (id, name)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [merchantUuid, merchantName],
+          );
+          merchantId = inserted.rows[0]?.id || merchantUuid;
+        }
             }
             merchantCache.set(merchantName, merchantId);
           }
@@ -1796,7 +1807,18 @@ async function handleTransactionsSync(event) {
               const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
                 merchantNameCandidate,
               ]);
-              merchantId = fallback.rows[0]?.id || merchantUuid;
+              if (fallback.rows[0]?.id) {
+                merchantId = fallback.rows[0].id;
+              } else {
+                const inserted = await client.query(
+                  `INSERT INTO merchants (id, name)
+                   VALUES ($1, $2)
+                   ON CONFLICT DO NOTHING
+                   RETURNING id`,
+                  [merchantUuid, merchantNameCandidate],
+                );
+                merchantId = inserted.rows[0]?.id || merchantUuid;
+              }
             }
             merchantCache.set(merchantNameCandidate, merchantId);
           }
@@ -1909,7 +1931,7 @@ exports.handler = async (event) => {
   try {
     const method = (event.requestContext?.http?.method || event.httpMethod || "GET").toUpperCase();
     if (method === "OPTIONS") {
-      return { statusCode: 204, headers: RESPONSE_HEADERS, body: "" };
+      return respond(event, 204, "");
     }
 
     const stage = event.requestContext?.stage ? `/${event.requestContext.stage}` : "";

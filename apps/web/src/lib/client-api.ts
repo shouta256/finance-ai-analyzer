@@ -77,6 +77,28 @@ export async function listTransactions(month: string): Promise<TransactionsList>
   return handleJson(res, transactionsListSchema);
 }
 
+export interface TransactionsQuery {
+  month?: string;
+  from?: string;
+  to?: string;
+  accountId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function queryTransactions(params: TransactionsQuery = {}): Promise<TransactionsList> {
+  const url = buildRequestUrl("/api/transactions", {
+    month: params.month,
+    from: params.from,
+    to: params.to,
+    accountId: params.accountId,
+    page: params.page !== undefined ? String(params.page) : undefined,
+    pageSize: params.pageSize !== undefined ? String(params.pageSize) : undefined,
+  });
+  const res = await fetch(url, withCredentials({ cache: "no-store" }));
+  return handleJson(res, transactionsListSchema);
+}
+
 // from/to expect YYYY-MM boundaries; month remains YYYY-MM for single-month view.
 export async function listTransactionsRange(params: { from?: string; to?: string; month?: string }): Promise<TransactionsList> {
   const url = buildRequestUrl("/api/transactions", { month: params.month, from: params.from, to: params.to });

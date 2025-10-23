@@ -27,8 +27,14 @@ const secretsManager = new AWS.SecretsManager();
 const { withUserClient } = require("./src/db/pool");
 const { SchemaNotMigratedError } = require("./src/bootstrap/schemaGuard");
 
-const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
-const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
+function resolveSecretName(value, fallback) {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+const SECRET_COGNITO = resolveSecretName(process.env.SECRET_COGNITO_NAME, "/safepocket/cognito");
+const SECRET_PLAID = resolveSecretName(process.env.SECRET_PLAID_NAME, "/safepocket/plaid");
 const PLAID_TIMEOUT_MS = Number(process.env.PLAID_TIMEOUT_MS || "8000");
 const LEDGER_TIMEOUT_MS = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
 const ANON_USER_ID = process.env.ANON_USER_ID || "00000000-0000-0000-0000-000000000000";

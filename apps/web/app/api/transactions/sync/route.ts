@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { ledgerFetch } from "@/src/lib/api-client";
 import { transactionsSyncSchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
-const BASE = process.env.LEDGER_SERVICE_URL?.replace(/\/+$/, "") || "";
+const BASE = process.env.LEDGER_SERVICE_URL?.replace(/\/+$/, "") || null;
 const PFX = process.env.LEDGER_SERVICE_PATH_PREFIX?.replace(/^\/+|\/+$/g, "") || "";
 
 function buildUrl(path: string): string {
@@ -54,6 +56,18 @@ export async function POST(request: NextRequest) {
       ? undefined
       : requestSchema.parse(await request.json());
     const body = rawBody ? normalizeSyncRequest(rawBody) : undefined;
+    if (!BASE) {
+      const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+      if (errorResponse) return errorResponse;
+      const result = await ledgerFetch<unknown>("/transactions/sync", {
+        method: "POST",
+        headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+        baseUrlOverride,
+      });
+      const response = transactionsSyncSchema.parse(result);
+      return NextResponse.json(response, { status: 202 });
+    }
     const res = await fetch(buildUrl("/transactions/sync"), {
       method: "POST",
       headers: {

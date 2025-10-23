@@ -467,10 +467,13 @@ async function loadConfig() {
     if (!cognitoUserPoolId && cognitoIssuer) {
       cognitoUserPoolId = cognitoIssuer.split("/").pop();
     }
+    const normalisedIssuer = cognitoIssuer ? stripTrailingSlash(ensureHttps(cognitoIssuer)) : undefined;
+    const normalisedDomain = cognitoDomain ? stripTrailingSlash(ensureHttps(cognitoDomain)) : undefined;
     const cognitoJwksUrl =
       process.env.COGNITO_JWKS_URL ||
       cognitoSecret?.jwksUrl ||
-      (cognitoDomain ? `${stripTrailingSlash(ensureHttps(cognitoDomain))}/.well-known/jwks.json` : undefined);
+      (normalisedIssuer ? `${normalisedIssuer}/.well-known/jwks.json` : undefined) ||
+      (normalisedDomain ? `${normalisedDomain}/.well-known/jwks.json` : undefined);
     const cognitoJwePrivateKey =
       process.env.COGNITO_JWE_PRIVATE_KEY ||
       cognitoSecret?.encryptionPrivateKey ||
@@ -527,11 +530,11 @@ async function loadConfig() {
 
     return {
       cognito: {
-        domain: stripTrailingSlash(ensureHttps(cognitoDomain)),
+        domain: normalisedDomain,
         clientId: cognitoClientId,
         clientSecret: cognitoClientSecret,
         redirectUri: cognitoRedirectUri,
-        issuer: cognitoIssuer,
+        issuer: normalisedIssuer,
         userPoolId: cognitoUserPoolId,
         region: derivedRegion,
         audienceList: (cognitoAudience || "")

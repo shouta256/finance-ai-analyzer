@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema, ragAggregateResponseSchema, ragSearchResponseSchema, ragSummariesResponseSchema, transactionsResetResponseSchema } from "./schemas";
+import { getStoredAccessToken } from "./auth-storage";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "";
 
 function buildRequestUrl(path: string, params?: Record<string, string | undefined>): string {
@@ -27,9 +28,17 @@ function buildRequestUrl(path: string, params?: Record<string, string | undefine
 }
 
 function withCredentials(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers ?? undefined);
+  if (typeof window !== "undefined") {
+    const token = getStoredAccessToken();
+    if (token && !headers.has("authorization")) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
+  }
   return {
-    credentials: 'include',
     ...init,
+    credentials: init.credentials ?? "include",
+    headers,
   };
 }
 

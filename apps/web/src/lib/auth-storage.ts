@@ -34,6 +34,7 @@ export function setAuthTokens(tokens: StoredAuthTokens) {
   const { accessToken = null, idToken = null, refreshToken = null, expiresIn = null } = tokens;
   const expiresInSeconds = typeof expiresIn === "number" && Number.isFinite(expiresIn) ? expiresIn : null;
   const expiresAt = expiresInSeconds ? Date.now() + expiresInSeconds * 1000 : null;
+  const primaryToken = idToken || accessToken;
 
   try {
     if (accessToken) {
@@ -60,11 +61,14 @@ export function setAuthTokens(tokens: StoredAuthTokens) {
     console.warn("[auth] failed to persist tokens in storage", error);
   }
 
-  if (accessToken) {
-    setCookie("sp_token", accessToken, expiresInSeconds ?? undefined);
-    setCookie("sp_at", accessToken, expiresInSeconds ?? undefined);
+  if (primaryToken) {
+    setCookie("sp_token", primaryToken, expiresInSeconds ?? undefined);
   } else {
     clearCookie("sp_token");
+  }
+  if (accessToken) {
+    setCookie("sp_at", accessToken, expiresInSeconds ?? undefined);
+  } else {
     clearCookie("sp_at");
   }
   if (idToken) {

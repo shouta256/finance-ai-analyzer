@@ -1661,21 +1661,21 @@ async function handleTransactionsSync(event) {
         for (const tx of stubTransactions) {
           const merchantName = tx.merchantName || "Demo Merchant";
           let merchantId = merchantCache.get(merchantName);
-          if (!merchantId) {
-            const merchantUuid = hashToUuid(`merchant:${merchantName}`);
-            try {
-              const inserted = await withSavepoint(client, "merchant_demo", () =>
-                client.query(
-                  `INSERT INTO merchants (id, name)
+      if (!merchantId) {
+        const merchantUuid = hashToUuid(`merchant:${merchantName}`);
+        try {
+          const inserted = await withSavepoint(client, "merchant_demo", () =>
+            client.query(
+              `INSERT INTO merchants (id, name)
                    VALUES ($1, $2)
-                   ON CONFLICT (name)
+                   ON CONFLICT (id)
                    DO UPDATE SET name = EXCLUDED.name
                    RETURNING id`,
-                  [merchantUuid, merchantName],
-                ),
-              );
-              merchantId = inserted.rows[0]?.id || merchantUuid;
-            } catch (error) {
+              [merchantUuid, merchantName],
+            ),
+          );
+          merchantId = inserted.rows[0]?.id || merchantUuid;
+        } catch (error) {
         console.warn("[lambda] demo merchant upsert fallback", { message: error?.message });
         const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
           merchantName,
@@ -1857,21 +1857,21 @@ async function handleTransactionsSync(event) {
             "Unknown Merchant";
 
           let merchantId = merchantCache.get(merchantNameCandidate);
-          if (!merchantId) {
-            const merchantUuid = hashToUuid(`merchant:${merchantNameCandidate}`);
-            try {
-              const merchantResult = await withSavepoint(client, "merchant", () =>
-                client.query(
-                  `INSERT INTO merchants (id, name)
+      if (!merchantId) {
+        const merchantUuid = hashToUuid(`merchant:${merchantNameCandidate}`);
+        try {
+          const merchantResult = await withSavepoint(client, "merchant", () =>
+            client.query(
+              `INSERT INTO merchants (id, name)
                    VALUES ($1, $2)
-                   ON CONFLICT (name)
+                   ON CONFLICT (id)
                    DO UPDATE SET name = EXCLUDED.name
                    RETURNING id`,
-                  [merchantUuid, merchantNameCandidate],
-                ),
-              );
-              merchantId = merchantResult.rows[0]?.id || merchantUuid;
-            } catch (error) {
+              [merchantUuid, merchantNameCandidate],
+            ),
+          );
+          merchantId = merchantResult.rows[0]?.id || merchantUuid;
+        } catch (error) {
               console.warn("[lambda] merchant upsert fallback", { message: error?.message });
               const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
                 merchantNameCandidate,

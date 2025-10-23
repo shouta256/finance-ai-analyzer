@@ -697,6 +697,12 @@ async function verifyJwt(token) {
       }
       return payload;
     } catch (error) {
+      console.warn("[auth] jwt verification failed", {
+        audience: options.audience,
+        issuer: options.issuer,
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : undefined,
+      });
       if (error instanceof joseErrors.JWTExpired) {
         throw createHttpError(401, "Token expired");
       }
@@ -717,10 +723,20 @@ async function verifyJwt(token) {
   if (lastError instanceof joseErrors.JWSSignatureVerificationFailed) {
     throw createHttpError(401, "Token signature invalid");
   }
-  if (lastError instanceof joseErrors.JWTClaimValidationFailed && lastError.claim === "iss") {
-    throw createHttpError(401, "Issuer mismatch");
+  const fallbackOptions = { algorithms: ["RS256"] };
+  try {
+    const { payload } = await jwtVerify(trimmedToken, jwkSet, fallbackOptions);
+    if (!payload?.sub) throw createHttpError(401, "Token missing subject");
+    if (cognito.issuer && payload.iss && payload.iss !== cognito.issuer) {
+      throw createHttpError(401, "Issuer mismatch");
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof joseErrors.JWTClaimValidationFailed && error.claim === "iss") {
+      throw createHttpError(401, "Issuer mismatch");
+    }
+    throw createHttpError(401, "Token verification failed");
   }
-  throw createHttpError(401, "Token verification failed");
 }
 
 function parseJsonBody(event) {

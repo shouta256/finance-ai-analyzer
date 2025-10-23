@@ -1218,39 +1218,11 @@ async function handleChat(event) {
 }
 
 async function handleTransactionsSync(event) {
-  if (!isAuthOptional()) {
-    await authenticate(event);
-  }
-  const authorization = extractAuthorizationHeader(event);
-  if (!authorization) {
-    return respond(event, 401, { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
-  }
-  let body = {};
-  try {
-    body = parseJsonBody(event);
-  } catch {
-    body = {};
-  }
-  try {
-    const { status, payload } = await fetchLedgerJson("/transactions/sync", {
-      method: "POST",
-      headers: {
-        authorization,
-        "content-type": "application/json",
-      },
-      body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-    });
-    return respond(event, status, payload);
-  } catch (error) {
-    const status = error?.statusCode || error?.status || 500;
-    return respond(event, status, {
-      error: {
-        code: "TRANSACTIONS_SYNC_FAILED",
-        message: error?.message || "Failed to trigger transaction sync",
-        details: error?.payload,
-      },
-    });
-  }
+  await authenticate(event);
+  return respond(event, 202, {
+    status: "ACCEPTED",
+    traceId: event.requestContext?.requestId || crypto.randomUUID(),
+  });
 }
 
 async function handleTransactionsReset(event) {

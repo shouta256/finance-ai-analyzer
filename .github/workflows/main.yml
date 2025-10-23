@@ -98,7 +98,7 @@ jobs:
           # Create package.json and install dependencies inside the target directory
           (cd dist/lambda && \
             npm init -y && \
-            npm install aws-sdk aws-jwt-verify@3 && \
+            npm install aws-sdk jose && \
             zip -r ../lambda.zip ./*)
 
       - name: Configure AWS credentials (OIDC)

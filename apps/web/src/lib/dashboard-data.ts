@@ -13,6 +13,13 @@ export async function getDashboardData(month: string): Promise<{
     const headerList = headers();
     const cookieStore = cookies();
     const token = cookieStore.get("sp_token")?.value;
+    if (!token) {
+      console.info("[dashboard] No sp_token cookie on server request; skipping SSR fetch and using fallback data.");
+      return {
+        summary: buildFallbackSummary(month),
+        transactions: buildFallbackTransactions(month),
+      };
+    }
     const cookieHeader = cookieStore
       .getAll()
       .map((entry) => `${entry.name}=${entry.value}`)

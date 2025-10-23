@@ -31,6 +31,7 @@ const SECRET_COGNITO = process.env.SECRET_COGNITO_NAME || "/safepocket/cognito";
 const SECRET_PLAID = process.env.SECRET_PLAID_NAME || "/safepocket/plaid";
 const PLAID_TIMEOUT_MS = Number(process.env.PLAID_TIMEOUT_MS || "8000");
 const LEDGER_TIMEOUT_MS = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
+const ANON_USER_ID = process.env.ANON_USER_ID || "00000000-0000-0000-0000-000000000000";
 
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
@@ -320,13 +321,10 @@ function extractAuthorizationHeader(event) {
 }
 
 async function authenticate(event) {
-  if (isAuthOptional()) {
-    return { sub: "anon" };
-  }
-
   const headers = event.headers || {};
   const authHeader = headers.authorization || headers.Authorization;
   let token = null;
+
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.slice(7).trim();
   }
@@ -334,7 +332,13 @@ async function authenticate(event) {
     const cookies = parseCookies(event);
     token = cookies.get("sp_token");
   }
-  if (!token) throw createHttpError(401, "Unauthorized");
+
+  if (!token) {
+    if (isAuthOptional()) {
+      return { sub: ANON_USER_ID, token_use: "anonymous" };
+    }
+    throw createHttpError(401, "Unauthorized");
+  }
   return verifyJwt(token);
 }
 

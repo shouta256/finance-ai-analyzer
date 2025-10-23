@@ -1561,9 +1561,12 @@ async function handleAuthCallback(event) {
   const cookies = [];
   const maxAge = Number.parseInt(tokenData.expires_in, 10) || 3600;
   const cookieAttributes = "Path=/; SameSite=None; Secure";
+  const primaryToken = tokenData.id_token || tokenData.access_token;
   if (tokenData.access_token) {
     cookies.push(`sp_at=${tokenData.access_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);
-    cookies.push(`sp_token=${tokenData.access_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);
+  }
+  if (primaryToken) {
+    cookies.push(`sp_token=${primaryToken}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);
   }
   if (tokenData.id_token) {
     cookies.push(`sp_it=${tokenData.id_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);

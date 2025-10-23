@@ -58,11 +58,21 @@ function ensureHttps(value) {
   return value.startsWith("http://") || value.startsWith("https://") ? value : `https://${value}`;
 }
 
+function isAuthOptional() {
+  const v = String(
+    process.env.AUTH_OPTIONAL ||
+    process.env.NEXT_PUBLIC_AUTH_OPTIONAL ||
+    ""
+  ).toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
 function createHttpError(status, message) {
   const error = new Error(message);
   error.statusCode = status;
   return error;
 }
+
 
 function resolveCorsOrigin(event) {
   const originHeader = event.headers?.origin || event.headers?.Origin;
@@ -310,6 +320,10 @@ function extractAuthorizationHeader(event) {
 }
 
 async function authenticate(event) {
+  if (isAuthOptional()) {
+    return { sub: "anon" };
+  }
+
   const headers = event.headers || {};
   const authHeader = headers.authorization || headers.Authorization;
   let token = null;
@@ -849,7 +863,7 @@ async function plaidFetch(path, body) {
 }
 
 async function handlePlaidLinkToken(event) {
-  const payload = await authenticate(event);
+  const payload = isAuthOptional() ? { sub: "anon" } : await authenticate(event);
   const { plaid } = await loadConfig();
   const products = parseList(plaid.products, ["transactions"]);
   const countryCodes = parseList(plaid.countryCodes, ["US"]);
@@ -885,7 +899,9 @@ async function handlePlaidLinkToken(event) {
 }
 
 async function handlePlaidExchange(event) {
-  await authenticate(event);
+  if (!isAuthOptional()) {
+    await authenticate(event);
+  }
   const body = parseJsonBody(event);
   const publicToken = body.publicToken || body.public_token;
   if (!publicToken || typeof publicToken !== "string") {
@@ -957,6 +973,19 @@ async function fetchLedgerJson(path, options = {}) {
   }
 }
 
+
+async function handleDiagnosticsPlaidConfig(event) {
+  const { plaid } = await loadConfig();
+  const resolved = {
+    env: plaid.env,
+    baseUrl: plaid.baseUrl,
+    hasClientSecret: Boolean(plaid.clientSecret && plaid.clientSecret.trim()),
+    clientSecretLength: (plaid.clientSecret || "").length,
+    products: parseList(plaid.products, ["transactions"]),
+    countryCodes: parseList(plaid.countryCodes, ["US"]),
+  };
+  return respond(event, 200, { resolved });
+}
 
 async function handleDnsDiagnostics(event) {
   const result = {};
@@ -1282,6 +1311,9 @@ exports.handler = async (event) => {
     }
     if (method === "GET" && path === "/diagnostics/dns") {
       return await handleDnsDiagnostics(event);
+    }
+    if (method === "GET" && path === "/diagnostics/plaid-config") {
+      return await handleDiagnosticsPlaidConfig(event);
     }
 
     return respond(event, 404, { error: "Not Found" });

@@ -8,13 +8,13 @@ import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-dat
 import {
   getAnalyticsSummary,
   listTransactions,
+  queryTransactions,
   triggerTransactionSync,
   createPlaidLinkToken,
   exchangePlaidPublicToken,
   resetTransactions,
 } from "@/src/lib/client-api";
 import { loadPlaidLink } from "@/src/lib/plaid";
-import { transactionsListSchema } from "@/src/lib/schemas";
 import { DashboardViewPeriod } from "./view-period";
 import { PeriodModal } from "./period-modal";
 import { TotalsGrid } from "./totals-grid";
@@ -98,6 +98,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     const transactionsKey = cacheKey({ mode: "month", month, page: 0, size: pageSize });
     setTransactionsCache(transactionsKey, initialTransactions);
   }, [initialSummary, initialTransactions, month, pageSize]);
+
+  useEffect(() => {
+    startTransition(() => refreshData({ page: 0 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const expenseCategories = useMemo(() => state.summary.byCategory, [state.summary.byCategory]);
   const topMerchants = useMemo(() => state.summary.topMerchants, [state.summary.topMerchants]);
@@ -432,28 +437,15 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         if (cachedTx && cachedTx.expires > now) {
           return cachedTx.data;
         }
-        const url = new URL("/api/transactions", window.location.origin);
-        url.searchParams.set("page", String(activePage));
-        url.searchParams.set("pageSize", String(pageSize));
-        if (activeRangeMode === "custom") {
-          if (fromOverride) url.searchParams.set("from", fromOverride);
-          if (toOverride) url.searchParams.set("to", toOverride);
-        } else if (activeRangeMode === "month") {
-          url.searchParams.set("month", analyticsMonth);
-        }
-        const res = await fetch(url.toString(), { cache: "no-store" });
-        const payload = await res.json();
-        if (!res.ok) {
-          const error = new Error(
-            (payload as { error?: { message?: string } })?.error?.message ?? res.statusText,
-          );
-          (error as any).payload = payload;
-          (error as any).status = res.status;
-          throw error;
-        }
-        const parsed = transactionsListSchema.parse(payload);
-        setTransactionsCache(txKey, parsed);
-        return parsed;
+        const fetched = await queryTransactions({
+          month: activeRangeMode === "month" ? analyticsMonth : undefined,
+          from: activeRangeMode === "custom" ? fromOverride : undefined,
+          to: activeRangeMode === "custom" ? toOverride : undefined,
+          page: activePage,
+          pageSize,
+        });
+        setTransactionsCache(txKey, fetched);
+        return fetched;
       })();
 
       const [summary, transactions] = await Promise.all([summaryPromise, transactionsPromise]);

@@ -3,14 +3,7 @@
 require("./src/bootstrap/fetch-debug");
 
 const crypto = require("crypto");
-let CognitoJwtVerifier;
-try {
-  ({ CognitoJwtVerifier } = require("aws-jwt-verify"));
-} catch (error) {
-  console.warn("[lambda] aws-jwt-verify module not found. Install the layer to enable Cognito JWT verification.", {
-    message: error?.message,
-  });
-}
+const { importPKCS8, compactDecrypt, createRemoteJWKSet, jwtVerify, errors: joseErrors } = require("jose");
 if (typeof crypto.randomUUID !== "function") {
   const { randomBytes } = crypto;
   crypto.randomUUID = function randomUUID() {
@@ -56,9 +49,10 @@ const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCas
 
 let configPromise;
 let configCacheKey;
-const cognitoVerifierCache = new Map();
+const cognitoJwkCache = new Map();
 let userTableSupportsFullName = null;
 let plaidTokenColumnName = null;
+const cognitoJweKeyCache = new Map();
 
 function stripTrailingSlash(value) {
   if (!value) return value;
@@ -171,6 +165,50 @@ function resolveUserProfile(authPayload) {
           : email;
   const fullName = rawName.trim();
   return { email, fullName };
+}
+
+function cacheKeyForJwe(alg, pem) {
+  return `${alg}::${pem}`;
+}
+
+async function getCognitoJweKey(cognito, alg) {
+  if (!cognito?.jwePrivateKey) return null;
+  const key = cacheKeyForJwe(alg, cognito.jwePrivateKey);
+  let entry = cognitoJweKeyCache.get(key);
+  if (!entry) {
+    entry = importPKCS8(cognito.jwePrivateKey, alg || "RSA-OAEP");
+    cognitoJweKeyCache.set(key, entry);
+  }
+  return entry;
+}
+
+async function maybeDecryptJwt(token, cognito) {
+  if (!token || typeof token !== "string") return token;
+  const parts = token.split(".");
+  if (parts.length !== 5) {
+    return token; // already a standard JWT
+  }
+  if (!cognito?.jwePrivateKey) {
+    throw createHttpError(401, "Encrypted token received but no Cognito JWE private key configured");
+  }
+  let header;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+  } catch (error) {
+    throw createHttpError(401, "Invalid encrypted token header");
+  }
+  const alg = typeof header?.alg === "string" && header.alg.trim().length > 0 ? header.alg : "RSA-OAEP";
+  try {
+    const cryptoKey = await getCognitoJweKey(cognito, alg);
+    if (!cryptoKey) {
+      throw createHttpError(401, "JWE private key unavailable");
+    }
+    const { plaintext } = await compactDecrypt(token, cryptoKey);
+    return Buffer.from(plaintext).toString("utf8");
+  } catch (error) {
+    console.error("[auth] failed to decrypt Cognito token", { message: error?.message });
+    throw createHttpError(401, "Failed to decrypt Cognito token");
+  }
 }
 
 async function usersTableHasFullName(client) {
@@ -433,6 +471,12 @@ async function loadConfig() {
       process.env.COGNITO_JWKS_URL ||
       cognitoSecret?.jwksUrl ||
       (cognitoDomain ? `${stripTrailingSlash(ensureHttps(cognitoDomain))}/.well-known/jwks.json` : undefined);
+    const cognitoJwePrivateKey =
+      process.env.COGNITO_JWE_PRIVATE_KEY ||
+      cognitoSecret?.encryptionPrivateKey ||
+      cognitoSecret?.tokenDecryptionKey ||
+      cognitoSecret?.privateKey ||
+      undefined;
 
     const plaidEnv = process.env.PLAID_ENV || plaidSecret?.env || plaidSecret?.environment || "sandbox";
     const normalizeString = (value) =>
@@ -495,6 +539,7 @@ async function loadConfig() {
           .map((s) => s.trim())
           .filter(Boolean),
         jwksUrl: cognitoJwksUrl,
+        jwePrivateKey: typeof cognitoJwePrivateKey === "string" && cognitoJwePrivateKey.trim().length > 0 ? cognitoJwePrivateKey.trim() : undefined,
       },
       plaid: plaidConfig,
     };
@@ -502,43 +547,39 @@ async function loadConfig() {
   return configPromise;
 }
 
-function normaliseClientIds(ids) {
-  if (!Array.isArray(ids)) return undefined;
-  const unique = Array.from(new Set(ids.filter((value) => typeof value === "string" && value.trim().length > 0)));
-  if (unique.length === 0) return undefined;
-  return unique.length === 1 ? unique[0] : unique;
+function normalizeAudienceList(ids) {
+  if (!Array.isArray(ids)) return [];
+  return Array.from(
+    new Set(
+      ids
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => value.length > 0),
+    ),
+  );
 }
 
-function getCognitoVerifiers(cognito) {
-  if (!CognitoJwtVerifier) {
-    throw createHttpError(500, "aws-jwt-verify module not available");
+function resolveExpectedAudiences(cognito) {
+  const audiences = normalizeAudienceList(cognito?.audienceList);
+  if (audiences.length > 0) {
+    return audiences;
   }
-  if (!cognito.userPoolId) {
-    throw createHttpError(500, "Cognito userPoolId not configured");
+  if (cognito?.clientId) {
+    return [cognito.clientId];
   }
-  const clientIdOption = normaliseClientIds(cognito.audienceList);
-  const cacheKey = JSON.stringify({
-    pool: cognito.userPoolId,
-    clientId: clientIdOption,
-  });
-  let entry = cognitoVerifierCache.get(cacheKey);
-  if (!entry) {
-    const baseOptions = clientIdOption ? { clientId: clientIdOption } : {};
-    entry = {
-      id: CognitoJwtVerifier.create({
-        userPoolId: cognito.userPoolId,
-        tokenUse: "id",
-        ...baseOptions,
-      }),
-      access: CognitoJwtVerifier.create({
-        userPoolId: cognito.userPoolId,
-        tokenUse: "access",
-        ...baseOptions,
-      }),
-    };
-    cognitoVerifierCache.set(cacheKey, entry);
+  return [];
+}
+
+function getCognitoRemoteJwkSet(cognito) {
+  if (!cognito?.jwksUrl) {
+    throw createHttpError(500, "Cognito JWKS URL not configured");
   }
-  return entry;
+  const cacheKey = cognito.jwksUrl;
+  let jwkSet = cognitoJwkCache.get(cacheKey);
+  if (!jwkSet) {
+    jwkSet = createRemoteJWKSet(new URL(cognito.jwksUrl), { timeoutDuration: 5000 });
+    cognitoJwkCache.set(cacheKey, jwkSet);
+  }
+  return jwkSet;
 }
 
 function parseCookies(event) {
@@ -593,33 +634,56 @@ async function authenticate(event) {
 
 async function verifyJwt(token) {
   const { cognito } = await loadConfig();
-  const verifiers = getCognitoVerifiers(cognito);
-  const parts = token.split(".");
+  token = await maybeDecryptJwt(token, cognito);
+  if (typeof token !== "string") {
+    throw createHttpError(401, "Unauthorized");
+  }
+  const trimmedToken = token.trim();
+  const parts = trimmedToken.split(".");
   if (parts.length !== 3) {
-    console.warn("[auth] non-JWT token received", { preview: token.slice(0, 12) });
+    console.warn("[auth] non-JWT token received", { preview: trimmedToken.slice(0, 12) });
     throw createHttpError(401, "Unauthorized");
   }
-  let decoded;
-  try {
-    decoded = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-  } catch {
-    console.warn("[auth] JWT payload decode failed");
-    throw createHttpError(401, "Unauthorized");
+  const jwkSet = getCognitoRemoteJwkSet(cognito);
+  const audiences = resolveExpectedAudiences(cognito);
+  const baseOptions = {};
+  if (cognito.issuer) {
+    baseOptions.issuer = cognito.issuer;
   }
-  const preferredOrder = decoded?.token_use === "access" ? ["access", "id"] : ["id", "access"];
+  baseOptions.algorithms = ["RS256"];
+  const optionVariants =
+    audiences.length > 0
+      ? [{ ...baseOptions, audience: audiences }, baseOptions]
+      : [baseOptions];
   let lastError;
-  for (const kind of preferredOrder) {
+  for (const options of optionVariants) {
     try {
-      const verifier = kind === "access" ? verifiers.access : verifiers.id;
-      const verified = await verifier.verify(token);
-      if (cognito.issuer && verified?.iss !== cognito.issuer) {
-        throw createHttpError(401, "Issuer mismatch");
+      const { payload } = await jwtVerify(trimmedToken, jwkSet, options);
+      if (!payload || typeof payload !== "object") {
+        throw createHttpError(401, "Token payload invalid");
       }
-      if (!verified?.sub) {
+      if (!payload.sub) {
         throw createHttpError(401, "Token missing subject");
       }
-      return verified;
+      if (cognito.issuer && payload.iss !== cognito.issuer) {
+        throw createHttpError(401, "Issuer mismatch");
+      }
+      const tokenUse =
+        typeof payload.token_use === "string" && payload.token_use.trim().length > 0
+          ? payload.token_use.trim()
+          : null;
+      if (tokenUse && tokenUse !== "access" && tokenUse !== "id") {
+        console.warn("[auth] unexpected token_use", { tokenUse });
+      }
+      return payload;
     } catch (error) {
+      if (error instanceof joseErrors.JWTExpired) {
+        throw createHttpError(401, "Token expired");
+      }
+      if (error instanceof joseErrors.JWTClaimValidationFailed && error.claim === "aud") {
+        lastError = error;
+        continue;
+      }
       lastError = error;
     }
   }
@@ -629,6 +693,12 @@ async function verifyJwt(token) {
       : null;
   if (handledError) {
     throw handledError;
+  }
+  if (lastError instanceof joseErrors.JWSSignatureVerificationFailed) {
+    throw createHttpError(401, "Token signature invalid");
+  }
+  if (lastError instanceof joseErrors.JWTClaimValidationFailed && lastError.claim === "iss") {
+    throw createHttpError(401, "Issuer mismatch");
   }
   throw createHttpError(401, "Token verification failed");
 }

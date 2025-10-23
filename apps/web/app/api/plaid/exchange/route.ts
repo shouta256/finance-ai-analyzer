@@ -1,9 +1,35 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { ledgerFetch } from "@/src/lib/api-client";
 import { plaidExchangeSchema } from "@/src/lib/schemas";
-import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
+
+const BASE = process.env.LEDGER_SERVICE_URL?.replace(/\/+$/, "") || "";
+const PFX = process.env.LEDGER_SERVICE_PATH_PREFIX?.replace(/^\/+|\/+$/g, "") || "";
+
+function buildUrl(path: string): string {
+  if (!BASE) throw new Error("LEDGER_SERVICE_URL is not configured");
+  const prefix = PFX ? `/${PFX}` : "";
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${BASE}${prefix}${suffix}`;
+}
+
+function authHeaders(request: NextRequest): Record<string, string> {
+  const headerToken = request.headers.get("authorization")?.trim();
+  let cookieToken: string | undefined;
+  try {
+    cookieToken = cookies().get("sp_token")?.value?.trim();
+  } catch {
+    cookieToken = undefined;
+  }
+  const authorization = headerToken?.startsWith("Bearer ")
+    ? headerToken
+    : headerToken
+      ? `Bearer ${headerToken}`
+      : cookieToken
+        ? `Bearer ${cookieToken}`
+        : null;
+  return authorization ? { authorization } : {};
+}
 
 const requestSchema = z.object({ publicToken: z.string().min(4) });
 
@@ -20,36 +46,23 @@ function mapError(error: unknown): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
-  const headerToken = request.headers.get("authorization")?.trim();
-  let cookieToken;
   try {
-    cookieToken = cookies().get("sp_token")?.value?.trim();
-  } catch {
-    cookieToken = undefined;
-  }
-  const authorization =
-    headerToken?.startsWith("Bearer ")
-      ? headerToken
-      : headerToken
-        ? `Bearer ${headerToken}`
-        : cookieToken
-          ? `Bearer ${cookieToken}`
-          : null;
-  if (!authorization) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
-  }
-  try {
-    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
-    if (errorResponse) return errorResponse;
     const payload = await request.json();
     const body = requestSchema.parse(payload);
-    const result = await ledgerFetch<unknown>("/plaid/exchange", {
+    const res = await fetch(buildUrl("/plaid/exchange"), {
       method: "POST",
-      headers: { authorization },
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(request),
+      },
       body: JSON.stringify(body),
-      baseUrlOverride,
     });
-    const response = plaidExchangeSchema.parse(result);
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      return mapError({ status: res.status, payload: json, message: json?.error?.message || res.statusText });
+    }
+    const response = plaidExchangeSchema.parse(json);
     return NextResponse.json(response);
   } catch (error) {
     if (error instanceof z.ZodError) {

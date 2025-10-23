@@ -57,6 +57,7 @@ const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCas
 let configPromise;
 let configCacheKey;
 const cognitoVerifierCache = new Map();
+let userTableSupportsFullName = null;
 
 function stripTrailingSlash(value) {
   if (!value) return value;
@@ -158,12 +159,33 @@ function resolveUserProfile(authPayload) {
 async function ensureUserRow(client, authPayload) {
   if (!authPayload?.sub) return;
   const { email, fullName } = resolveUserProfile(authPayload);
+  if (userTableSupportsFullName !== false) {
+    try {
+      await client.query(
+        `INSERT INTO users (id, email, full_name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (id)
+         DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name`,
+        [authPayload.sub, email, fullName],
+      );
+      userTableSupportsFullName = true;
+      return;
+    } catch (error) {
+      if (error?.code === "42703" || (typeof error?.message === "string" && error.message.includes("full_name"))) {
+        console.warn("[lambda] users table missing full_name column, falling back to email-only upsert");
+        userTableSupportsFullName = false;
+      } else {
+        throw error;
+      }
+    }
+  }
+
   await client.query(
-    `INSERT INTO users (id, email, full_name)
-     VALUES ($1, $2, $3)
+    `INSERT INTO users (id, email)
+     VALUES ($1, $2)
      ON CONFLICT (id)
-     DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name`,
-    [authPayload.sub, email, fullName],
+     DO UPDATE SET email = EXCLUDED.email`,
+    [authPayload.sub, email],
   );
 }
 

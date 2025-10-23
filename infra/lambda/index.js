@@ -562,7 +562,7 @@ async function authenticate(event) {
     token = cookies.get("sp_token");
   }
 
-  if (!token) {
+  if (!token || token === "undefined" || token === "null" || token === "") {
     if (isAuthOptional()) {
       return { sub: ANON_USER_ID, token_use: "anonymous" };
     }
@@ -576,13 +576,15 @@ async function verifyJwt(token) {
   const verifiers = getCognitoVerifiers(cognito);
   const parts = token.split(".");
   if (parts.length !== 3) {
-    throw createHttpError(401, "Malformed JWT");
+    console.warn("[auth] non-JWT token received", { preview: token.slice(0, 12) });
+    throw createHttpError(401, "Unauthorized");
   }
   let decoded;
   try {
     decoded = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
   } catch {
-    throw createHttpError(401, "Malformed JWT");
+    console.warn("[auth] JWT payload decode failed");
+    throw createHttpError(401, "Unauthorized");
   }
   const preferredOrder = decoded?.token_use === "access" ? ["access", "id"] : ["id", "access"];
   let lastError;
@@ -1133,6 +1135,7 @@ async function handlePlaidLinkToken(event) {
 
 async function handlePlaidExchange(event) {
   const auth = await authenticate(event);
+  const wantSync = String(event.queryStringParameters?.sync || "").trim() === "1";
   const body = parseJsonBody(event);
   const publicToken = body.publicToken || body.public_token;
   if (!publicToken || typeof publicToken !== "string") {
@@ -1156,6 +1159,14 @@ async function handlePlaidExchange(event) {
         DO UPDATE SET item_id = EXCLUDED.item_id, ${tokenColumn} = EXCLUDED.${tokenColumn}, linked_at = NOW()`;
       await client.query(insertSql, [itemId, encryptedToken]);
     });
+    if (wantSync) {
+      const syncEvent = {
+        ...event,
+        body: JSON.stringify({}),
+        httpMethod: "POST",
+      };
+      return await handleTransactionsSync(syncEvent);
+    }
     return respond(event, 200, {
       itemId,
       status: "SUCCESS",
@@ -1249,6 +1260,44 @@ async function handleDnsDiagnostics(event) {
     }
   }
   return respond(event, 200, result);
+}
+
+async function handleDiagnosticsAuth(event) {
+  const headers = event.headers || {};
+  const rawAuth = headers.authorization || headers.Authorization || "";
+  const normalizeBearer = (value) =>
+    typeof value === "string" && value.trim().toLowerCase().startsWith("bearer ")
+      ? value.trim().slice(7).trim()
+      : value.trim();
+  const cookies = parseCookies(event);
+  const cookieToken = cookies.get("sp_token") || "";
+  const looksJwt = (value) => typeof value === "string" && value.split(".").length === 3;
+  const headerToken = normalizeBearer(rawAuth);
+  try {
+    const identity = await authenticate(event);
+    return respond(event, 200, {
+      ok: true,
+      sub: identity.sub,
+      tokenUse: identity.token_use || null,
+      seen: {
+        header: { present: Boolean(rawAuth), looksJwt: looksJwt(headerToken) },
+        cookie: { present: Boolean(cookieToken), looksJwt: looksJwt(cookieToken) },
+      },
+    });
+  } catch (error) {
+    return respond(
+      event,
+      error?.statusCode || error?.status || 401,
+      {
+        ok: false,
+        error: error?.message || "Unauthorized",
+        seen: {
+          header: { present: Boolean(rawAuth), looksJwt: looksJwt(headerToken) },
+          cookie: { present: Boolean(cookieToken), looksJwt: looksJwt(cookieToken) },
+        },
+      },
+    );
+  }
 }
 
 async function handleAuthToken(event) {
@@ -1983,6 +2032,9 @@ exports.handler = async (event) => {
     }
     if (method === "GET" && path === "/diagnostics/dns") {
       return await handleDnsDiagnostics(event);
+    }
+    if (method === "GET" && path === "/diagnostics/auth") {
+      return await handleDiagnosticsAuth(event);
     }
     if (method === "GET" && path === "/diagnostics/plaid-config") {
       return await handleDiagnosticsPlaidConfig(event);

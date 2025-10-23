@@ -1462,12 +1462,223 @@ async function handleChat(event) {
   return respond(event, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Unsupported chat method" } });
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function coerceBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+  }
+  return false;
+}
+
 async function handleTransactionsSync(event) {
   const auth = await authenticate(event);
+  let options = {};
+  try {
+    options = parseJsonBody(event);
+  } catch (error) {
+    return respond(event, 400, {
+      error: {
+        code: "INVALID_SYNC_REQUEST",
+        message: error?.message || "Invalid sync request payload",
+      },
+    });
+  }
+  const demoSeed = coerceBoolean(options.demoSeed);
+  const forceFullSync = coerceBoolean(options.forceFullSync);
+  const startMonthInput = typeof options.startMonth === "string" ? options.startMonth : undefined;
   const now = new Date();
-  const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const fromIso = toIsoDate(start);
+  let syncStart;
+  if (startMonthInput) {
+    try {
+      syncStart = parseMonth(startMonthInput);
+    } catch {
+      return respond(event, 400, {
+        error: {
+          code: "INVALID_SYNC_REQUEST",
+          message: "Invalid startMonth format (expected YYYY-MM)",
+        },
+      });
+    }
+  } else if (forceFullSync) {
+    syncStart = new Date(now.getTime() - 90 * DAY_MS);
+  } else {
+    syncStart = new Date(now.getTime() - 30 * DAY_MS);
+  }
+  const fromIso = toIsoDate(syncStart);
   const toIso = toIsoDate(now);
+  const traceId = event.requestContext?.requestId || crypto.randomUUID();
+
+  if (demoSeed) {
+    try {
+      const result = await withUserClient(auth.sub, async (client) => {
+        await ensureUserRow(client, auth);
+        await client.query(
+          `DELETE FROM transactions WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+        );
+        await client.query(
+          `DELETE FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+        );
+
+        const stubTransactions = buildStubTransactions(auth.sub, syncStart, now);
+        const alternateAccountId = crypto.randomUUID();
+        const baseTime = syncStart.getTime();
+        stubTransactions.push(
+          {
+            id: hashToUuid(`demo:rent:${fromIso}`),
+            userId: auth.sub,
+            accountId: alternateAccountId,
+            merchantName: "City Apartments",
+            amount: -1450.0,
+            currency: "USD",
+            occurredAt: new Date(baseTime + 4 * DAY_MS).toISOString(),
+            authorizedAt: new Date(baseTime + 4 * DAY_MS + 90 * 60 * 1000).toISOString(),
+            pending: false,
+            category: "Housing",
+            description: "Monthly rent payment",
+          },
+          {
+            id: hashToUuid(`demo:bonus:${fromIso}`),
+            userId: auth.sub,
+            accountId: alternateAccountId,
+            merchantName: "Employer Bonus",
+            amount: 500.0,
+            currency: "USD",
+            occurredAt: new Date(baseTime + 10 * DAY_MS).toISOString(),
+            authorizedAt: new Date(baseTime + 10 * DAY_MS).toISOString(),
+            pending: false,
+            category: "Income",
+            description: "Performance bonus",
+          },
+        );
+        const stubAccounts = buildStubAccounts(auth.sub);
+        const accountIterator = stubAccounts[Symbol.iterator]();
+        const accountMap = new Map();
+
+        for (const tx of stubTransactions) {
+          if (!accountMap.has(tx.accountId)) {
+            const template =
+              accountIterator.next().value || {
+                name: "Demo Checking",
+                institution: "Safepocket Demo Bank",
+                createdAt: new Date().toISOString(),
+              };
+            accountMap.set(tx.accountId, template);
+          }
+        }
+
+        for (const [accountId, template] of accountMap.entries()) {
+          await client.query(
+            `INSERT INTO accounts (id, user_id, name, institution, created_at)
+             VALUES ($1, current_setting('appsec.user_id', true)::uuid, $2, $3, NOW())
+             ON CONFLICT (id)
+             DO UPDATE SET name = EXCLUDED.name, institution = EXCLUDED.institution`,
+            [accountId, template.name, template.institution],
+          );
+        }
+
+        const merchantCache = new Map();
+        let upserted = 0;
+
+        for (const tx of stubTransactions) {
+          const merchantName = tx.merchantName || "Demo Merchant";
+          let merchantId = merchantCache.get(merchantName);
+          if (!merchantId) {
+            const merchantUuid = hashToUuid(`merchant:${merchantName}`);
+            try {
+              const inserted = await withSavepoint(client, "merchant_demo", () =>
+                client.query(
+                  `INSERT INTO merchants (id, name)
+                   VALUES ($1, $2)
+                   ON CONFLICT (name)
+                   DO UPDATE SET name = EXCLUDED.name
+                   RETURNING id`,
+                  [merchantUuid, merchantName],
+                ),
+              );
+              merchantId = inserted.rows[0]?.id || merchantUuid;
+            } catch (error) {
+              console.warn("[lambda] demo merchant upsert fallback", { message: error?.message });
+              const fallback = await client.query(`SELECT id FROM merchants WHERE name = $1 LIMIT 1`, [
+                merchantName,
+              ]);
+              merchantId = fallback.rows[0]?.id || merchantUuid;
+            }
+            merchantCache.set(merchantName, merchantId);
+          }
+
+          const amount = Number.isFinite(Number(tx.amount)) ? Number(tx.amount) : 0;
+          const currency = (tx.currency || "USD").toUpperCase();
+          const occurredAtIso = tx.occurredAt || new Date().toISOString();
+          const authorizedAtIso = tx.authorizedAt || occurredAtIso;
+
+          try {
+            await withSavepoint(client, "txn_demo", () =>
+              client.query(
+                `INSERT INTO transactions
+                   (id, user_id, account_id, merchant_id, amount, currency, occurred_at, authorized_at, pending, category, description)
+                 VALUES
+                   ($1, current_setting('appsec.user_id', true)::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (id)
+                 DO UPDATE SET
+                   account_id = EXCLUDED.account_id,
+                   merchant_id = EXCLUDED.merchant_id,
+                   amount = EXCLUDED.amount,
+                   currency = EXCLUDED.currency,
+                   occurred_at = EXCLUDED.occurred_at,
+                   authorized_at = EXCLUDED.authorized_at,
+                   pending = EXCLUDED.pending,
+                   category = EXCLUDED.category,
+                   description = EXCLUDED.description`,
+                [
+                  tx.id,
+                  tx.accountId,
+                  merchantId,
+                  amount,
+                  currency,
+                  occurredAtIso,
+                  authorizedAtIso,
+                  Boolean(tx.pending),
+                  tx.category || "General",
+                  tx.description || merchantName,
+                ],
+              ),
+            );
+            upserted += 1;
+          } catch (error) {
+            console.warn("[lambda] demo transaction upsert skipped", { message: error?.message });
+          }
+        }
+
+        return {
+          mode: "DEMO",
+          items: 0,
+          fetched: stubTransactions.length,
+          upserted,
+        };
+      });
+
+      return respond(event, 202, {
+        status: "ACCEPTED",
+        from: fromIso,
+        to: toIso,
+        ...result,
+        traceId,
+      });
+    } catch (error) {
+      const status = error?.statusCode || error?.status || 500;
+      return respond(event, status, {
+        error: {
+          code: "TRANSACTIONS_SYNC_FAILED",
+          message: error?.message || "Failed to load demo transactions",
+          traceId,
+        },
+      });
+    }
+  }
 
   try {
     const result = await withUserClient(auth.sub, async (client) => {
@@ -1678,7 +1889,7 @@ async function handleTransactionsSync(event) {
       from: fromIso,
       to: toIso,
       ...result,
-      traceId: event.requestContext?.requestId || crypto.randomUUID(),
+      traceId,
     });
   } catch (error) {
     const status = error?.statusCode || error?.status || 500;
@@ -1686,6 +1897,7 @@ async function handleTransactionsSync(event) {
       error: {
         code: "TRANSACTIONS_SYNC_FAILED",
         message: error?.message || "Failed to sync transactions",
+        traceId,
       },
     });
   }

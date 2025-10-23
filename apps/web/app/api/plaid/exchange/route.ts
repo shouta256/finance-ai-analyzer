@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { ledgerFetch } from "@/src/lib/api-client";
 import { plaidExchangeSchema } from "@/src/lib/schemas";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
-const BASE = process.env.LEDGER_SERVICE_URL?.replace(/\/+$/, "") || "";
+const BASE = process.env.LEDGER_SERVICE_URL?.replace(/\/+$/, "") || null;
 const PFX = process.env.LEDGER_SERVICE_PATH_PREFIX?.replace(/^\/+|\/+$/g, "") || "";
 
 function buildUrl(path: string): string {
@@ -47,13 +49,29 @@ function mapError(error: unknown): NextResponse {
 
 export async function POST(request: NextRequest) {
   try {
+    const headers = authHeaders(request);
+    if (!headers.authorization) {
+      return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+    }
     const payload = await request.json();
     const body = requestSchema.parse(payload);
+    if (!BASE) {
+      const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+      if (errorResponse) return errorResponse;
+      const result = await ledgerFetch<unknown>("/plaid/exchange", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        baseUrlOverride,
+      });
+      const response = plaidExchangeSchema.parse(result);
+      return NextResponse.json(response);
+    }
     const res = await fetch(buildUrl("/plaid/exchange"), {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...authHeaders(request),
+        ...headers,
       },
       body: JSON.stringify(body),
     });

@@ -47,6 +47,7 @@ const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.include
 const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
 
 let configPromise;
+let configCacheKey;
 const cognitoVerifierCache = new Map();
 
 function stripTrailingSlash(value) {
@@ -137,7 +138,13 @@ async function fetchSecret(name) {
 }
 
 async function loadConfig() {
-  if (configPromise) return configPromise;
+  const cacheKey = [
+    process.env.CONFIG_BUMP || "",
+    process.env.SECRET_COGNITO_NAME || "",
+    process.env.SECRET_PLAID_NAME || "",
+  ].join("|");
+  if (configPromise && configCacheKey === cacheKey) return configPromise;
+  configCacheKey = cacheKey;
   configPromise = (async () => {
     const [cognitoSecret, plaidSecret] = await Promise.all([
       fetchSecret(SECRET_COGNITO),

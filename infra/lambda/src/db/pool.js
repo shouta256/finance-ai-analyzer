@@ -18,12 +18,12 @@ const DB_OPERATION_TIMEOUT_MS = Number.parseInt(
 
 function getDbSecretName() {
   return (
-    process.env.SAFEPOCKET_DB_SECRET_NAME ||
-    process.env.SECRET_DATABASE_NAME ||
-    process.env.SECRET_DB_NAME ||
-    process.env.DB_SECRET_NAME ||
-    process.env.SECRET_DB ||
-    process.env.SECRET_DATABASE ||
+    (process.env.SAFEPOCKET_DB_SECRET_NAME && process.env.SAFEPOCKET_DB_SECRET_NAME.trim()) ||
+    (process.env.SECRET_DATABASE_NAME && process.env.SECRET_DATABASE_NAME.trim()) ||
+    (process.env.SECRET_DB_NAME && process.env.SECRET_DB_NAME.trim()) ||
+    (process.env.DB_SECRET_NAME && process.env.DB_SECRET_NAME.trim()) ||
+    (process.env.SECRET_DB && process.env.SECRET_DB.trim()) ||
+    (process.env.SECRET_DATABASE && process.env.SECRET_DATABASE.trim()) ||
     "/safepocket/db"
   );
 }

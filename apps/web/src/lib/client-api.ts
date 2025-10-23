@@ -3,16 +3,18 @@ import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, tran
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "";
 
 function buildRequestUrl(path: string, params?: Record<string, string | undefined>): string {
+  let targetPath = path.startsWith("/") ? path : `/${path}`;
+  if (API_BASE && targetPath.startsWith("/api/")) {
+    targetPath = targetPath.replace(/^\/api\//, "/");
+  }
   let target: string;
   if (API_BASE) {
-    const normalized = path.startsWith("/") ? path : `/${path}`;
-    target = `${API_BASE}${normalized}`;
+    target = `${API_BASE}${targetPath}`;
   } else if (typeof window !== "undefined") {
-    const url = new URL(path, window.location.origin);
+    const url = new URL(targetPath, window.location.origin);
     target = url.toString();
   } else {
-    const normalized = path.startsWith("/") ? path : `/${path}`;
-    target = normalized;
+    target = targetPath;
   }
   if (params) {
     const url = new URL(target);

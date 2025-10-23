@@ -156,8 +156,12 @@ async function setLocalConfig(client, key, value) {
   if (value == null) {
     throw new Error(`setLocalConfig requires a value for ${key}`);
   }
-  const stringValue = String(value);
-  await client.query("SELECT set_config($1, $2, true)", [key, stringValue]);
+  const settingName = String(key);
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(settingName)) {
+    throw new Error(`Invalid SET LOCAL key: ${settingName}`);
+  }
+  const literal = String(value).replace(/'/g, "''");
+  await client.query(`SET LOCAL ${settingName} = '${literal}'`);
 }
 
 async function withUserClient(userId, callback) {

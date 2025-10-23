@@ -1,5 +1,36 @@
 import { z } from "zod";
 import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema, ragAggregateResponseSchema, ragSearchResponseSchema, ragSummariesResponseSchema, transactionsResetResponseSchema } from "./schemas";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "";
+
+function buildRequestUrl(path: string, params?: Record<string, string | undefined>): string {
+  let target: string;
+  if (API_BASE) {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    target = `${API_BASE}${normalized}`;
+  } else if (typeof window !== "undefined") {
+    const url = new URL(path, window.location.origin);
+    target = url.toString();
+  } else {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    target = normalized;
+  }
+  if (params) {
+    const url = new URL(target);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    }
+    return url.toString();
+  }
+  return target;
+}
+
+function withCredentials(init: RequestInit = {}): RequestInit {
+  return {
+    credentials: 'include',
+    ...init,
+  };
+}
+
 
 export type AnalyticsSummary = z.infer<typeof analyticsSummarySchema>;
 export type TransactionsList = z.infer<typeof transactionsListSchema>;
@@ -30,30 +61,24 @@ async function handleJson<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> 
 }
 
 export async function getAnalyticsSummary(month: string, options?: { generateAi?: boolean }): Promise<AnalyticsSummary> {
-  const url = new URL(`/api/analytics/summary`, window.location.origin);
-  url.searchParams.set("month", month);
-  if (options?.generateAi) url.searchParams.set("generateAi", "true");
+  const url = buildRequestUrl("/api/analytics/summary", { month, generateAi: options?.generateAi ? "true" : undefined });
   if (process.env.NEXT_PUBLIC_DEBUG_API === 'true') {
-    console.debug('[client-api] getAnalyticsSummary ->', url.toString());
+    console.debug('[client-api] getAnalyticsSummary ->', url);
   }
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await fetch(url, withCredentials({ cache: "no-store" }));
   return handleJson(res, analyticsSummarySchema);
 }
 
 export async function listTransactions(month: string): Promise<TransactionsList> {
-  const url = new URL(`/api/transactions`, window.location.origin);
-  url.searchParams.set("month", month);
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const url = buildRequestUrl("/api/transactions", { month });
+  const res = await fetch(url, withCredentials({ cache: "no-store" }));
   return handleJson(res, transactionsListSchema);
 }
 
 // from/to expect YYYY-MM boundaries; month remains YYYY-MM for single-month view.
 export async function listTransactionsRange(params: { from?: string; to?: string; month?: string }): Promise<TransactionsList> {
-  const url = new URL(`/api/transactions`, window.location.origin);
-  if (params.month) url.searchParams.set("month", params.month);
-  if (params.from) url.searchParams.set("from", params.from);
-  if (params.to) url.searchParams.set("to", params.to);
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const url = buildRequestUrl("/api/transactions", { month: params.month, from: params.from, to: params.to });
+  const res = await fetch(url, withCredentials({ cache: "no-store" }));
   return handleJson(res, transactionsListSchema);
 }
 
@@ -65,11 +90,11 @@ export interface TriggerSyncOptions {
 
 export async function triggerTransactionSync(options: TriggerSyncOptions = {}): Promise<void> {
   const body = Object.keys(options).length > 0 ? JSON.stringify(options) : undefined;
-  const res = await fetch(`/api/transactions/sync`, {
+  const res = await fetch(buildRequestUrl("/api/transactions/sync"), withCredentials({
     method: "POST",
     headers: body ? { "content-type": "application/json" } : undefined,
     body,
-  });
+  }));
   if (!res.ok) {
     let payload: unknown = null;
     try {
@@ -84,11 +109,11 @@ export async function triggerTransactionSync(options: TriggerSyncOptions = {}): 
 
 export async function resetTransactions(options: { unlinkPlaid?: boolean } = {}) {
   const body = Object.keys(options).length > 0 ? JSON.stringify(options) : undefined;
-  const res = await fetch(`/api/transactions/reset`, {
+  const res = await fetch(buildRequestUrl("/api/transactions/reset"), withCredentials({
     method: "POST",
     headers: body ? { "content-type": "application/json" } : undefined,
     body,
-  });
+  }));
   const parsed = await (async () => {
     const json = await res.json().catch(() => null);
     return json;
@@ -114,7 +139,7 @@ export async function createPlaidLinkToken(): Promise<{ linkToken: string }> {
     return { linkToken: pending.linkToken };
   }
   plaidLinkTokenPending = (async () => {
-    const res = await fetch(`/api/plaid/link-token`, { method: "POST" });
+    const res = await fetch(buildRequestUrl("/api/plaid/link-token"), withCredentials({ method: "POST" }));
     const parsed = await handleJson(res, plaidLinkTokenSchema);
     const parsedExpiry = Date.parse(parsed.expiration);
     const expiresAt = Number.isFinite(parsedExpiry) ? parsedExpiry : now + 4 * 60 * 1000;
@@ -130,11 +155,11 @@ export async function createPlaidLinkToken(): Promise<{ linkToken: string }> {
 }
 
 export async function exchangePlaidPublicToken(publicToken: string) {
-  const res = await fetch(`/api/plaid/exchange`, {
+  const res = await fetch(buildRequestUrl("/api/plaid/exchange"), withCredentials({
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ publicToken }),
-  });
+  }));
   return handleJson(res, plaidExchangeSchema);
 }
 
@@ -150,26 +175,25 @@ export interface RagSearchOptions {
 }
 
 export async function ragSearch(options: RagSearchOptions) {
-  const res = await fetch(`/api/rag/search`, {
+  const res = await fetch(buildRequestUrl("/api/rag/search"), withCredentials({
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(options),
-  });
+  }));
   return handleJson(res, ragSearchResponseSchema);
 }
 
 export async function ragSummaries(month: string) {
-  const url = new URL(`/api/rag/summaries`, window.location.origin);
-  url.searchParams.set("month", month);
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const url = buildRequestUrl("/api/rag/summaries", { month });
+  const res = await fetch(url, withCredentials({ cache: "no-store" }));
   return handleJson(res, ragSummariesResponseSchema);
 }
 
 export async function ragAggregate(body: { from?: string; to?: string; granularity: "category" | "merchant" | "month"; }) {
-  const res = await fetch(`/api/rag/aggregate`, {
+  const res = await fetch(buildRequestUrl("/api/rag/aggregate"), withCredentials({
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }));
   return handleJson(res, ragAggregateResponseSchema);
 }

@@ -50,6 +50,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes("*");
+const NORMALISED_ALLOWED_ORIGINS = ALLOWED_ORIGINS.map((origin) => normaliseOriginUrl(origin)).filter(Boolean);
 const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
 
 let configPromise;
@@ -64,6 +65,58 @@ function stripTrailingSlash(value) {
 function ensureHttps(value) {
   if (!value) return value;
   return value.startsWith("http://") || value.startsWith("https://") ? value : `https://${value}`;
+}
+
+function normaliseOriginUrl(origin) {
+  if (!origin) return undefined;
+  try {
+    const url = new URL(origin);
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
+function pickPreferredRedirectOrigin() {
+  const nonExecuteApi = NORMALISED_ALLOWED_ORIGINS.find((origin) => !/execute-api/i.test(origin));
+  return nonExecuteApi || NORMALISED_ALLOWED_ORIGINS[0];
+}
+
+function resolvePostAuthRedirect(state) {
+  const defaultOrigin = pickPreferredRedirectOrigin();
+  const defaultPath = "/dashboard";
+  if (state) {
+    try {
+      const url = new URL(state);
+      const normalised = normaliseOriginUrl(url.origin);
+      if (normalised && NORMALISED_ALLOWED_ORIGINS.includes(normalised)) {
+        url.hash = "";
+        return url.toString();
+      }
+    } catch {
+      if (state.startsWith("/")) {
+        if (defaultOrigin) {
+          const target = new URL(defaultOrigin);
+          target.pathname = state;
+          target.search = "";
+          target.hash = "";
+          return target.toString();
+        }
+        return state;
+      }
+    }
+  }
+  if (defaultOrigin) {
+    const target = new URL(defaultOrigin);
+    target.pathname = defaultPath;
+    target.search = "";
+    target.hash = "";
+    return target.toString();
+  }
+  return defaultPath;
 }
 
 function isAuthOptional() {
@@ -1167,7 +1220,8 @@ async function handleAuthCallback(event) {
     cookies.push(`sp_rt=${tokenData.refresh_token}; ${cookieAttributes}; HttpOnly; Max-Age=${30 * 24 * 60 * 60}`);
   }
 
-  const state = typeof query.state === "string" && query.state.startsWith("/") ? query.state : "/dashboard";
+  const rawState = typeof query.state === "string" ? query.state : undefined;
+  const redirectLocation = resolvePostAuthRedirect(rawState);
   if (wantsJson) {
     return respond(
       event,
@@ -1178,6 +1232,7 @@ async function handleAuthCallback(event) {
         refreshToken: tokenData.refresh_token ?? null,
         expiresIn: tokenData.expires_in ?? 3600,
         tokenType: tokenData.token_type ?? "Bearer",
+        redirectTo: redirectLocation,
       },
       {
         headers: {
@@ -1189,7 +1244,7 @@ async function handleAuthCallback(event) {
   }
   return respond(event, 302, null, {
     headers: {
-      Location: state,
+      Location: redirectLocation,
     },
     cookies,
   });

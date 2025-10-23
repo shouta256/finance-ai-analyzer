@@ -112,7 +112,9 @@ export function getStoredAccessToken(): string | undefined {
         return undefined;
       }
     }
-    const token = window.localStorage.getItem(ACCESS_TOKEN_KEY) || window.localStorage.getItem(ID_TOKEN_KEY);
+    const idToken = window.localStorage.getItem(ID_TOKEN_KEY);
+    const accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
+    const token = idToken || accessToken;
     if (token) return token;
   } catch (error) {
     console.warn("[auth] failed to read token from storage", error);

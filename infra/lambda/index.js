@@ -1707,7 +1707,11 @@ async function handleTransactionsSync(event) {
       const result = await withUserClient(auth.sub, async (client) => {
         await ensureUserRow(client, auth);
         await client.query(
-          `DELETE FROM transactions WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+          `DELETE FROM transactions
+           WHERE user_id = current_setting('appsec.user_id', true)::uuid
+              OR account_id IN (
+                SELECT id FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid
+              )`,
         );
         await client.query(
           `DELETE FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid`,

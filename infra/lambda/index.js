@@ -926,21 +926,22 @@ function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
   };
 }
 
-function buildStubTransactions(userId, fromDate, toDate) {
-  const baseDate = new Date(fromDate);
-  const occurred = new Date(baseDate.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
-  const authorized = new Date(baseDate.getTime() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString();
-  const accountId = crypto.randomUUID();
+function buildStubTransactions(userId) {
+  const now = new Date();
+  const anchor = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const addDays = (days, offsetMs = 0) => new Date(anchor + days * DAY_MS + offsetMs).toISOString();
+  const primaryAccount = crypto.randomUUID();
+
   return [
     {
       id: crypto.randomUUID(),
       userId,
-      accountId,
+      accountId: primaryAccount,
       merchantName: "Blue Bottle Coffee",
       amount: -8.75,
       currency: "USD",
-      occurredAt: occurred,
-      authorizedAt: authorized,
+      occurredAt: addDays(2),
+      authorizedAt: addDays(2, 60 * 60 * 1000),
       pending: false,
       category: "Dining",
       description: "Latte",
@@ -950,12 +951,12 @@ function buildStubTransactions(userId, fromDate, toDate) {
     {
       id: crypto.randomUUID(),
       userId,
-      accountId,
+      accountId: primaryAccount,
       merchantName: "Whole Foods Market",
       amount: -54.32,
       currency: "USD",
-      occurredAt: new Date(baseDate.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-      authorizedAt: new Date(baseDate.getTime() + 5 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000).toISOString(),
+      occurredAt: addDays(5),
+      authorizedAt: addDays(5, 2 * 60 * 60 * 1000),
       pending: false,
       category: "Groceries",
       description: "Weekly groceries",
@@ -965,12 +966,12 @@ function buildStubTransactions(userId, fromDate, toDate) {
     {
       id: crypto.randomUUID(),
       userId,
-      accountId,
+      accountId: primaryAccount,
       merchantName: "Acme Corp Payroll",
       amount: 3200.0,
       currency: "USD",
-      occurredAt: new Date(baseDate.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-      authorizedAt: new Date(baseDate.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+      occurredAt: addDays(1),
+      authorizedAt: addDays(1),
       pending: false,
       category: "Income",
       description: "Monthly salary",
@@ -1075,7 +1076,7 @@ async function handleAnalyticsSummary(event, query) {
   } catch (error) {
     if (!ENABLE_STUBS) throw error;
     console.warn("[lambda] analytics summary fallback", { message: error.message });
-    transactions = buildStubTransactions(payload.sub, fromDate, toDate);
+    transactions = buildStubTransactions(payload.sub);
     usingStub = true;
   }
   const summary = summarise(transactions, fromDate, toDate, monthLabel, traceId);
@@ -1097,7 +1098,7 @@ async function handleTransactions(event, query) {
   } catch (error) {
     if (!ENABLE_STUBS) throw error;
     console.warn("[lambda] transactions fallback", { message: error.message });
-    transactions = buildStubTransactions(payload.sub, fromDate, toDate);
+    transactions = buildStubTransactions(payload.sub);
     usingStub = true;
   }
   const page = Math.max(parseInt(query.page || "0", 10), 0);
@@ -1281,8 +1282,8 @@ async function handlePlaidExchange(event) {
       const insertSql = `
         INSERT INTO plaid_items (user_id, item_id, ${tokenColumn})
         VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2)
-        ON CONFLICT (user_id)
-        DO UPDATE SET item_id = EXCLUDED.item_id, ${tokenColumn} = EXCLUDED.${tokenColumn}`;
+        ON CONFLICT (item_id)
+        DO UPDATE SET user_id = EXCLUDED.user_id, ${tokenColumn} = EXCLUDED.${tokenColumn}`;
       await client.query(insertSql, [itemId, encryptedToken]);
     });
     if (wantSync) {
@@ -1717,9 +1718,10 @@ async function handleTransactionsSync(event) {
           `DELETE FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
         );
 
-        const stubTransactions = buildStubTransactions(auth.sub, syncStart, now);
+        const stubTransactions = buildStubTransactions(auth.sub);
         const alternateAccountId = crypto.randomUUID();
-        const baseTime = syncStart.getTime();
+        const demoNow = new Date();
+        const demoAnchor = Date.UTC(demoNow.getUTCFullYear(), demoNow.getUTCMonth(), 1);
         stubTransactions.push(
           {
             id: hashToUuid(`demo:rent:${fromIso}`),
@@ -1728,8 +1730,8 @@ async function handleTransactionsSync(event) {
             merchantName: "City Apartments",
             amount: -1450.0,
             currency: "USD",
-            occurredAt: new Date(baseTime + 4 * DAY_MS).toISOString(),
-            authorizedAt: new Date(baseTime + 4 * DAY_MS + 90 * 60 * 1000).toISOString(),
+            occurredAt: new Date(demoAnchor + 4 * DAY_MS).toISOString(),
+            authorizedAt: new Date(demoAnchor + 4 * DAY_MS + 90 * 60 * 1000).toISOString(),
             pending: false,
             category: "Housing",
             description: "Monthly rent payment",
@@ -1741,8 +1743,8 @@ async function handleTransactionsSync(event) {
             merchantName: "Employer Bonus",
             amount: 500.0,
             currency: "USD",
-            occurredAt: new Date(baseTime + 10 * DAY_MS).toISOString(),
-            authorizedAt: new Date(baseTime + 10 * DAY_MS).toISOString(),
+            occurredAt: new Date(demoAnchor + 10 * DAY_MS).toISOString(),
+            authorizedAt: new Date(demoAnchor + 10 * DAY_MS).toISOString(),
             pending: false,
             category: "Income",
             description: "Performance bonus",

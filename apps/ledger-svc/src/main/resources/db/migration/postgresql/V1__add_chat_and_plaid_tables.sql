@@ -1,7 +1,8 @@
 -- Flyway migration: Add plaid_items and chat_messages tables (initial)
 CREATE TABLE IF NOT EXISTS plaid_items (
     user_id uuid PRIMARY KEY REFERENCES users(id),
-    item_id text NOT NULL UNIQUE,
+    item_id text NOT NULL,
+    UNIQUE (user_id, item_id),
     encrypted_access_token text NOT NULL,
     linked_at timestamptz NOT NULL DEFAULT now()
 );

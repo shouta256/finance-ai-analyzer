@@ -1279,12 +1279,12 @@ async function handlePlaidExchange(event) {
     await withUserClient(auth.sub, async (client) => {
       await ensureUserRow(client, auth);
       const tokenColumn = await resolvePlaidTokenColumn(client);
-      await client.query(`DELETE FROM plaid_items WHERE item_id = $1`, [itemId]);
+      await client.query(`DELETE FROM plaid_items WHERE user_id = current_setting('appsec.user_id', true)::uuid`);
       const insertSql = `
         INSERT INTO plaid_items (user_id, item_id, ${tokenColumn})
         VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2)
-        ON CONFLICT (user_id)
-        DO UPDATE SET item_id = EXCLUDED.item_id, ${tokenColumn} = EXCLUDED.${tokenColumn}`;
+        ON CONFLICT (user_id, item_id)
+        DO UPDATE SET ${tokenColumn} = EXCLUDED.${tokenColumn}`;
       await client.query(insertSql, [itemId, encryptedToken]);
     });
     if (wantSync) {

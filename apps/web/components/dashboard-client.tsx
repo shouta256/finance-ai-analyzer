@@ -70,6 +70,11 @@ function setTransactionsCache(key: string, data: TransactionsList) {
   TRANSACTIONS_CACHE.set(key, { data, expires: Date.now() + CACHE_TTL_MS });
 }
 
+function clearDataCaches() {
+  SUMMARY_CACHE.clear();
+  TRANSACTIONS_CACHE.clear();
+}
+
 export function DashboardClient({ month, initialSummary, initialTransactions }: DashboardClientProps) {
   const [state, setState] = useState<FetchState>({ summary: initialSummary, transactions: initialTransactions });
   const [isPending, startTransition] = useTransition();
@@ -408,6 +413,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         const payload: Parameters<typeof triggerTransactionSync>[0] = {};
         if (startMonth) payload.startMonth = startMonth;
         await triggerTransactionSync(payload);
+        clearDataCaches();
         await refreshData();
         setMessage("Sync triggered successfully.");
       } catch (error) {
@@ -429,6 +435,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     startTransition(async () => {
       try {
         await resetTransactions({ unlinkPlaid });
+        clearDataCaches();
         await refreshData();
         setMessage("Transactions reset requested.");
       } catch (error) {
@@ -461,6 +468,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             await exchangePlaidPublicToken(publicToken);
             setMessage("Account linked. Syncing transactions…");
             await triggerTransactionSync();
+            clearDataCaches();
             await refreshData();
             setMessage("Plaid account linked and sync triggered.");
           } catch (error) {
@@ -526,6 +534,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     startTransition(async () => {
       try {
         await triggerTransactionSync({ forceFullSync: true, demoSeed: true });
+        clearDataCaches();
         await refreshData();
         setMessage("Demo data loaded.");
         setAiReady(true);

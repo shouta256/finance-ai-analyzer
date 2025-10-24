@@ -512,6 +512,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       ? "This will delete all transactions and unlink your Plaid account. Continue?"
       : "This will delete all transactions. Continue?";
     if (!window.confirm(confirmMsg)) return;
+    setActionsOpen(false);
     setMessage("Resetting transactions…");
     startTransition(async () => {
       try {
@@ -544,6 +545,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     if (linking) return;
     setErrorState(null);
     setMessage(null);
+    setActionsOpen(false);
     setLinking(true);
     try {
       const linkToken = await ensureLinkToken();
@@ -624,6 +626,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   async function handleSandboxDemo() {
     if (sandboxLoading || syncing || generatingAi || linking) return;
+    setActionsOpen(false);
     setSandboxLoading(true);
     setMessage("Loading demo data…");
     startTransition(async () => {

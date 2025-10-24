@@ -2102,11 +2102,42 @@ async function handleTransactionsSync(event) {
 }
 
 async function handleTransactionsReset(event) {
-  await authenticate(event);
-  return respond(event, 202, {
-    status: "ACCEPTED",
-    traceId: event.requestContext?.requestId || crypto.randomUUID(),
-  });
+  const auth = await authenticate(event);
+  let unlinkPlaid = false;
+  try {
+    const body = parseJsonBody(event);
+    unlinkPlaid = Boolean(body?.unlinkPlaid);
+  } catch {
+    unlinkPlaid = false;
+  }
+  const traceId = event.requestContext?.requestId || crypto.randomUUID();
+  try {
+    await withUserClient(auth.sub, async (client) => {
+      await client.query(
+        `DELETE FROM transactions WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+      );
+      await client.query(
+        `DELETE FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+      );
+      if (unlinkPlaid) {
+        await client.query(
+          `DELETE FROM plaid_items WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+        );
+      }
+    });
+    return respond(event, 202, {
+      status: "ACCEPTED",
+      traceId,
+    });
+  } catch (error) {
+    return respond(event, error?.statusCode || error?.status || 500, {
+      error: {
+        code: "TRANSACTIONS_RESET_FAILED",
+        message: error?.message || "Failed to reset transactions",
+        traceId,
+      },
+    });
+  }
 }
 
 exports.handler = async (event) => {

@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/src/lib/env";
 
-const API_BASE =
-  env.SAFEPOCKET_API_BASE ||
-  env.NEXT_PUBLIC_API_BASE ||
-  process.env.COGNITO_GATEWAY_BASE ||
-  process.env.API_GATEWAY_BASE;
-
-if (!API_BASE) {
-  throw new Error("SAFEPOCKET_API_BASE (or equivalent) is not configured");
-}
-
 function resolveRedirect(target: string | null, origin: string): string {
   if (target) {
     try {
@@ -37,6 +27,15 @@ function createErrorRedirect(origin: string, message?: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const API_BASE =
+    env.SAFEPOCKET_API_BASE ||
+    env.NEXT_PUBLIC_API_BASE ||
+    process.env.COGNITO_GATEWAY_BASE ||
+    process.env.API_GATEWAY_BASE;
+
+  if (!API_BASE) {
+    return createErrorRedirect(request.nextUrl.origin, "SAFEPOCKET_API_BASE (or equivalent) is not configured");
+  }
   const nextUrl = request.nextUrl;
   const code = nextUrl.searchParams.get("code");
   if (!code) {

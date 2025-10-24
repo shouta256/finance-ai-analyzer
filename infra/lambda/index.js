@@ -1279,8 +1279,8 @@ async function handlePlaidExchange(event) {
     await withUserClient(auth.sub, async (client) => {
       await ensureUserRow(client, auth);
       const tokenColumn = await resolvePlaidTokenColumn(client);
+      await client.query(`DELETE FROM plaid_items WHERE item_id = $1`, [itemId]);
       const insertSql = `
-        DELETE FROM plaid_items WHERE item_id = $1;
         INSERT INTO plaid_items (user_id, item_id, ${tokenColumn})
         VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2)
         ON CONFLICT (user_id)

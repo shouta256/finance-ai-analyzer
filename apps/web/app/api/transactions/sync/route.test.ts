@@ -9,9 +9,10 @@ vi.mock("@/src/lib/api-client", () => ({
 const mockedLedgerFetch = vi.mocked(ledgerFetch);
 
 const sampleResponse = {
-  status: "STARTED",
-  syncedCount: 3,
-  pendingCount: 0,
+  status: "ACCEPTED",
+  fetched: 5,
+  upserted: 5,
+  items: 1,
   traceId: "trace-123",
 };
 

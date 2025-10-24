@@ -1283,8 +1283,8 @@ async function handlePlaidExchange(event) {
       const insertSql = `
         INSERT INTO plaid_items (user_id, item_id, ${tokenColumn})
         VALUES (current_setting('appsec.user_id', true)::uuid, $1, $2)
-        ON CONFLICT (user_id, item_id)
-        DO UPDATE SET ${tokenColumn} = EXCLUDED.${tokenColumn}`;
+        ON CONFLICT (item_id)
+        DO UPDATE SET user_id = EXCLUDED.user_id, ${tokenColumn} = EXCLUDED.${tokenColumn}`;
       await client.query(insertSql, [itemId, encryptedToken]);
     });
     if (wantSync) {

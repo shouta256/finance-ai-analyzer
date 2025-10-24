@@ -2,6 +2,7 @@ plugins {
     id("java")
     id("org.springframework.boot") version "3.2.5"
     id("io.spring.dependency-management") version "1.1.4"
+    id("org.flywaydb.flyway") version "10.15.0"
 }
 
 group = "com.safepocket"
@@ -30,6 +31,8 @@ dependencies {
 
     runtimeOnly("com.h2database:h2")
     implementation("org.postgresql:postgresql")
+    
+    runtimeOnly("org.flywaydb:flyway-database-postgresql:10.15.0")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
@@ -39,3 +42,4 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+

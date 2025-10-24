@@ -437,7 +437,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         await resetTransactions({ unlinkPlaid });
         clearDataCaches();
         await refreshData();
-        setMessage("Transactions reset requested.");
+        setMessage(unlinkPlaid ? "Transactions reset and account unlinked." : "Transactions reset requested.");
+        setAiReady(false);
       } catch (error) {
         console.error(error);
         setMessage((error as Error).message ?? "Reset failed.");

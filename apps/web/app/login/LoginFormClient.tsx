@@ -53,10 +53,10 @@ function deriveApiCallbackUri(base?: string): string | undefined {
 }
 
 function resolveRedirectUri(configured?: string): string {
-  const apiCallback = deriveApiCallbackUri(API_BASE);
-  if (apiCallback) return apiCallback;
   const normalizedConfigured = normalizeRedirectCandidate(configured);
   if (normalizedConfigured) return normalizedConfigured;
+  const apiCallback = deriveApiCallbackUri(API_BASE);
+  if (apiCallback) return apiCallback;
   if (typeof window !== "undefined") {
     return `${window.location.origin}/auth/callback`;
   }

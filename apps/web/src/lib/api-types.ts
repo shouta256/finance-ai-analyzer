@@ -196,40 +196,19 @@ export interface components {
     };
     TransactionsSyncResponse: {
       /** @enum {string} */
-      status: "ACCEPTED" | "STARTED" | "COMPLETED";
+      status: "STARTED" | "COMPLETED";
       /**
        * Format: int32
        * @description Number of transactions queued for processing
        */
-      syncedCount?: number;
+      syncedCount: number;
       /**
        * Format: int32
        * @description Number of transactions remaining in backlog
        */
-      pendingCount?: number;
-      /**
-       * Format: int32
-       * @description Number of transactions fetched from Plaid in this invocation
-       */
-      fetched?: number;
-      /**
-       * Format: int32
-       * @description Number of transactions upserted into the ledger in this invocation
-       */
-      upserted?: number;
-      /**
-       * Format: int32
-       * @description Number of Plaid items processed
-       */
-      items?: number;
-      /** @description Indicates demo mode when present */
-      mode?: "DEMO";
-      /** @description Sync window start (YYYY-MM-DD) */
-      from?: string;
-      /** @description Sync window end (YYYY-MM-DD) */
-      to?: string;
+      pendingCount: number;
       /** @description Identifier for correlating async sync operations */
-      traceId?: string;
+      traceId: string;
     };
     TransactionsResetRequest: {
       /**

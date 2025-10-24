@@ -127,9 +127,15 @@ export const analyticsSummarySchema = z.object({
 });
 
 export const transactionsSyncSchema = z.object({
-  status: z.enum(["STARTED", "COMPLETED"]),
-  syncedCount: z.number(),
-  pendingCount: z.number(),
+  status: z.enum(["ACCEPTED", "STARTED", "COMPLETED"]),
+  syncedCount: z.number().optional(),
+  pendingCount: z.number().optional(),
+  fetched: z.number().optional(),
+  upserted: z.number().optional(),
+  items: z.number().optional(),
+  mode: z.enum(["DEMO"]).optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
   traceId: z.string().nullable().optional(),
 });
 

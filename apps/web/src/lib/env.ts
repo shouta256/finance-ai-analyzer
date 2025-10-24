@@ -15,6 +15,7 @@ const schema = z.object({
   LEDGER_SERVICE_PATH_PREFIX: z.string().optional(),
   LEDGER_SERVICE_INTERNAL_URL: z.string().url().optional(),
   NEXT_PUBLIC_API_BASE: z.string().url().optional(),
+  SAFEPOCKET_API_BASE: z.string().url().optional(),
   OPENAI_HIGHLIGHT_ENABLED: z
     .string()
     .optional()
@@ -33,6 +34,7 @@ const raw = schema.parse({
   LEDGER_SERVICE_PATH_PREFIX: process.env.LEDGER_SERVICE_PATH_PREFIX,
   LEDGER_SERVICE_INTERNAL_URL: process.env.LEDGER_SERVICE_INTERNAL_URL,
   NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE,
+  SAFEPOCKET_API_BASE: process.env.SAFEPOCKET_API_BASE,
   OPENAI_HIGHLIGHT_ENABLED: process.env.OPENAI_HIGHLIGHT_ENABLED,
   NEXT_PUBLIC_COGNITO_DOMAIN: process.env.NEXT_PUBLIC_COGNITO_DOMAIN,
   NEXT_PUBLIC_COGNITO_CLIENT_ID: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
@@ -47,6 +49,7 @@ const resolvedLedgerUrl = normalizeUrl(raw.LEDGER_SERVICE_URL ?? raw.NEXT_PUBLIC
 const resolvedPathPrefix = normalizePrefix(raw.LEDGER_SERVICE_PATH_PREFIX);
 const resolvedInternalUrl = raw.LEDGER_SERVICE_INTERNAL_URL ? normalizeUrl(raw.LEDGER_SERVICE_INTERNAL_URL) : undefined;
 const resolvedPublicApi = raw.NEXT_PUBLIC_API_BASE ? normalizeUrl(raw.NEXT_PUBLIC_API_BASE) : undefined;
+const resolvedSafePocketApi = raw.SAFEPOCKET_API_BASE ? normalizeUrl(raw.SAFEPOCKET_API_BASE) : undefined;
 
 export const env = {
   ...raw,
@@ -54,4 +57,5 @@ export const env = {
   LEDGER_SERVICE_PATH_PREFIX: resolvedPathPrefix,
   LEDGER_SERVICE_INTERNAL_URL: resolvedInternalUrl,
   NEXT_PUBLIC_API_BASE: resolvedPublicApi,
+  SAFEPOCKET_API_BASE: resolvedSafePocketApi,
 };

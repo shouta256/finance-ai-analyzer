@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
   }
   const state = nextUrl.searchParams.get("state");
 
-  const upstreamUrl = new URL("/auth/callback", API_BASE);
+const apiBaseUrl = API_BASE.endsWith("/") ? API_BASE : `${API_BASE}/`;
+const upstreamUrl = new URL("auth/callback", apiBaseUrl);
   upstreamUrl.searchParams.set("code", code);
   upstreamUrl.searchParams.set("response", "json");
   if (state) upstreamUrl.searchParams.set("state", state);

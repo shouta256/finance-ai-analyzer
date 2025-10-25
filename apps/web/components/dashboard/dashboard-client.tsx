@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import type { ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -104,10 +104,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     setTransactionsCache(transactionsKey, initialTransactions);
   }, [initialSummary, initialTransactions, month, pageSize]);
 
-  useEffect(() => {
-    startTransition(() => refreshData({ page: 0 }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const expenseCategories = useMemo(() => state.summary.byCategory, [state.summary.byCategory]);
   const topMerchants = useMemo(() => state.summary.topMerchants, [state.summary.topMerchants]);
@@ -401,13 +397,13 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     },
   }), []);
 
-  async function refreshData(overrides?: {
+  const refreshData = useCallback(async (overrides?: {
     focusMonth?: string;
     rangeMode?: RangeMode;
     customFrom?: string;
     customTo?: string;
     page?: number;
-  }) {
+  }) => {
     try {
       setErrorState(null);
       const activePage = overrides?.page ?? page;
@@ -483,7 +479,65 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       }
       setErrorState({ code, traceId, details: reason });
     }
-  }
+  }, [page, focusMonth, rangeMode, customFromMonth, customToMonth, pageSize, month]);
+
+  useEffect(() => {
+    startTransition(() => refreshData({ page: 0 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return () => undefined;
+    let cancelled = false;
+    const checkSession = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/debug/token", { credentials: "include", cache: "no-store" });
+        if (!cancelled && (res.status === 401 || res.status === 403)) {
+          window.location.href = "/login";
+        }
+      } catch (error) {
+        if (!cancelled && (error as { status?: number })?.status === 401) {
+          window.location.href = "/login";
+        }
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void checkSession();
+      }
+    };
+    const handleFocus = () => {
+      void checkSession();
+    };
+    const interval = window.setInterval(() => {
+      void checkSession();
+    }, 2 * 60 * 1000);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+    void checkSession();
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  const isProductNotReadyError = (error: unknown) => {
+    const payloadError = (error as { payload?: { error?: { code?: string; message?: string } } })?.payload?.error;
+    const code = payloadError?.code?.toUpperCase();
+    const message = payloadError?.message?.toLowerCase();
+    if (code === "PRODUCT_NOT_READY") return true;
+    if (code === "TRANSACTIONS_SYNC_FAILED" && message?.includes("not yet ready")) return true;
+    return false;
+  };
+
+  const isUnauthorizedError = (error: unknown) => {
+    const status = (error as { status?: number })?.status;
+    const code = (error as { payload?: { error?: { code?: string } } })?.payload?.error?.code;
+    return status === 401 || code === "UNAUTHENTICATED";
+  };
 
   async function handleSync() {
     if (syncing || generatingAi || linking || sandboxLoading) return;
@@ -493,12 +547,36 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       try {
         const payload: Parameters<typeof triggerTransactionSync>[0] = {};
         if (startMonth) payload.startMonth = startMonth;
-        await triggerTransactionSync(payload);
+        const MAX_ATTEMPTS = 5;
+        const BASE_DELAY_MS = 4000;
+        let attempt = 0;
+        while (true) {
+          attempt += 1;
+          try {
+            await triggerTransactionSync(payload);
+            break;
+          } catch (error) {
+            if (isUnauthorizedError(error) && typeof window !== "undefined") {
+              window.location.href = "/login";
+              return;
+            }
+            if (!isProductNotReadyError(error) || attempt >= MAX_ATTEMPTS) {
+              throw error;
+            }
+            const delay = Math.min(BASE_DELAY_MS * attempt, 20000);
+            setMessage(`Plaid is preparing your transactions… retrying (${attempt}/${MAX_ATTEMPTS})`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
         invalidateCaches();
         await refreshData();
-        setMessage("Sync triggered successfully.");
+        setMessage("Sync completed successfully.");
       } catch (error) {
         console.error(error);
+        if (isUnauthorizedError(error) && typeof window !== "undefined") {
+          window.location.href = "/login";
+          return;
+        }
         setMessage((error as Error).message ?? "Sync failed.");
       } finally {
         setSyncing(false);
@@ -760,6 +838,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         unlinkPlaid={unlinkPlaid}
         onToggleUnlink={setUnlinkPlaid}
         message={message}
+        isBusy={linking || syncing || generatingAi || sandboxLoading}
       />
 
       <PeriodModal

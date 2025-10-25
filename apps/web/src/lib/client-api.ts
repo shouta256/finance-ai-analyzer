@@ -3,6 +3,26 @@ import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, tran
 import { getStoredAccessToken } from "./auth-storage";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "";
 
+function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  try {
+    const current = `${window.location.pathname}${window.location.search}` || "/dashboard";
+    const login = new URL("/login", window.location.origin);
+    if (current && current !== "/login") {
+      login.searchParams.set("redirect", current);
+    }
+    window.location.href = login.toString();
+  } catch {
+    window.location.href = "/login";
+  }
+}
+
+function maybeRedirectToLogin(status?: number) {
+  if (status === 401 || status === 403) {
+    redirectToLogin();
+  }
+}
+
 function buildRequestUrl(path: string, params?: Record<string, string | undefined>): string {
   let targetPath = path.startsWith("/") ? path : `/${path}`;
   if (API_BASE && targetPath.startsWith("/api/")) {
@@ -64,6 +84,7 @@ async function handleJson<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> 
     } catch {
       // ignore
     }
+    maybeRedirectToLogin(res.status);
     const message = (payload as { error?: { message?: string } })?.error?.message ?? res.statusText;
     throw new ApiError(message || "Request failed", res.status, payload);
   }
@@ -135,6 +156,7 @@ export async function triggerTransactionSync(options: TriggerSyncOptions = {}): 
     } catch {
       // ignore
     }
+    maybeRedirectToLogin(res.status);
     const message = (payload as { error?: { message?: string } })?.error?.message ?? res.statusText;
     throw new ApiError(message || "Failed to trigger sync", res.status, payload);
   }
@@ -152,6 +174,7 @@ export async function resetTransactions(options: { unlinkPlaid?: boolean } = {})
     return json;
   })();
   if (!res.ok) {
+    maybeRedirectToLogin(res.status);
     const message = (parsed as any)?.error?.message ?? res.statusText;
     throw new ApiError(message || "Failed to reset transactions", res.status, parsed);
   }

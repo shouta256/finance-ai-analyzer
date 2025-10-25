@@ -31,6 +31,7 @@ const SECRET_PLAID = resolveSecretName(process.env.SECRET_PLAID_NAME, "/safepock
 const PLAID_TIMEOUT_MS = Number(process.env.PLAID_TIMEOUT_MS || "8000");
 const LEDGER_TIMEOUT_MS = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
 const ANON_USER_ID = process.env.ANON_USER_ID || "00000000-0000-0000-0000-000000000000";
+const ADMIN_SQL_TOKEN = process.env.ADMIN_SQL_TOKEN || "";
 
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
@@ -1360,6 +1361,33 @@ async function fetchLedgerJson(path, options = {}) {
 }
 
 
+// ===== [DB diagnostics helpers - TEMPORARY] =====
+async function checkPlaidItems(client) {
+  const constraints = await client.query(
+    "SELECT conname, pg_get_constraintdef(c.oid) AS def FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid WHERE t.relname = 'plaid_items' AND c.contype = 'u' ORDER BY conname",
+  );
+  const dupItem = await client.query(
+    "SELECT item_id, COUNT(*) AS cnt FROM plaid_items GROUP BY item_id HAVING COUNT(*) > 1 ORDER BY cnt DESC LIMIT 50",
+  );
+  const dupUserItem = await client.query(
+    "SELECT user_id, item_id, COUNT(*) AS cnt FROM plaid_items GROUP BY user_id, item_id HAVING COUNT(*) > 1 ORDER BY cnt DESC LIMIT 50",
+  );
+  return {
+    constraints: constraints.rows,
+    dupByItem: dupItem.rows,
+    dupByUserItem: dupUserItem.rows,
+  };
+}
+
+async function ensurePlaidItemsConstraints(client) {
+  await client.query("ALTER TABLE plaid_items ADD CONSTRAINT IF NOT EXISTS plaid_items_item_unique UNIQUE (item_id)");
+  await client.query(
+    "ALTER TABLE plaid_items ADD CONSTRAINT IF NOT EXISTS plaid_items_user_item_unique UNIQUE (user_id, item_id)",
+  );
+  await client.query("CREATE INDEX IF NOT EXISTS plaid_items_user_idx ON plaid_items(user_id)");
+  return { ok: true };
+}
+
 async function handleDiagnosticsPlaidConfig(event) {
   const { plaid } = await loadConfig();
   const resolved = {
@@ -2200,11 +2228,26 @@ exports.handler = async (event) => {
     if (method === "GET" && path === "/diagnostics/dns") {
       return await handleDnsDiagnostics(event);
     }
-    if (method === "GET" && path === "/diagnostics/auth") {
-      return await handleDiagnosticsAuth(event);
+    if (path === "/diagnostics/auth") {
+        return await handleDiagnosticsAuth(event);
+      }
+      if (path === "/diagnostics/db/plaid-items") {
+        const payload = await authenticate(event);
+        const res = await withUserClient(payload.sub, (c) => checkPlaidItems(c));
+        return respond(event, 200, res);
+      }
     }
     if (method === "GET" && path === "/diagnostics/plaid-config") {
       return await handleDiagnosticsPlaidConfig(event);
+    }
+
+    if (method === "POST" && path === "/admin/db/plaid-items/ensure-constraints") {
+      const adminHdr = event.headers?.["x-admin"] || event.headers?.["X-Admin"];
+      if (!ADMIN_SQL_TOKEN || adminHdr !== ADMIN_SQL_TOKEN) {
+        return respond(event, 403, { error: "forbidden" });
+      }
+      const res = await withUserClient(ANON_USER_ID, (c) => ensurePlaidItemsConstraints(c));
+      return respond(event, 200, res);
     }
 
     return respond(event, 404, { error: "Not Found" });

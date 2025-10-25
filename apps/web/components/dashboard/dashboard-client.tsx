@@ -539,6 +539,33 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     return status === 401 || code === "UNAUTHENTICATED";
   };
 
+  const syncWithRetries = async (
+    payload: Parameters<typeof triggerTransactionSync>[0] | undefined,
+    options: { maxAttempts?: number; onRetry?: (attempt: number, maxAttempts: number) => void } = {},
+  ) => {
+    const maxAttempts = options.maxAttempts ?? 6;
+    const BASE_DELAY_MS = 4000;
+    let attempt = 0;
+    while (true) {
+      attempt += 1;
+      try {
+        await triggerTransactionSync(payload);
+        return;
+      } catch (error) {
+        if (isUnauthorizedError(error) && typeof window !== "undefined") {
+          window.location.href = "/login";
+          throw error;
+        }
+        if (!isProductNotReadyError(error) || attempt >= maxAttempts) {
+          throw error;
+        }
+        options.onRetry?.(attempt, maxAttempts);
+        const delay = Math.min(BASE_DELAY_MS * attempt, 20000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  };
+
   async function handleSync() {
     if (syncing || generatingAi || linking || sandboxLoading) return;
     setSyncing(true);
@@ -547,27 +574,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       try {
         const payload: Parameters<typeof triggerTransactionSync>[0] = {};
         if (startMonth) payload.startMonth = startMonth;
-        const MAX_ATTEMPTS = 5;
-        const BASE_DELAY_MS = 4000;
-        let attempt = 0;
-        while (true) {
-          attempt += 1;
-          try {
-            await triggerTransactionSync(payload);
-            break;
-          } catch (error) {
-            if (isUnauthorizedError(error) && typeof window !== "undefined") {
-              window.location.href = "/login";
-              return;
-            }
-            if (!isProductNotReadyError(error) || attempt >= MAX_ATTEMPTS) {
-              throw error;
-            }
-            const delay = Math.min(BASE_DELAY_MS * attempt, 20000);
-            setMessage(`Plaid is preparing your transactions… retrying (${attempt}/${MAX_ATTEMPTS})`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-        }
+        await syncWithRetries(payload, {
+          onRetry: (attempt, maxAttempts) => {
+            setMessage(`Plaid is preparing your transactions… retrying (${attempt}/${maxAttempts})`);
+          },
+        });
         invalidateCaches();
         await refreshData();
         setMessage("Sync completed successfully.");
@@ -642,13 +653,22 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             setMessage("Link successful. Finalising…");
             await exchangePlaidPublicToken(publicToken);
             setMessage("Account linked. Syncing transactions…");
-            await triggerTransactionSync();
+            await syncWithRetries(undefined, {
+              maxAttempts: 8,
+              onRetry: (attempt, maxAttempts) => {
+                setMessage(`Plaid is preparing your transactions… retrying (${attempt}/${maxAttempts})`);
+              },
+            });
             invalidateCaches();
             await refreshData();
             setMessage("Plaid account linked and sync triggered.");
           } catch (error) {
             console.error(error);
-            setMessage((error as Error).message ?? "Failed to finalise Plaid link.");
+            if (isUnauthorizedError(error) && typeof window !== "undefined") {
+              window.location.href = "/login";
+            } else {
+              setMessage((error as Error).message ?? "Failed to finalise Plaid link.");
+            }
           } finally {
             handler.destroy?.();
             setLinking(false);

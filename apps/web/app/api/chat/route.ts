@@ -153,3 +153,25 @@ export async function POST(request: NextRequest) {
     return mapError(error);
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const authorization = requireAuthorization(request);
+  if (authorization instanceof NextResponse) return authorization;
+
+  try {
+    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+    if (errorResponse) return errorResponse;
+    const { searchParams } = new URL(request.url);
+    const conversationId = searchParams.get("conversationId") ?? undefined;
+    const path = conversationId ? `/ai/chat?conversationId=${encodeURIComponent(conversationId)}` : "/ai/chat";
+    const result = await ledgerFetch(path, {
+      method: "DELETE",
+      headers: { authorization },
+      baseUrlOverride,
+      parseJson: false,
+    });
+    return NextResponse.json({ status: "DELETED" });
+  } catch (error) {
+    return mapError(error);
+  }
+}

@@ -1456,6 +1456,28 @@ async function handleDiagnosticsAuth(event) {
   }
 }
 
+async function handleDiagnosticsDbMaintenance(event) {
+  const headers = event.headers || {};
+  const adminToken = process.env.DB_ADMIN_TOKEN || ADMIN_SQL_TOKEN;
+  const supplied =
+    headers["x-admin-token"] ||
+    headers["X-Admin-Token"] ||
+    headers["x-admin"] ||
+    headers["X-Admin"] ||
+    "";
+  if (!adminToken || supplied !== adminToken) {
+    return respond(event, 403, { error: "forbidden" });
+  }
+
+  try {
+    const result = await withUserClient(ANON_USER_ID, (client) => ensurePlaidItemsConstraints(client));
+    return respond(event, 200, { status: "ok", details: result });
+  } catch (error) {
+    console.error("[maint] failed to apply constraints", { code: error?.code, message: error?.message });
+    return respond(event, 500, { error: error?.message || "constraint_update_failed", code: error?.code });
+  }
+}
+
 async function handleAuthToken(event) {
   const body = parseJsonBody(event);
   const grantType = body.grantType || body.grant_type;
@@ -2238,6 +2260,9 @@ exports.handler = async (event) => {
     }
     if (method === "GET" && path === "/diagnostics/plaid-config") {
       return await handleDiagnosticsPlaidConfig(event);
+    }
+    if (method === "POST" && path === "/diagnostics/db/maint") {
+      return await handleDiagnosticsDbMaintenance(event);
     }
 
     if (method === "POST" && path === "/admin/db/plaid-items/ensure-constraints") {

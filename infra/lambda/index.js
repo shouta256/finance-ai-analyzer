@@ -2143,6 +2143,35 @@ async function handleChat(event) {
     }
   }
 
+  if (method === "DELETE") {
+    try {
+      const requestedId = event.queryStringParameters?.conversationId;
+      await withUserClient(payload.sub, async (client) => {
+        await ensureChatTables(client);
+        await ensureUserRow(client, payload);
+        if (requestedId && UUID_REGEX.test(requestedId)) {
+          await client.query(
+            `DELETE FROM chat_messages
+             WHERE user_id = current_setting('appsec.user_id', true)::uuid
+               AND conversation_id = $1`,
+            [requestedId],
+          );
+        } else {
+          await client.query(
+            `DELETE FROM chat_messages
+             WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+          );
+        }
+      });
+      return respond(event, 200, { status: "DELETED", traceId });
+    } catch (error) {
+      if (ENABLE_STUBS) {
+        return respond(event, 200, { status: "DELETED", traceId });
+      }
+      throw error;
+    }
+  }
+
   return respond(event, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Unsupported chat method" } });
 }
 

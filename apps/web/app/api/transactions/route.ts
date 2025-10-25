@@ -12,11 +12,11 @@ const querySchema = z
       .optional(),
     from: z
       .string()
-      .regex(/^\d{4}-\d{2}$/)
+      .regex(/^\d{4}-\d{2}(-\d{2})?$/)
       .optional(),
     to: z
       .string()
-      .regex(/^\d{4}-\d{2}$/)
+      .regex(/^\d{4}-\d{2}(-\d{2})?$/)
       .optional(),
     accountId: z.string().uuid().optional(),
     page: z
@@ -47,19 +47,27 @@ export async function GET(request: NextRequest) {
   if (errorResponse) return errorResponse;
 
   const { searchParams } = new URL(request.url);
+  const normalizePart = (value: string | null) => {
+    if (!value) return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed.replace(/\//g, "-");
+  };
   const query = querySchema.parse({
-    month: searchParams.get("month") ?? undefined,
-    from: searchParams.get("from") ?? undefined,
-    to: searchParams.get("to") ?? undefined,
+    month: normalizePart(searchParams.get("month")),
+    from: normalizePart(searchParams.get("from")),
+    to: normalizePart(searchParams.get("to")),
     accountId: searchParams.get("accountId") ?? undefined,
     page: searchParams.get("page") ?? undefined,
     pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   const endpoint = new URL("/transactions", "http://localhost");
-  if (query.month) endpoint.searchParams.set("month", query.month);
-  if (query.from) endpoint.searchParams.set("from", query.from);
-  if (query.to) endpoint.searchParams.set("to", query.to);
+  if (query.month) endpoint.searchParams.set("month", query.month.slice(0, 7));
+  const normalizedFrom = query.from ? query.from.slice(0, 7) : undefined;
+  const normalizedTo = query.to ? query.to.slice(0, 7) : undefined;
+  if (normalizedFrom) endpoint.searchParams.set("from", normalizedFrom);
+  if (normalizedTo) endpoint.searchParams.set("to", normalizedTo);
   if (query.accountId) endpoint.searchParams.set("accountId", query.accountId);
 
   const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, {

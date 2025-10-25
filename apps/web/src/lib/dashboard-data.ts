@@ -1,4 +1,5 @@
 import { headers, cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { analyticsSummarySchema, transactionsListSchema } from "./schemas";
 
@@ -40,6 +41,9 @@ export async function getDashboardData(month: string): Promise<{
       headers: commonHeaders,
       cache: "no-store",
     });
+    if (summaryResponse.status === 401 || summaryResponse.status === 403) {
+      redirect("/login?redirect=/dashboard");
+    }
     if (!summaryResponse.ok) {
       const details = await safeJson(summaryResponse);
       throw new Error(details ?? `Failed to load analytics: ${summaryResponse.statusText}`);
@@ -52,6 +56,9 @@ export async function getDashboardData(month: string): Promise<{
       headers: commonHeaders,
       cache: "no-store",
     });
+    if (transactionsResponse.status === 401 || transactionsResponse.status === 403) {
+      redirect("/login?redirect=/dashboard");
+    }
     if (!transactionsResponse.ok) {
       const details = await safeJson(transactionsResponse);
       throw new Error(details ?? `Failed to load transactions: ${transactionsResponse.statusText}`);

@@ -2229,13 +2229,12 @@ exports.handler = async (event) => {
       return await handleDnsDiagnostics(event);
     }
     if (path === "/diagnostics/auth") {
-        return await handleDiagnosticsAuth(event);
-      }
-      if (path === "/diagnostics/db/plaid-items") {
-        const payload = await authenticate(event);
-        const res = await withUserClient(payload.sub, (c) => checkPlaidItems(c));
-        return respond(event, 200, res);
-      }
+      return await handleDiagnosticsAuth(event);
+    }
+    if (path === "/diagnostics/db/plaid-items") {
+      const payload = await authenticate(event);
+      const res = await withUserClient(payload.sub, (c) => checkPlaidItems(c));
+      return respond(event, 200, res);
     }
     if (method === "GET" && path === "/diagnostics/plaid-config") {
       return await handleDiagnosticsPlaidConfig(event);

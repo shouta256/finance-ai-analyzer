@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const token = cookies().get('sp_token')?.value || cookies().get('safepocket_token')?.value;
-  if (!token) return NextResponse.json({ error: 'missing token cookie' }, { status: 400 });
+  if (!token) return NextResponse.json({ error: 'missing token cookie' }, { status: 401 });
   try {
     const [, payloadB64] = token.split('.');
     const json = JSON.parse(Buffer.from(payloadB64.replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf8'));

@@ -493,12 +493,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       if (cancelled) return;
       try {
         const res = await fetch("/api/debug/token", { credentials: "include", cache: "no-store" });
-        if (!cancelled && (res.status === 401 || res.status === 403)) {
-          window.location.href = "/login";
+        // セッション切れ（401/403）やトークン欠如（400など）を検知したらログインへ
+        if (!cancelled && (!res.ok || res.status === 401 || res.status === 403)) {
+          const login = new URL("/login", window.location.origin);
+          login.searchParams.set("redirect", "/dashboard");
+          window.location.href = login.toString();
         }
-      } catch (error) {
-        if (!cancelled && (error as { status?: number })?.status === 401) {
-          window.location.href = "/login";
+      } catch (_) {
+        if (!cancelled) {
+          const login = new URL("/login", window.location.origin);
+          login.searchParams.set("redirect", "/dashboard");
+          window.location.href = login.toString();
         }
       }
     };

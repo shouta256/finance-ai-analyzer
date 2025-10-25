@@ -26,6 +26,17 @@ function createErrorRedirect(origin: string, message?: string) {
   return NextResponse.redirect(redirect);
 }
 
+function isSecureRequest(request: NextRequest): boolean {
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedProto) {
+    const proto = forwardedProto.split(",")[0]?.trim().toLowerCase();
+    if (proto) {
+      return proto === "https";
+    }
+  }
+  return request.nextUrl.protocol === "https:";
+}
+
 export async function GET(request: NextRequest) {
   const API_BASE =
     env.SAFEPOCKET_API_BASE ||
@@ -89,10 +100,12 @@ const upstreamUrl = new URL("auth/callback", apiBaseUrl);
   const expiresIn = expiresInRaw !== undefined && Number.isFinite(expiresInRaw) && expiresInRaw > 0 ? Math.floor(expiresInRaw) : 3600;
 
   const response = NextResponse.redirect(resolveRedirect(state, nextUrl.origin));
+  const secureRequest = isSecureRequest(request);
+  const sameSite = (secureRequest ? "none" : "lax") as "none" | "lax";
   const cookieOptions = {
     httpOnly: true,
-    secure: true,
-    sameSite: "none" as const,
+    secure: secureRequest,
+    sameSite,
     path: "/",
     maxAge: expiresIn,
   };

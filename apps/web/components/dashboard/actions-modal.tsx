@@ -22,6 +22,7 @@ interface DashboardActionsModalProps {
   unlinkPlaid: boolean;
   onToggleUnlink: (value: boolean) => void;
   message?: string | null;
+  isBusy?: boolean;
 }
 
 export function DashboardActionsModal(props: DashboardActionsModalProps) {
@@ -43,6 +44,7 @@ export function DashboardActionsModal(props: DashboardActionsModalProps) {
     unlinkPlaid,
     onToggleUnlink,
     message,
+    isBusy = false,
   } = props;
 
   return (
@@ -122,7 +124,15 @@ export function DashboardActionsModal(props: DashboardActionsModalProps) {
             </Button>
           </div>
 
-          {message ? <p className="text-xs text-slate-500">{message}</p> : null}
+          {message ? (
+            <p className="flex items-center gap-2 text-xs text-slate-500">
+              {isBusy ? <span className="relative inline-flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-slate-400/60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-slate-400" />
+              </span> : null}
+              <span>{message}</span>
+            </p>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

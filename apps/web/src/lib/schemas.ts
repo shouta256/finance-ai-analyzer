@@ -20,7 +20,7 @@ export const transactionSchema = z.object({
   amount: z.number(),
   currency: z.string().length(3),
   occurredAt: z.string().datetime(),
-  authorizedAt: z.string().datetime(),
+  authorizedAt: z.string().datetime().nullable(),
   pending: z.boolean(),
   category: z.string(),
   description: z.string().nullable().optional(),

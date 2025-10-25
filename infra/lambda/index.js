@@ -46,6 +46,13 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes("*");
 const NORMALISED_ALLOWED_ORIGINS = ALLOWED_ORIGINS.map((origin) => normaliseOriginUrl(origin)).filter(Boolean);
 const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
+const CHAT_SYSTEM_PROMPT =
+  "You are Safepocket's financial helper. Use the provided context to answer. Context JSON includes 'summary' (month totals, top categories/merchants) and 'recentTransactions' (latest activity). Provide amounts in US dollars with sign-aware formatting, cite exact dates, and do not invent data beyond the supplied context.";
+const CHAT_MAX_HISTORY_MESSAGES = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_HISTORY_LIMIT || "3", 10), 0);
+const CHAT_HISTORY_CHAR_LIMIT = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_HISTORY_CHAR_LIMIT || "1200", 10), 200);
+const CHAT_CONTEXT_CHAR_LIMIT = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_CONTEXT_LIMIT || "8000", 10), 2000);
+const CHAT_DEFAULT_MAX_TOKENS = Math.max(Number.parseInt(process.env.SAFEPOCKET_AI_MAX_TOKENS || "1200", 10), 200);
+let chatTablesEnsured = false;
 
 let configPromise;
 let configCacheKey;
@@ -798,30 +805,8 @@ function round(value) {
   return Number.parseFloat(Number(value).toFixed(2));
 }
 
-async function queryTransactions(userId, fromDate, toDate) {
-  const res = await withUserClient(userId, (client) =>
-    client.query(
-      `SELECT t.id,
-              t.user_id,
-              t.account_id,
-              m.name AS merchant_name,
-              t.amount::numeric,
-              t.currency,
-              t.occurred_at AT TIME ZONE 'UTC' AS occurred_at,
-              t.authorized_at AT TIME ZONE 'UTC' AS authorized_at,
-              t.pending,
-              t.category,
-              t.description
-       FROM transactions t
-       JOIN merchants m ON t.merchant_id = m.id
-       WHERE t.user_id = current_setting('appsec.user_id', true)::uuid
-         AND t.occurred_at >= $1
-         AND t.occurred_at < $2
-       ORDER BY t.occurred_at DESC`,
-      [fromDate.toISOString(), toDate.toISOString()],
-    ),
-  );
-  return res.rows.map((row) => ({
+function mapTransactionRow(row) {
+  return {
     id: row.id,
     userId: row.user_id,
     accountId: row.account_id,
@@ -838,7 +823,67 @@ async function queryTransactions(userId, fromDate, toDate) {
     description: row.description,
     anomalyScore: null,
     notes: null,
-  }));
+  };
+}
+
+async function queryTransactionsWithClient(client, fromDate, toDate) {
+  const res = await client.query(
+    `SELECT t.id,
+            t.user_id,
+            t.account_id,
+            m.name AS merchant_name,
+            t.amount::numeric,
+            t.currency,
+            t.occurred_at AT TIME ZONE 'UTC' AS occurred_at,
+            t.authorized_at AT TIME ZONE 'UTC' AS authorized_at,
+            t.pending,
+            t.category,
+            t.description
+     FROM transactions t
+     JOIN merchants m ON t.merchant_id = m.id
+     WHERE t.user_id = current_setting('appsec.user_id', true)::uuid
+       AND t.occurred_at >= $1
+       AND t.occurred_at < $2
+     ORDER BY t.occurred_at DESC`,
+    [fromDate.toISOString(), toDate.toISOString()],
+  );
+  return res.rows.map(mapTransactionRow);
+}
+
+async function queryTransactions(userId, fromDate, toDate) {
+  return withUserClient(userId, (client) => queryTransactionsWithClient(client, fromDate, toDate));
+}
+
+async function ensureChatTables(client) {
+  if (chatTablesEnsured) return;
+  try {
+    const res = await client.query(
+      `SELECT 1
+       FROM information_schema.tables
+       WHERE table_schema = current_schema()
+         AND table_name = 'chat_messages'
+       LIMIT 1`,
+    );
+    if (res.rowCount === 0) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS chat_messages (
+          id uuid PRIMARY KEY,
+          conversation_id uuid NOT NULL,
+          user_id uuid NOT NULL REFERENCES users(id),
+          role text NOT NULL CHECK (role IN ('USER','ASSISTANT')),
+          content text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )`);
+      await client.query(
+        `CREATE INDEX IF NOT EXISTS chat_messages_conversation_idx
+           ON chat_messages(conversation_id, created_at)`,
+      );
+    }
+    chatTablesEnsured = true;
+  } catch (error) {
+    console.warn("[chat] failed to ensure chat tables", { message: error?.message });
+    throw error;
+  }
 }
 
 function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
@@ -1037,6 +1082,314 @@ function buildStubChatResponse(conversationId, userMessage) {
     messages,
     traceId: crypto.randomUUID(),
   };
+}
+
+function mapChatRow(row) {
+  const createdAt =
+    row.created_at instanceof Date && !Number.isNaN(row.created_at.getTime())
+      ? row.created_at.toISOString()
+      : new Date(row.created_at).toISOString();
+  return {
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    createdAt,
+  };
+}
+
+function truncateText(value, limit) {
+  if (typeof value !== "string") return "";
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n[...truncated...]`;
+}
+
+async function getConversationForClient(client, requestedConversationId) {
+  let conversationId = requestedConversationId;
+  let rows = [];
+  if (conversationId) {
+    const res = await client.query(
+      `SELECT id, conversation_id, role, content, created_at
+       FROM chat_messages
+       WHERE conversation_id = $1
+         AND user_id = current_setting('appsec.user_id', true)::uuid
+       ORDER BY created_at ASC`,
+      [conversationId],
+    );
+    rows = res.rows;
+  } else {
+    const latest = await client.query(
+      `SELECT conversation_id
+       FROM chat_messages
+       WHERE user_id = current_setting('appsec.user_id', true)::uuid
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    );
+    if (latest.rowCount > 0) {
+      conversationId = latest.rows[0].conversation_id;
+      const res = await client.query(
+        `SELECT id, conversation_id, role, content, created_at
+         FROM chat_messages
+         WHERE conversation_id = $1
+           AND user_id = current_setting('appsec.user_id', true)::uuid
+         ORDER BY created_at ASC`,
+        [conversationId],
+      );
+      rows = res.rows;
+    } else {
+      conversationId = crypto.randomUUID();
+      rows = [];
+    }
+  }
+  return { conversationId, messages: rows.map(mapChatRow) };
+}
+
+async function deleteConversationTail(client, messageId) {
+  if (!messageId) return null;
+  const res = await client.query(
+    `SELECT conversation_id, created_at
+     FROM chat_messages
+     WHERE id = $1
+       AND user_id = current_setting('appsec.user_id', true)::uuid
+     LIMIT 1`,
+    [messageId],
+  );
+  if (res.rowCount === 0) {
+    return null;
+  }
+  const { conversation_id: conversationId, created_at: createdAt } = res.rows[0];
+  await client.query(
+    `DELETE FROM chat_messages
+     WHERE conversation_id = $1
+       AND user_id = current_setting('appsec.user_id', true)::uuid
+       AND created_at >= $2`,
+    [conversationId, createdAt],
+  );
+  return conversationId;
+}
+
+function selectHistoryForAi(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+  const limit = Math.max(CHAT_MAX_HISTORY_MESSAGES, 0);
+  if (limit === 0) return [];
+  const trimmed = messages.slice(0, -1); // exclude the most recent (current user message)
+  const start = Math.max(0, trimmed.length - limit * 2);
+  return trimmed.slice(start);
+}
+
+async function gatherChatContext(client, userId) {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1));
+  let transactions = [];
+  try {
+    transactions = await queryTransactionsWithClient(client, start, now);
+  } catch (error) {
+    console.warn("[chat] failed to load transactions for context", { message: error?.message });
+  }
+  const traceId = crypto.randomUUID();
+  let summary = null;
+  try {
+    summary = summarise(transactions, start, now, null, traceId);
+  } catch (error) {
+    console.warn("[chat] failed to summarise transactions", { message: error?.message });
+  }
+  const recentTransactions = transactions.slice(0, 25).map((tx) => ({
+    id: tx.id,
+    occurredAt: tx.occurredAt,
+    merchant: tx.merchantName,
+    amount: tx.amount,
+    category: tx.category,
+    pending: tx.pending,
+  }));
+  return { summary, recentTransactions };
+}
+
+function formatHistoryForProvider(history) {
+  return history.map((msg) => ({
+    role: msg.role === "ASSISTANT" ? "assistant" : "user",
+    content: truncateText(msg.content || "", CHAT_HISTORY_CHAR_LIMIT),
+  }));
+}
+
+async function callGemini(model, contextText, history, userMessage, maxTokens, traceId) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.SAFEPOCKET_AI_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn("[chat] Gemini requested but no API key configured");
+    return null;
+  }
+  const base = (process.env.SAFEPOCKET_AI_ENDPOINT || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+  const modelPath = model.startsWith("models/") ? model : `models/${model}`;
+  const url = `${base}/${modelPath}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const contents = [];
+  contents.push({
+    role: "user",
+    parts: [{ text: `Context JSON:\n${contextText}` }],
+  });
+  history.forEach((msg) => {
+    contents.push({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    });
+  });
+  contents.push({ role: "user", parts: [{ text: userMessage }] });
+  const payload = {
+    systemInstruction: { parts: [{ text: CHAT_SYSTEM_PROMPT }] },
+    contents,
+    generationConfig: {
+      maxOutputTokens: Math.min(maxTokens, 2048),
+      temperature: 0.6,
+    },
+  };
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn("[chat] Gemini response not ok", { status: res.status, body: text });
+      return null;
+    }
+    const data = await res.json();
+    if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+      const candidate = data.candidates.find((c) => c.content?.parts?.length) || data.candidates[0];
+      if (candidate?.content?.parts?.length) {
+        const textPart = candidate.content.parts.find((part) => typeof part.text === "string");
+        if (textPart?.text) return textPart.text.trim();
+      }
+    }
+    if (Array.isArray(data.contents) && data.contents.length > 0) {
+      const first = data.contents[0];
+      if (first?.parts?.length) {
+        const textPart = first.parts.find((part) => typeof part.text === "string");
+        if (textPart?.text) return textPart.text.trim();
+      }
+    }
+    return null;
+  } catch (error) {
+    console.warn("[chat] Gemini call failed", { message: error?.message, traceId });
+    return null;
+  }
+}
+
+async function callOpenAi(model, contextText, history, userMessage, maxTokens, traceId) {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.SAFEPOCKET_AI_KEY;
+  if (!apiKey) {
+    console.warn("[chat] OpenAI requested but no API key configured");
+    return null;
+  }
+  const endpoint = (process.env.SAFEPOCKET_AI_ENDPOINT || "https://api.openai.com/v1/responses").replace(/\/+$/, "");
+  const input = [
+    {
+      role: "system",
+      content: [{ type: "text", text: CHAT_SYSTEM_PROMPT }],
+    },
+    {
+      role: "system",
+      content: [{ type: "text", text: `Context JSON:\n${contextText}` }],
+    },
+  ];
+  history.forEach((msg) => {
+    input.push({
+      role: msg.role,
+      content: [{ type: "text", text: msg.content }],
+    });
+  });
+  input.push({
+    role: "user",
+    content: [{ type: "text", text: userMessage }],
+  });
+  const payload = {
+    model,
+    input,
+    max_output_tokens: maxTokens,
+  };
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.warn("[chat] OpenAI response not ok", { status: res.status, body: text });
+      return null;
+    }
+    const data = await res.json();
+    if (typeof data.output_text === "string" && data.output_text.trim().length > 0) {
+      return data.output_text.trim();
+    }
+    if (Array.isArray(data.output)) {
+      const parts = [];
+      for (const item of data.output) {
+        if (item?.content) {
+          for (const part of item.content) {
+            const text = part?.text || part?.output_text;
+            if (typeof text === "string") {
+              parts.push(text);
+            }
+          }
+        }
+      }
+      if (parts.length > 0) {
+        return parts.join("\n").trim();
+      }
+    }
+    return null;
+  } catch (error) {
+    console.warn("[chat] OpenAI call failed", { message: error?.message, traceId });
+    return null;
+  }
+}
+
+async function callAiAssistant(history, userMessage, context, traceId) {
+  const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "openai").toLowerCase();
+  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-1.5-flash" : "gpt-4.1-mini");
+  const maxTokens = CHAT_DEFAULT_MAX_TOKENS;
+  const contextJson = JSON.stringify(context, null, 2);
+  const contextText =
+    contextJson.length > CHAT_CONTEXT_CHAR_LIMIT
+      ? `${contextJson.slice(0, CHAT_CONTEXT_CHAR_LIMIT)}\n[context truncated]`
+      : contextJson;
+  const formattedHistory = formatHistoryForProvider(history);
+  if (provider === "gemini") {
+    return callGemini(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
+  }
+  return callOpenAi(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
+}
+
+function buildFallbackReply(context) {
+  if (!context || !context.summary) {
+    return "I couldn't retrieve enough data to answer right now. Please try again in a moment.";
+  }
+  const { summary } = context;
+  const totals = summary?.totals || { income: 0, expense: 0, net: 0 };
+  const topCategory = summary?.byCategory?.[0];
+  const topMerchant = summary?.topMerchants?.[0];
+  const lines = [
+    `Here's what I can see from your recent activity:`,
+    `• Income: $${totals.income.toFixed(2)}, Expenses: $${Math.abs(totals.expense).toFixed(2)}, Net: $${totals.net.toFixed(2)}.`,
+  ];
+  if (topCategory) {
+    lines.push(`• Biggest spending category: ${topCategory.category} at $${Math.abs(topCategory.amount).toFixed(2)}.`);
+  }
+  if (topMerchant) {
+    lines.push(`• Top merchant: ${topMerchant.merchant} with $${Math.abs(topMerchant.amount).toFixed(2)} spent.`);
+  }
+  lines.push("Let me know if you'd like to dive deeper into any of these details!");
+  return lines.join(" ");
+}
+
+async function generateAssistantReplyForLambda(client, userId, conversationId, userMessage, priorMessages, traceId) {
+  const context = await gatherChatContext(client, userId);
+  const aiReply = await callAiAssistant(priorMessages, userMessage, context, traceId);
+  if (aiReply && aiReply.trim()) {
+    return aiReply.trim();
+  }
+  return buildFallbackReply(context);
 }
 
 function buildTransactionsAggregates(transactions) {
@@ -1675,36 +2028,119 @@ async function handleAuthCallback(event) {
   });
 }
 
+const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 async function handleChat(event) {
   const method = (event.requestContext?.http?.method || event.httpMethod || "GET").toUpperCase();
   const payload = await authenticate(event);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
 
-  if (method === "GET") {
-    if (!ENABLE_STUBS) {
-      throw createHttpError(501, "Chat service is not configured");
-    }
-    const conversationId = event.queryStringParameters?.conversationId || crypto.randomUUID();
-    const stub = buildStubChatResponse(conversationId);
-    stub.traceId = traceId;
-    return respond(event, 200, stub, { headers: { "x-safepocket-origin": "stub" } });
-  }
-
-  if (method === "POST") {
-    if (!ENABLE_STUBS) {
-      throw createHttpError(501, "Chat service is not configured");
-    }
-    let body = {};
-    try {
-      body = parseJsonBody(event);
-    } catch (error) {
-      throw createHttpError(400, "Invalid JSON body");
-    }
-    const conversationId = body.conversationId || crypto.randomUUID();
-    const userMessage = typeof body.message === "string" ? body.message : undefined;
+  const buildStub = (conversationId, userMessage) => {
     const stub = buildStubChatResponse(conversationId, userMessage);
     stub.traceId = traceId;
     return respond(event, 200, stub, { headers: { "x-safepocket-origin": "stub" } });
+  };
+
+  if (method === "GET") {
+    const requestedId = event.queryStringParameters?.conversationId;
+    try {
+      const conversationId = UUID_REGEX.test(requestedId || "") ? requestedId : null;
+      const result = await withUserClient(payload.sub, async (client) => {
+        await ensureChatTables(client);
+        await ensureUserRow(client, payload);
+        return getConversationForClient(client, conversationId);
+      });
+      return respond(event, 200, { ...result, traceId });
+    } catch (error) {
+      if (ENABLE_STUBS) {
+        return buildStub(requestedId || crypto.randomUUID());
+      }
+      throw error;
+    }
+  }
+
+  if (method === "POST") {
+    let body;
+    try {
+      body = parseJsonBody(event);
+    } catch {
+      return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "Invalid JSON body" } });
+    }
+    const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
+    if (!rawMessage) {
+      return respond(event, 400, { error: { code: "INVALID_REQUEST", message: "message is required" } });
+    }
+    const rawConversationId = typeof body.conversationId === "string" && UUID_REGEX.test(body.conversationId) ? body.conversationId : null;
+    const truncateId =
+      typeof body.truncateFromMessageId === "string" && UUID_REGEX.test(body.truncateFromMessageId)
+        ? body.truncateFromMessageId
+        : null;
+
+    try {
+      const result = await withUserClient(payload.sub, async (client) => {
+        await ensureChatTables(client);
+        await ensureUserRow(client, payload);
+        let conversationId = rawConversationId;
+
+        if (truncateId) {
+          const truncatedConversationId = await deleteConversationTail(client, truncateId);
+          if (truncatedConversationId) {
+            conversationId = truncatedConversationId;
+          }
+        }
+
+        if (!conversationId) {
+          conversationId = crypto.randomUUID();
+        }
+
+        const nowIso = new Date().toISOString();
+        const userMessageId = crypto.randomUUID();
+        await client.query(
+          `INSERT INTO chat_messages (id, conversation_id, user_id, role, content, created_at)
+           VALUES ($1, $2, current_setting('appsec.user_id', true)::uuid, 'USER', $3, $4)`,
+          [userMessageId, conversationId, rawMessage, nowIso],
+        );
+
+        const conversation = await getConversationForClient(client, conversationId);
+        const messages = conversation.messages;
+        const latestUserMessage = messages[messages.length - 1];
+        const priorMessages = selectHistoryForAi(messages);
+        const assistantContent = await generateAssistantReplyForLambda(
+          client,
+          payload.sub,
+          conversationId,
+          latestUserMessage?.content || rawMessage,
+          priorMessages,
+          traceId,
+        );
+
+        const assistantId = crypto.randomUUID();
+        const assistantCreatedAt = new Date().toISOString();
+        await client.query(
+          `INSERT INTO chat_messages (id, conversation_id, user_id, role, content, created_at)
+           VALUES ($1, $2, current_setting('appsec.user_id', true)::uuid, 'ASSISTANT', $3, $4)`,
+          [assistantId, conversationId, assistantContent, assistantCreatedAt],
+        );
+
+        const updatedMessages = messages.concat([
+          {
+            id: assistantId,
+            role: "ASSISTANT",
+            content: assistantContent,
+            createdAt: assistantCreatedAt,
+          },
+        ]);
+
+        return { conversationId, messages: updatedMessages };
+      });
+
+      return respond(event, 200, { ...result, traceId });
+    } catch (error) {
+      if (ENABLE_STUBS) {
+        return buildStub(rawConversationId || crypto.randomUUID(), rawMessage);
+      }
+      throw error;
+    }
   }
 
   return respond(event, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Unsupported chat method" } });

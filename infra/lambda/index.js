@@ -627,14 +627,17 @@ function normalizeAudienceList(ids) {
 }
 
 function resolveExpectedAudiences(cognito) {
-  const audiences = normalizeAudienceList(cognito?.audienceList);
-  if (audiences.length > 0) {
-    return audiences;
-  }
+  const collected = new Set(normalizeAudienceList(cognito?.audienceList));
   if (cognito?.clientId) {
-    return [cognito.clientId];
+    collected.add(cognito.clientId);
   }
-  return [];
+  if (cognito?.clientIdWeb) {
+    collected.add(cognito.clientIdWeb);
+  }
+  if (cognito?.clientIdNative) {
+    collected.add(cognito.clientIdNative);
+  }
+  return Array.from(collected).filter(Boolean);
 }
 
 async function getCognitoRemoteJwkSet(cognito) {

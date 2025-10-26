@@ -1962,10 +1962,6 @@ async function handleAuthCallback(event) {
   params.set("client_id", cognito.clientId);
   params.set("redirect_uri", cognito.redirectUri);
   params.set("code", code);
-  if (cognito.clientSecret) {
-    params.set("client_secret", cognito.clientSecret);
-  }
-
   const headers = { "Content-Type": "application/x-www-form-urlencoded" };
   const usingBasicAuth = Boolean(cognito.clientSecret);
   if (usingBasicAuth) {

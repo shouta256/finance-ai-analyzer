@@ -512,13 +512,30 @@ async function loadConfig() {
     if (!cognitoUserPoolId && cognitoIssuer) {
       cognitoUserPoolId = cognitoIssuer.split("/").pop();
     }
-    const normalisedIssuer = cognitoIssuer ? stripTrailingSlash(ensureHttps(cognitoIssuer)) : undefined;
+    let normalisedIssuer = cognitoIssuer ? stripTrailingSlash(ensureHttps(cognitoIssuer)) : undefined;
     const normalisedDomain = cognitoDomain ? stripTrailingSlash(ensureHttps(cognitoDomain)) : undefined;
-    const cognitoJwksUrl =
+    let cognitoJwksUrl =
       process.env.COGNITO_JWKS_URL ||
       cognitoSecret?.jwksUrl ||
       (normalisedIssuer ? `${normalisedIssuer}/.well-known/jwks.json` : undefined) ||
       (normalisedDomain ? `${normalisedDomain}/.well-known/jwks.json` : undefined);
+
+    if ((!cognitoJwksUrl || !normalisedIssuer) && normalisedDomain) {
+      try {
+        const wellKnownRes = await fetch(`${normalisedDomain}/.well-known/openid-configuration`, { method: "GET" });
+        if (wellKnownRes.ok) {
+          const wellKnown = await wellKnownRes.json().catch(() => null);
+          if (!cognitoJwksUrl && wellKnown?.jwks_uri) {
+            cognitoJwksUrl = wellKnown.jwks_uri;
+          }
+          if (!normalisedIssuer && typeof wellKnown?.issuer === "string") {
+            normalisedIssuer = stripTrailingSlash(ensureHttps(wellKnown.issuer));
+          }
+        }
+      } catch (error) {
+        console.warn("[lambda] failed to load Cognito OpenID configuration", { message: error?.message });
+      }
+    }
     const cognitoJwePrivateKey =
       process.env.COGNITO_JWE_PRIVATE_KEY ||
       cognitoSecret?.encryptionPrivateKey ||

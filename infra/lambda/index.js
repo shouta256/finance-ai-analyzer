@@ -2012,7 +2012,19 @@ async function handleAuthCallback(event) {
 
   const cookies = [];
   const maxAge = Number.parseInt(tokenData.expires_in, 10) || 3600;
-  const cookieAttributes = "Path=/; SameSite=None; Secure";
+  const defaultOrigin = pickPreferredRedirectOrigin();
+  let cookieDomainAttr = "";
+  if (defaultOrigin) {
+    try {
+      const hostname = new URL(defaultOrigin).hostname;
+      if (hostname && hostname.toLowerCase() !== "localhost") {
+        cookieDomainAttr = `Domain=${hostname}; `;
+      }
+    } catch {
+      // ignore parsing errors; fall back to no domain attr
+    }
+  }
+  const cookieAttributes = `${cookieDomainAttr}Path=/; SameSite=None; Secure`;
   const primaryToken = tokenData.id_token || tokenData.access_token;
   if (tokenData.access_token) {
     cookies.push(`sp_at=${tokenData.access_token}; ${cookieAttributes}; HttpOnly; Max-Age=${maxAge}`);

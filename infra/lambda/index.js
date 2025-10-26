@@ -745,6 +745,24 @@ async function verifyJwt(token) {
       if (tokenUse && tokenUse !== "access" && tokenUse !== "id") {
         console.warn("[auth] unexpected token_use", { tokenUse });
       }
+      if (audiences.length > 0) {
+        const listedAudiences = Array.isArray(payload.aud)
+          ? payload.aud.map((value) => String(value))
+          : typeof payload.aud === "string"
+            ? [payload.aud]
+            : [];
+        const clientIdFallback =
+          typeof payload.client_id === "string" && payload.client_id.trim().length > 0
+            ? payload.client_id.trim()
+            : typeof payload.clientId === "string" && payload.clientId.trim().length > 0
+              ? payload.clientId.trim()
+              : null;
+        const matchesAud = listedAudiences.some((aud) => audiences.includes(aud));
+        const matchesClient = clientIdFallback ? audiences.includes(clientIdFallback) : false;
+        if (!matchesAud && !matchesClient) {
+          throw createHttpError(401, "Audience mismatch");
+        }
+      }
       return payload;
     } catch (error) {
       console.warn("[auth] jwt verification failed", {
@@ -779,6 +797,24 @@ async function verifyJwt(token) {
     if (!payload?.sub) throw createHttpError(401, "Token missing subject");
     if (cognito.issuer && payload.iss && payload.iss !== cognito.issuer) {
       throw createHttpError(401, "Issuer mismatch");
+    }
+    const listedAudiences = Array.isArray(payload?.aud)
+      ? payload.aud.map((value) => String(value))
+      : typeof payload?.aud === "string"
+        ? [payload.aud]
+        : [];
+    const clientIdFallback =
+      payload && typeof payload === "object" && typeof payload.client_id === "string" && payload.client_id.trim().length > 0
+        ? payload.client_id.trim()
+        : payload && typeof payload === "object" && typeof payload.clientId === "string" && payload.clientId.trim().length > 0
+          ? payload.clientId.trim()
+          : null;
+    if (audiences.length > 0) {
+      const matchesAud = listedAudiences.some((aud) => audiences.includes(aud));
+      const matchesClient = clientIdFallback ? audiences.includes(clientIdFallback) : false;
+      if (!matchesAud && !matchesClient) {
+        throw createHttpError(401, "Audience mismatch");
+      }
     }
     return payload;
   } catch (error) {

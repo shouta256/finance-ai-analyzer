@@ -1,239 +1,198 @@
-# Safepocket - AI-Powered Personal Finance Dashboard
+# Safepocket – AI-Powered Personal Finance Dashboard
 
-Smart financial management to improve your financial literacy
+Smart money management with Plaid-powered account linking, real-time analytics, and AI-assisted insights.
 
-[![Build Status](https://github.com/shouta256/finance-ai-analyzer/actions/workflows/main.yml/badge.svg)](https://github.com/shouta256/finance-ai-analyzer/actions)
-[![Security](https://img.shields.io/badge/Security-Enterprise%20Grade-green)](https://github.com/shouta256/finance-ai-analyzer)
-[![Tech Stack](https://img.shields.io/badge/Stack-Spring%20Boot%20%7C%20Next.js%20%7C%20AWS-blue)](#technology-stack)
-
-## Deployment
-
-Live Demo: [https://app.shota256.me] (Demo Environment)
-
-The production environment runs on AWS ECS Fargate with automated deployment through CI/CD pipelines.
+[![CI](https://github.com/shouta256/finance-ai-analyzer/actions/workflows/main.yml/badge.svg)](https://github.com/shouta256/finance-ai-analyzer/actions/workflows/main.yml)
 
 ## Overview
 
-Safepocket is a next-generation personal finance management platform that combines AI technology with enterprise-grade security.
+Safepocket links bank accounts via Plaid Sandbox, syncs transactions into a secure ledger, and surfaces spending insights with anomaly detection and AI highlights. The web experience is delivered through a Next.js BFF, while a Spring Boot service handles Plaid orchestration, analytics, and AI summarisation.
 
-It automatically collects transaction data through bank account integration and provides intelligent spending analysis using machine learning anomaly detection and RAG (Retrieval-Augmented Generation) technology.
+## Feature Highlights
 
-## Key Features
+- **Plaid Sandbox integration** – create Link tokens, exchange public tokens, trigger syncs, unlink/relink, and wipe data from the in-app settings screen.
+- **Dashboard analytics** – income/expense/net totals, category mix, top merchants, anomaly insights (z-score + IQR), sentiment scoring, and custom range comparisons.
+- **AI highlight & assistant** – OpenAI Responses API by default (Gemini supported). When no API key is configured the system falls back to deterministic summaries for consistent UX.
+- **RAG & semantic workflows** – pgvector-backed embeddings power `/rag/search`, `/rag/summaries`, and `/rag/aggregate` endpoints for native apps and partners.
+- **Transaction tooling** – edit categories and notes, request backfills from specific months, clear chat history, and reset synced data via authenticated APIs.
+- **Security first** – Cognito Hosted UI + JWT, Redis-backed session helpers, request tracing, RLS enforcement with `SET LOCAL appsec.user_id`, Plaid token encryption via KMS envelope keys, and webhook signature verification.
 
-### Bank Integration & Auto-Sync
-- Secure bank account connection via Plaid API
-- Real-time transaction data synchronization
-- Unified management of multiple financial institutions
+## System Architecture
 
-### AI-Powered Analysis
-- Spending pattern analysis using RAG technology
-- Intelligent summaries powered by GPT-4/Gemini API
-- Machine learning anomaly detection (Z-Score & IQR methods)
-
-### Interactive Dashboard
-- Category-based spending analysis
-- Monthly and yearly trend visualization
-- Top merchant analysis
-- Budget setting and tracking
-
-### AI Chat Assistant
-- Natural language spending queries
-- Personalized financial advice
-- Spending habit improvement suggestions
+```
+┌────────────┐     ┌────────────┐     ┌─────────────────┐
+│   Client   │ ──▶ │  CloudFront│ ──▶ │  Next.js (BFF)  │
+│  Web/Mobile│     │   / ALB    │     │  / Edge Lambda  │
+└────────────┘     └────────────┘     └─────────────────┘
+                                         │           │
+                                         │           ▼
+                                         │   ┌────────────────┐
+                                         └──▶│ Spring Boot API│
+                                             │  (ledger-svc)  │
+                                             └────────────────┘
+                                                   │ │ │
+                ┌──────────────────────────┬───────┘ │ └─────────────┐
+                │                          │         │               │
+        ┌──────────────┐          ┌────────────┐ ┌───────────┐ ┌──────────────┐
+        │PostgreSQL +  │◀──RLS───▶│   Redis    │ │  Secrets  │ │Plaid Sandbox │
+        │pgvector      │          │  (Caches)  │ │Mgr +  KMS │ └──────────────┘
+        └──────────────┘          └────────────┘ └───────────┘          ▲
+                ▲                          ▲                ▲           │
+                │                          │                │           │
+                └───────────── OpenAI / Gemini ─────────────┴───────────┘
+```
 
 ## Technology Stack
 
-### Frontend
-- Next.js 14 (App Router) - Full-stack React framework
-- TypeScript - Type-safe development
-- Tailwind CSS - Modern UI design
-- React Query - Efficient data fetching
-- Zod - Runtime type validation
+### Frontend (apps/web)
+- Next.js 14 (App Router) with server-side route handlers as the BFF
+- TypeScript in strict mode with Zod validation and generated OpenAPI typings
+- TanStack Query for data orchestration and caching
+- Tailwind CSS + custom component primitives, Chart.js via `react-chartjs-2`
+- Vitest + Testing Library for unit tests, Playwright for e2e
 
-### Backend
-- Spring Boot 3.2 - Enterprise Java framework
-- Java 21 - Latest LTS version of Java
-- Spring Security - Authentication & authorization
-- JPA/Hibernate - ORM and database access
-- Flyway - Database migration
+### Backend (apps/ledger-svc)
+- Spring Boot 3.2 on Java 21 with constructor-injected components
+- Spring Security resource server (Cognito JWKS + dev JWT fallback)
+- WebClient-based Plaid client, Flyway migrations, and database bootstrapper
+- OpenAI Responses client with Gemini fallback, cached monthly highlights, and streaming anomaly detectors
+- pgvector-ready RAG services for semantic search/aggregation
 
 ### Data & AI
-- PostgreSQL - Main database (with RLS support)
-- Redis - Cache and session management
-- Google Gemini - AI summarization, analysis, and vector embeddings
-- Apache Commons Math - Statistical analysis
+- PostgreSQL 15 with Row Level Security (`SET LOCAL appsec.user_id`)
+- Optional Redis 7 for rate limiting and background coordination
+- Vector embeddings stored via pgvector (dimension defaults to 1536)
+- Deterministic AI fallback when no external credentials are present
 
 ### Infrastructure & DevOps
-- AWS ECS Fargate - Container orchestration
-- Application Load Balancer + WAF - Load balancing and security
-- Amazon RDS - Managed PostgreSQL
-- ElastiCache - Managed Redis
-- AWS Secrets Manager + KMS - Secret management
-- Amazon ECR - Container registry
-
-### Development & CI/CD
-- GitHub Actions - CI/CD pipeline
-- Docker - Containerization
-- Terraform - Infrastructure as Code
-- Trivy - Security scanning
-- Biome - Linting & formatting
-
-## Architecture
-
-```
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│    Client   │───▶│ ALB + WAF    │───▶│  Next.js (BFF)  │
-└─────────────┘    └──────────────┘    └─────────────────┘
-                                                │
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│ Plaid API   │◀──▶│ Spring Boot  │◀───│  Load Balancer  │
-└─────────────┘    │   (Private)  │    └─────────────────┘
-                   └──────────────┘
-                           │
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│  OpenAI/    │◀──▶│ PostgreSQL   │    │     Redis       │
-│   Gemini    │    │    (RLS)     │    │   (Cache)       │
-└─────────────┘    └──────────────┘    └─────────────────┘
-```
-
-### Design Principles
-- Contract-First API - Type safety through OpenAPI specifications
-- Microservices - Loosely coupled service design
-- Zero-Trust Security - Multi-layered defense security
-- Event-Driven - High throughput through asynchronous processing
-
-## Technical Highlights & Challenges
-
-### 1. Enterprise-Grade Security
-- Row Level Security (RLS) for multi-tenant isolation
-- KMS encryption to protect Plaid access tokens
-- JWT + Cognito for robust authentication infrastructure
-- WAF for attack defense
-
-### 2. RAG Implementation
-- Vector search for fast extraction of related transactions
-- Multi-modal embeddings (Gemini API)
-- Context optimization to improve LLM response accuracy
-- Entity extraction for semantic search
-
-### 3. DevOps & Automation
-- GitHub Actions OIDC for secure CI/CD
-- Blue-Green Deployment for zero-downtime updates
-- Infrastructure as Code (Terraform)
-- Multi-stage Dockerfiles for optimized containers
-
-### 4. Performance Optimization
-- PostgreSQL index strategies for query optimization
-- Redis caching for faster response times
-- Connection pooling for efficient database connection management
-- Lazy loading to reduce memory usage
-
-### 5. Developer Experience (DX)
-- Make commands for one-click environment setup
-- Contract-First development for type safety guarantees
-- Hot reload enabled development environment
-- Comprehensive testing (Unit/Integration/E2E)
-
-### 6. Monitoring & Operations
-- Structured logging for improved operations
-- Health checks for automatic recovery
-- Metrics collection for performance monitoring
-- Error tracking for fast incident response
+- ECS Fargate services for Next.js and ledger-svc, plus an AWS Lambda facade used by native clients
+- AWS Secrets Manager + Parameter Store with envelope encryption (KMS data key)
+- GitHub Actions (lint → test → build → security scan → deploy) with OIDC to AWS
+- Docker Compose for local Postgres/Redis, multi-stage Dockerfiles for deployments
 
 ## Getting Started
 
 ### Prerequisites
 - Docker & Docker Compose
-- Java 21+
-- Node.js 18+
-- pnpm 8+
+- Node.js 18+ with pnpm (`corepack enable`)
+- Java 21 (Temurin recommended)
+- PostgreSQL client tools (`psql`)
 
-### 1. Clone and Setup
+### Clone & bootstrap
+
 ```bash
-git clone https://github.com/shouta256/finance-ai-analyzer.git
-cd finance-ai-analyzer
-
-# Install dependencies, build, and initialize database in one command
-make setup
+git clone https://github.com/shouta256/finance-ai-analyzer.git safepocket
+cd safepocket
+make setup        # installs web deps, generates API types, builds backend, seeds local DB
 ```
 
-### 2. Environment Variables
+### Configure environment
+
+Copy and edit the sample files:
+
 ```bash
-# Create .env file
 cp .env.example .env
-
-# Set required environment variables
-export PLAID_CLIENT_ID="your_plaid_client_id"
-export PLAID_CLIENT_SECRET="your_plaid_secret"
-export GOOGLE_AI_API_KEY="your_gemini_key"  # Optional
+# Create apps/web/.env.local (see sample below) if it does not already exist
 ```
 
-### 3. Start Services
+Key backend variables (loaded by Spring Boot and Makefile):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PLAID_CLIENT_ID`, `PLAID_CLIENT_SECRET` | ✅ | Plaid Sandbox credentials for link token creation and transaction sync |
+| `PLAID_ENV`, `PLAID_BASE_URL` | ➖ (defaults) | Environment (`sandbox` by default) and API base URL |
+| `PLAID_REDIRECT_URI`, `PLAID_WEBHOOK_URL`, `PLAID_WEBHOOK_SECRET` | ➖ | Configure when enabling OAuth institutions and webhook signature verification |
+| `SAFEPOCKET_USE_COGNITO` | ✅ (prod) | Toggle Cognito authentication; leave `false` for local dev |
+| `COGNITO_DOMAIN`, `COGNITO_CLIENT_ID_WEB`, `COGNITO_CLIENT_ID_NATIVE`, `COGNITO_CLIENT_SECRET`, `COGNITO_REDIRECT_URI` | ✅ when Cognito enabled | Hosted UI domain and client IDs; secret optional (only when the app client uses one) |
+| `SAFEPOCKET_DEV_JWT_SECRET` | ✅ (local) | HMAC key for the development JWT decoder; omit in production |
+| `OPENAI_API_KEY` or `GEMINI_API_KEY` | ➖ | Provide at least one to enable live AI highlights/chat; deterministic fallback otherwise |
+| `SAFEPOCKET_AI_PROVIDER`, `SAFEPOCKET_AI_MODEL`, `SAFEPOCKET_AI_MODEL_SNAPSHOT`, `SAFEPOCKET_AI_ENDPOINT`, `SAFEPOCKET_AI_TIMEOUT_MS` | ➖ | Tune AI provider/model/snapshot and timeout (defaults cover OpenAI Responses `gpt-4o-mini`) |
+| `VECTOR_PROVIDER`, `EMBEDDING_MODEL`, `RAG_MAX_ROWS`, `RAG_EMBED_DIM` | ➖ | pgvector configuration for RAG endpoints |
+| `SAFEPOCKET_CHAT_RETENTION_DAYS`, `SAFEPOCKET_CHAT_CLEANUP_CRON` | ➖ | Chat retention policy (defaults: 30 days, cleanup at 03:30 UTC) |
+| `SAFEPOCKET_DB_BOOTSTRAP` | ➖ | Set `true` locally to apply the idempotent bootstrap schema/seed if migrations haven't run |
+| `SAFEPOCKET_DEMO_SEED` | ➖ | When `true`, initial sync inserts demo transactions |
+
+Frontend/BFF variables (`apps/web/.env.local`):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_API_BASE` | ✅ | Base URL for requests from the browser (`http://localhost:8081` in dev) |
+| `LEDGER_SERVICE_URL`, `LEDGER_SERVICE_INTERNAL_URL`, `LEDGER_SERVICE_PATH_PREFIX` | ➖ | Override when the Next.js server must call the ledger service via an internal address |
+| `NEXT_PUBLIC_COGNITO_DOMAIN`, `NEXT_PUBLIC_COGNITO_CLIENT_ID`, `NEXT_PUBLIC_COGNITO_REDIRECT_URI`, `NEXT_PUBLIC_COGNITO_SCOPE` | ✅ when Cognito enabled | Mirrors backend configuration for the Hosted UI |
+| `NEXT_PUBLIC_ENABLE_DEV_LOGIN`, `SAFEPOCKET_ENABLE_DEV_LOGIN` | ➖ | Expose the dev login button (local only) |
+| `NEXT_PUBLIC_ENV` | ➖ | Display-only indicator for the UI |
+
+Example local file:
+
+```
+SAFEPOCKET_DEV_JWT_SECRET=dev-secret-key-for-local-development-only
+LEDGER_SERVICE_URL=http://localhost:8081
+NEXT_PUBLIC_API_BASE=http://localhost:8081
+NEXT_PUBLIC_COGNITO_DOMAIN= # set when enabling Cognito Hosted UI
+NEXT_PUBLIC_COGNITO_CLIENT_ID=
+NEXT_PUBLIC_COGNITO_REDIRECT_URI=
+NEXT_PUBLIC_COGNITO_SCOPE=openid email phone
+NEXT_PUBLIC_ENABLE_DEV_LOGIN=true
+NEXT_PUBLIC_ENV=local
+```
+
+Never commit populated `.env` files. Production secrets live in AWS Secrets Manager / Parameter Store and are wired via ECS task definitions and Lambda environment variables (see `GITHUB_SECRETS_SETUP.md`).
+
+### Run the stack locally
+
 ```bash
-# Full stack startup (Web + API + DB + Redis)
-make up
+# Start Postgres + Redis
+docker compose -f infra/compose/docker-compose.yml up -d
 
-# Or start individually
-make docker-up  # Infrastructure only
-cd apps/ledger-svc && ./gradlew bootRun  # API
-cd apps/web && pnpm dev  # Frontend
+# Run the backend
+./apps/ledger-svc/gradlew -p apps/ledger-svc bootRun
+
+# Run the web app (in a separate terminal)
+pnpm -C apps/web dev
 ```
 
-### 4. Access Points
-- Web UI: http://localhost:3000
-- API: http://localhost:8081
-- API Docs: http://localhost:8081/swagger-ui.html
+Alternatively, use `make up` to launch everything with process supervision. The dashboard will be available at `http://localhost:3000`, and the ledger service listens on `http://localhost:8081`.
 
-### 5. Run Tests
+## Secrets & Environment Management
+
+- Store production credentials in AWS Secrets Manager/Parameter Store. The Lambda facade expects `SECRET_COGNITO_NAME` and `SECRET_PLAID_NAME` to resolve Cognito and Plaid bundles, and it honours `CONFIG_BUMP` for rolling updates.
+- GitHub Actions deployments require `AWS_DEPLOY_ROLE_ARN`, `LAMBDA_FUNCTION_NAME`, and the runtime secrets listed in `GITHUB_SECRETS_SETUP.md`.
+- `SAFEPOCKET_KMS_DATA_KEY` must be a base64-encoded 256-bit key in production. Without it the backend refuses to start.
+
+## Key Workflows
+
+- **Plaid Link (Sandbox)** – `POST /plaid/link-token` → Plaid Link → `POST /plaid/exchange` → `POST /transactions/sync`. The settings page provides unlink/relink/reset buttons that exercise the same APIs.
+- **Transaction sync & anomalies** – Each sync normalises Plaid transactions, enriches merchants/categories, computes z-score and IQR anomalies, and populates analytics projections for the dashboard.
+- **Dashboard summary** – `GET /analytics/summary?month=YYYY-MM` powers totals, charts, top merchants, and anomaly callouts. Setting `generateAi=true` requests a fresh AI highlight.
+- **AI Assistant** – `GET/POST /ai/chat` (aliases `/api/chat`, `/chat`) provide a persistent conversation per user. Chat history can be cleared from the settings page (`DELETE /api/chat`).
+- **RAG APIs** – Native apps can call `/rag/search`, `/rag/summaries`, and `/rag/aggregate` for semantic insights. Embeddings are generated lazily using the configured provider/model.
+
+## Testing & Tooling
+
 ```bash
-# Frontend tests
-pnpm -C apps/web test
-pnpm -C apps/web test:e2e
+# Frontend
+pnpm -C apps/web test        # Vitest unit tests
+pnpm -C apps/web e2e         # Playwright end-to-end tests
 
-# Backend tests
-./apps/ledger-svc/gradlew test
+# Backend
+./apps/ledger-svc/gradlew -p apps/ledger-svc test
 
-# Overall linting
-make lint
+# Lint & format
+pnpm -C apps/web biome:fix
+./apps/ledger-svc/gradlew spotlessApply
 ```
 
-### 6. Demo Data
-```bash
-# Run RAG demo
-make demo
+## Documentation
 
-# Load sample data
-make seed
-```
-
----
-
-## Technical Documentation
-
-For detailed technical specifications, please refer to:
-
-- [Architecture](docs/architecture.md) - System design details
-- [API Documentation](contracts/openapi.yaml) - OpenAPI specification
-- [Coding Standards](docs/coding-standards.md) - Coding conventions
-- [Operations Guide](docs/operations.md) - Operations guide
-
-### Cognito Setup for Native App
-
-1. Copy `.env.example` to `.env` and set:
-        - `SAFEPOCKET_USE_COGNITO=true`
-        - `COGNITO_DOMAIN=https://us-east-1mfd4o5tgy.auth.us-east-1.amazoncognito.com`
-                - `COGNITO_CLIENT_ID_NATIVE=p4tu620p2eriv24tb1897d49s` (for native app)
-                - Optionally set `COGNITO_CLIENT_ID_WEB` for web client deployments
-        - `COGNITO_REDIRECT_URI=safepocket://auth/callback`
-2. Start services normally (Makefile targets auto-load `.env`).
-3. Ensure the redirect URI is registered in the Cognito app client.
-
-
----
+- `docs/architecture.md` – system design and deployment topology
+- `docs/operations.md` – runbooks, Plaid rollout steps, AI configuration
+- `docs/auth-cognito.md` – Cognito Hosted UI integration details
+- `docs/native-api-usage.md` – guidance for native/mobile clients
+- `docs/security.md` – security controls, KMS usage, webhook verification
+- `contracts/openapi.yaml` – contract-first API definition (generate typings with `pnpm -C apps/web generate:api`)
 
 ## License & Credits
 
 - Developer: Shota Suzuki ([@shouta256](https://github.com/shouta256))
-- Project Period: September 2025 - Ongoing
-- Purpose: Technical skills demonstration
-- Tools Used: GitHub Copilot for efficient and collaborative development
+- Project purpose: Phase 1 MVP showcase combining FinTech, AI, and security best practices
+- Tooling: GitHub Copilot + custom automation pipelines

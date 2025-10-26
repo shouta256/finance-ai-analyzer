@@ -33,15 +33,6 @@ export function DashboardViewPeriod(props: DashboardViewPeriodProps) {
           >
             Change period
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenActions}
-            className="rounded-full border-slate-300 bg-white text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-100"
-            type="button"
-          >
-            Manage connections & sync
-          </Button>
         </div>
       </div>
     </div>

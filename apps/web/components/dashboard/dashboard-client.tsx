@@ -68,6 +68,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [state, setState] = useState<FetchState>({ summary: initialSummary, transactions: initialTransactions });
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [aiReady, setAiReady] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<{ code: string; traceId?: string; details?: string } | null>(null);
   const [linking, setLinking] = useState<boolean>(false);
@@ -103,6 +104,12 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     const transactionsKey = cacheKey({ mode: "month", month, page: 0, size: pageSize });
     setTransactionsCache(transactionsKey, initialTransactions);
   }, [initialSummary, initialTransactions, month, pageSize]);
+
+  useEffect(() => {
+    if (!syncing) {
+      setStatusMessage(null);
+    }
+  }, [syncing]);
 
 
   const expenseCategories = useMemo(() => state.summary.byCategory, [state.summary.byCategory]);
@@ -493,7 +500,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       if (cancelled) return;
       try {
         const res = await fetch("/api/debug/token", { credentials: "include", cache: "no-store" });
-        // セッション切れ（401/403）やトークン欠如（400など）を検知したらログインへ
+        // Redirect to login when the session is missing or unauthorized
         if (!cancelled && (!res.ok || res.status === 401 || res.status === 403)) {
           const login = new URL("/login", window.location.origin);
           login.searchParams.set("redirect", "/dashboard");
@@ -575,25 +582,31 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     if (syncing || generatingAi || linking || sandboxLoading) return;
     setSyncing(true);
     setMessage("Syncing transactions…");
+    setStatusMessage("Syncing transactions…");
     startTransition(async () => {
       try {
         const payload: Parameters<typeof triggerTransactionSync>[0] = {};
         if (startMonth) payload.startMonth = startMonth;
         await syncWithRetries(payload, {
           onRetry: (attempt, maxAttempts) => {
-            setMessage(`Plaid is preparing your transactions… retrying (${attempt}/${maxAttempts})`);
+            const retryMsg = `Plaid is preparing your transactions… retrying (${attempt}/${maxAttempts})`;
+            setMessage(retryMsg);
+            setStatusMessage(retryMsg);
           },
         });
         invalidateCaches();
         await refreshData();
         setMessage("Sync completed successfully.");
+        setStatusMessage("Sync completed successfully.");
       } catch (error) {
         console.error(error);
         if (isUnauthorizedError(error) && typeof window !== "undefined") {
           window.location.href = "/login";
           return;
         }
-        setMessage((error as Error).message ?? "Sync failed.");
+        const failure = (error as Error).message ?? "Sync failed.";
+        setMessage(failure);
+        setStatusMessage(failure);
       } finally {
         setSyncing(false);
       }
@@ -658,23 +671,31 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             setMessage("Link successful. Finalising…");
             await exchangePlaidPublicToken(publicToken);
             setMessage("Account linked. Syncing transactions…");
+            setStatusMessage("Account linked. Syncing transactions…");
+            setSyncing(true);
             await syncWithRetries(undefined, {
               maxAttempts: 8,
               onRetry: (attempt, maxAttempts) => {
-                setMessage(`Plaid is preparing your transactions… retrying (${attempt}/${maxAttempts})`);
+                const retryMessage = `Plaid is preparing your transactions… retrying (${attempt}/${maxAttempts})`;
+                setMessage(retryMessage);
+                setStatusMessage(retryMessage);
               },
             });
             invalidateCaches();
             await refreshData();
             setMessage("Plaid account linked and sync triggered.");
+            setStatusMessage("Plaid account linked and sync triggered.");
           } catch (error) {
             console.error(error);
             if (isUnauthorizedError(error) && typeof window !== "undefined") {
               window.location.href = "/login";
             } else {
-              setMessage((error as Error).message ?? "Failed to finalise Plaid link.");
+              const errMsg = (error as Error).message ?? "Failed to finalise Plaid link.";
+              setMessage(errMsg);
+              setStatusMessage(errMsg);
             }
           } finally {
+            setSyncing(false);
             handler.destroy?.();
             setLinking(false);
           }
@@ -732,18 +753,30 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     setActionsOpen(false);
     setSandboxLoading(true);
     setMessage("Loading demo data…");
+    setStatusMessage("Loading demo data…");
+    setSyncing(true);
     startTransition(async () => {
       try {
-        await triggerTransactionSync({ forceFullSync: true, demoSeed: true });
+        await syncWithRetries({ forceFullSync: true, demoSeed: true }, {
+          onRetry: (attempt, maxAttempts) => {
+            const retryMessage = `Preparing demo data… retrying (${attempt}/${maxAttempts})`;
+            setMessage(retryMessage);
+            setStatusMessage(retryMessage);
+          },
+        });
         invalidateCaches();
         await refreshData();
         setMessage("Demo data loaded.");
+        setStatusMessage("Demo data loaded.");
         setAiReady(true);
       } catch (error) {
         console.error(error);
-        setMessage((error as Error).message ?? "Demo load failed.");
+        const failureMessage = (error as Error).message ?? "Demo load failed.";
+        setMessage(failureMessage);
+        setStatusMessage(failureMessage);
       } finally {
         setSandboxLoading(false);
+        setSyncing(false);
       }
     });
   }
@@ -780,6 +813,13 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   return (
     <div className="flex flex-col gap-8 text-slate-900">
+      {syncing ? (
+        <div className="fixed right-6 top-24 z-50 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 shadow-lg">
+          <span className="inline-flex h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" aria-hidden="true" />
+          <span className="text-xs font-medium text-slate-600">{statusMessage ?? "Syncing transactions…"}</span>
+        </div>
+      ) : null}
+
       {errorState ? (
         <InlineError
           title={friendlyTitle(errorState.code)}
@@ -862,7 +902,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         canReset={!isPending && !sandboxLoading && !syncing}
         unlinkPlaid={unlinkPlaid}
         onToggleUnlink={setUnlinkPlaid}
-        message={message}
+        message={statusMessage ?? message}
         isBusy={linking || syncing || generatingAi || sandboxLoading}
       />
 

@@ -25,18 +25,25 @@ function maybeRedirectToLogin(status?: number) {
 
 function buildRequestUrl(path: string, params?: Record<string, string | undefined>): string {
   let targetPath = path.startsWith("/") ? path : `/${path}`;
+
+  // In the browser, always hit same-origin Next.js routes so cookies apply.
+  if (typeof window !== "undefined") {
+    const url = new URL(targetPath, window.location.origin);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+      }
+    }
+    return url.toString();
+  }
+
+  // On the server we may not have window; fall back to API_BASE when provided.
   if (API_BASE && targetPath.startsWith("/api/")) {
     targetPath = targetPath.replace(/^\/api\//, "/");
   }
-  let target: string;
-  if (API_BASE) {
-    target = `${API_BASE}${targetPath}`;
-  } else if (typeof window !== "undefined") {
-    const url = new URL(targetPath, window.location.origin);
-    target = url.toString();
-  } else {
-    target = targetPath;
-  }
+
+  const base = API_BASE || "";
+  let target = base ? `${base}${targetPath}` : targetPath;
   if (params) {
     const url = new URL(target);
     for (const [key, value] of Object.entries(params)) {

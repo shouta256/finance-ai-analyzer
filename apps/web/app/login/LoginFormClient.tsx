@@ -69,7 +69,10 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
   const searchParams = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const suppressAutoLaunch = searchParams?.get("authError") === "1";
+  const suppressAutoLaunch =
+    searchParams?.get("authError") === "1" ||
+    searchParams?.get("authdebug") === "1" ||
+    searchParams?.get("noauto") === "1";
 
   const handleDevLogin = () => {
     startTransition(async () => {

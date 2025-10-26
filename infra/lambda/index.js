@@ -457,11 +457,22 @@ async function loadConfig() {
       process.env.COGNITO_DOMAIN ||
       process.env.NEXT_PUBLIC_COGNITO_DOMAIN ||
       cognitoSecret?.domain;
-    const cognitoClientId =
+    const cognitoClientIdWeb =
+      process.env.COGNITO_CLIENT_ID_WEB ||
+      process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID_WEB ||
+      cognitoSecret?.clientIdWeb ||
+      cognitoSecret?.client_id_web;
+    const cognitoClientIdNative =
+      process.env.COGNITO_CLIENT_ID_NATIVE ||
+      process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID_NATIVE ||
+      cognitoSecret?.clientIdNative ||
+      cognitoSecret?.client_id_native;
+    const cognitoClientIdExplicit =
       process.env.COGNITO_CLIENT_ID ||
       process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ||
       cognitoSecret?.clientId ||
       cognitoSecret?.client_id;
+    const cognitoClientId = cognitoClientIdExplicit || cognitoClientIdWeb || cognitoClientIdNative;
     const cognitoClientSecret =
       process.env.COGNITO_CLIENT_SECRET || cognitoSecret?.clientSecret || cognitoSecret?.client_secret;
     const cognitoRedirectUri =
@@ -469,6 +480,11 @@ async function loadConfig() {
       process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI ||
       cognitoSecret?.redirectUri ||
       cognitoSecret?.redirect_uri;
+    const cognitoRedirectUriNative =
+      process.env.COGNITO_REDIRECT_URI_NATIVE ||
+      process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI_NATIVE ||
+      cognitoSecret?.redirectUriNative ||
+      cognitoSecret?.redirect_uri_native;
     const cognitoRegion =
       process.env.COGNITO_REGION || cognitoSecret?.region || cognitoSecret?.regionId || cognitoSecret?.region_id;
     let cognitoIssuer = process.env.COGNITO_ISSUER || cognitoSecret?.issuer;
@@ -554,8 +570,11 @@ async function loadConfig() {
       cognito: {
         domain: normalisedDomain,
         clientId: cognitoClientId,
+        clientIdWeb: cognitoClientIdWeb,
+        clientIdNative: cognitoClientIdNative,
         clientSecret: cognitoClientSecret,
         redirectUri: cognitoRedirectUri,
+        redirectUriNative: cognitoRedirectUriNative,
         issuer: normalisedIssuer,
         userPoolId: cognitoUserPoolId,
         region: derivedRegion,
@@ -1823,36 +1842,70 @@ async function handleAuthToken(event) {
 
   const params = new URLSearchParams();
   params.set("grant_type", grantType);
-  params.set("client_id", cognito.clientId);
+
+  const requestedClientId =
+    (typeof body.clientId === "string" && body.clientId.trim()) ||
+    (typeof body.client_id === "string" && body.client_id.trim()) ||
+    undefined;
+  let usingNativeClient = false;
+  let redirectUriUsed;
+  let clientIdToUse = requestedClientId || cognito.clientId;
+
+  const normalizeRedirect = (value) => (typeof value === "string" ? value.trim() : "");
+
   if (grantType === "authorization_code") {
     if (!body.code) throw createHttpError(400, "code is required for authorization_code");
-    const redirectUri = body.redirectUri || cognito.redirectUri;
+    const redirectUri = body.redirectUri || cognito.redirectUri || cognito.redirectUriNative;
     if (!redirectUri) throw createHttpError(400, "redirectUri is required");
+    redirectUriUsed = redirectUri;
     params.set("code", body.code);
     params.set("redirect_uri", redirectUri);
     if (body.codeVerifier) params.set("code_verifier", body.codeVerifier);
+    const normalizedRedirect = normalizeRedirect(redirectUri).toLowerCase();
+    const looksNative = normalizedRedirect && !normalizedRedirect.startsWith("http://") && !normalizedRedirect.startsWith("https://");
+    if (looksNative && cognito.clientIdNative) {
+      clientIdToUse = cognito.clientIdNative;
+      usingNativeClient = true;
+    } else if (!looksNative && cognito.clientIdWeb) {
+      clientIdToUse = cognito.clientIdWeb;
+    }
     console.log("[lambda] token exchange request", {
       redirectUri,
       hasCodeVerifier: Boolean(body.codeVerifier),
       hasClientSecret: Boolean(cognito.clientSecret && cognito.clientSecret.trim()),
       domain: cognito.domain,
+      clientHint: requestedClientId,
     });
   } else {
     if (!body.refreshToken) throw createHttpError(400, "refreshToken is required for refresh_token");
     params.set("refresh_token", body.refreshToken);
+    if (requestedClientId) {
+      clientIdToUse = requestedClientId;
+      const normalized = requestedClientId.toLowerCase();
+      if (cognito.clientIdNative && normalized === cognito.clientIdNative.toLowerCase()) {
+        usingNativeClient = true;
+      }
+    }
   }
 
+  if (!clientIdToUse) {
+    throw createHttpError(500, "Cognito client id not configured");
+  }
+  params.set("client_id", clientIdToUse);
+
   const headers = { "Content-Type": "application/x-www-form-urlencoded" };
-  if (cognito.clientSecret && cognito.clientSecret.trim()) {
-    headers.Authorization = `Basic ${Buffer.from(`${cognito.clientId}:${cognito.clientSecret}`).toString("base64")}`;
+  if (!usingNativeClient && cognito.clientSecret && cognito.clientSecret.trim()) {
+    headers.Authorization = `Basic ${Buffer.from(`${clientIdToUse}:${cognito.clientSecret}`).toString("base64")}`;
   }
 
   const tokenUrl = `${cognito.domain}/oauth2/token`;
   console.log("[lambda] token exchange request", {
     tokenUrl,
     grantType,
-    hasClientSecret: Boolean(cognito.clientSecret && cognito.clientSecret.trim()),
-    redirectUri: params.get("redirect_uri"),
+    hasClientSecret: Boolean(!usingNativeClient && cognito.clientSecret && cognito.clientSecret.trim()),
+    redirectUri: redirectUriUsed || params.get("redirect_uri"),
+    clientId: clientIdToUse,
+    usingNativeClient,
   });
   const resp = await fetch(tokenUrl, {
     method: "POST",

@@ -453,43 +453,50 @@ async function loadConfig() {
       fetchSecret(SECRET_PLAID),
     ]);
 
+    const normalize = (value) => (typeof value === "string" ? value.trim() : undefined);
+
     const cognitoDomain =
-      process.env.COGNITO_DOMAIN ||
-      process.env.NEXT_PUBLIC_COGNITO_DOMAIN ||
-      cognitoSecret?.domain;
+      normalize(process.env.COGNITO_DOMAIN) ||
+      normalize(process.env.NEXT_PUBLIC_COGNITO_DOMAIN) ||
+      normalize(cognitoSecret?.domain);
     const cognitoClientIdWeb =
-      process.env.COGNITO_CLIENT_ID_WEB ||
-      process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID_WEB ||
-      cognitoSecret?.clientIdWeb ||
-      cognitoSecret?.client_id_web;
+      normalize(process.env.COGNITO_CLIENT_ID_WEB) ||
+      normalize(process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID_WEB) ||
+      normalize(cognitoSecret?.clientIdWeb) ||
+      normalize(cognitoSecret?.client_id_web);
     const cognitoClientIdNative =
-      process.env.COGNITO_CLIENT_ID_NATIVE ||
-      process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID_NATIVE ||
-      cognitoSecret?.clientIdNative ||
-      cognitoSecret?.client_id_native;
+      normalize(process.env.COGNITO_CLIENT_ID_NATIVE) ||
+      normalize(process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID_NATIVE) ||
+      normalize(cognitoSecret?.clientIdNative) ||
+      normalize(cognitoSecret?.client_id_native);
     const cognitoClientIdExplicit =
-      process.env.COGNITO_CLIENT_ID ||
-      process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID ||
-      cognitoSecret?.clientId ||
-      cognitoSecret?.client_id;
+      normalize(process.env.COGNITO_CLIENT_ID) ||
+      normalize(process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID) ||
+      normalize(cognitoSecret?.clientId) ||
+      normalize(cognitoSecret?.client_id);
     const cognitoClientId = cognitoClientIdExplicit || cognitoClientIdWeb || cognitoClientIdNative;
     const cognitoClientSecret =
-      process.env.COGNITO_CLIENT_SECRET || cognitoSecret?.clientSecret || cognitoSecret?.client_secret;
+      normalize(process.env.COGNITO_CLIENT_SECRET) ||
+      normalize(cognitoSecret?.clientSecret) ||
+      normalize(cognitoSecret?.client_secret);
     const cognitoRedirectUri =
-      process.env.COGNITO_REDIRECT_URI ||
-      process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI ||
-      cognitoSecret?.redirectUri ||
-      cognitoSecret?.redirect_uri;
+      normalize(process.env.COGNITO_REDIRECT_URI) ||
+      normalize(process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI) ||
+      normalize(cognitoSecret?.redirectUri) ||
+      normalize(cognitoSecret?.redirect_uri);
     const cognitoRedirectUriNative =
-      process.env.COGNITO_REDIRECT_URI_NATIVE ||
-      process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI_NATIVE ||
-      cognitoSecret?.redirectUriNative ||
-      cognitoSecret?.redirect_uri_native;
+      normalize(process.env.COGNITO_REDIRECT_URI_NATIVE) ||
+      normalize(process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI_NATIVE) ||
+      normalize(cognitoSecret?.redirectUriNative) ||
+      normalize(cognitoSecret?.redirect_uri_native);
     const cognitoRegion =
       process.env.COGNITO_REGION || cognitoSecret?.region || cognitoSecret?.regionId || cognitoSecret?.region_id;
     let cognitoIssuer = process.env.COGNITO_ISSUER || cognitoSecret?.issuer;
     const cognitoAudience =
-      process.env.COGNITO_AUDIENCE || cognitoSecret?.audience || cognitoClientId || cognitoSecret?.clientId;
+      normalize(process.env.COGNITO_AUDIENCE) ||
+      normalize(cognitoSecret?.audience) ||
+      cognitoClientId ||
+      normalize(cognitoSecret?.clientId);
     let cognitoUserPoolId =
       process.env.COGNITO_USER_POOL_ID ||
       cognitoSecret?.userPoolId ||
@@ -1955,6 +1962,9 @@ async function handleAuthCallback(event) {
   params.set("client_id", cognito.clientId);
   params.set("redirect_uri", cognito.redirectUri);
   params.set("code", code);
+  if (cognito.clientSecret) {
+    params.set("client_secret", cognito.clientSecret);
+  }
 
   const headers = { "Content-Type": "application/x-www-form-urlencoded" };
   if (cognito.clientSecret) {

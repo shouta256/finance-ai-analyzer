@@ -101,7 +101,7 @@ const upstreamUrl = new URL("auth/callback", apiBaseUrl);
 
   const response = NextResponse.redirect(resolveRedirect(state, nextUrl.origin));
   const secureRequest = isSecureRequest(request);
-  const sameSite = (secureRequest ? "none" : "lax") as "none" | "lax";
+  const sameSite = "lax" as const;
   const cookieOptions = {
     httpOnly: true,
     secure: secureRequest,

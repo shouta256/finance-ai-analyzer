@@ -1967,7 +1967,8 @@ async function handleAuthCallback(event) {
   }
 
   const headers = { "Content-Type": "application/x-www-form-urlencoded" };
-  if (cognito.clientSecret) {
+  const usingBasicAuth = Boolean(cognito.clientSecret);
+  if (usingBasicAuth) {
     headers.Authorization = `Basic ${Buffer.from(`${cognito.clientId}:${cognito.clientSecret}`).toString("base64")}`;
   }
 
@@ -1977,7 +1978,13 @@ async function handleAuthCallback(event) {
     redirectUri: cognito.redirectUri,
     clientId: cognito.clientId,
     hasClientSecret: Boolean(cognito.clientSecret && cognito.clientSecret.trim()),
+    usingBasicAuth,
+    clientSecretPreview: cognito.clientSecret ? `${cognito.clientSecret.slice(0, 4)}***${cognito.clientSecret.slice(-4)}` : null,
   });
+  const payloadPreview = Object.fromEntries(
+    Array.from(params.entries()).map(([key, value]) => (key === "code" ? [key, "***redacted***"] : [key, value])),
+  );
+  console.info("[/auth/callback] form payload", payloadPreview);
   const resp = await fetch(tokenUrl, {
     method: "POST",
     headers,

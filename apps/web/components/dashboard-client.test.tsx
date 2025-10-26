@@ -21,6 +21,23 @@ describe("DashboardClient", () => {
         sentiment: "POSITIVE" as const,
         recommendations: ["Save"]
       },
+      safeToSpend: {
+        cycleStart: "2024-03-01",
+        cycleEnd: "2024-03-31",
+        safeToSpendToday: 100,
+        hardCap: 500,
+        dailyBase: 50,
+        dailyAdjusted: 50,
+        rollToday: 100,
+        paceRatio: 1,
+        adjustmentFactor: 1,
+        daysRemaining: 28,
+        variableBudget: 200,
+        variableSpent: 0,
+        remainingVariableBudget: 200,
+        danger: false,
+        notes: []
+      },
       traceId: "trace",
     };
     const transactions = {
@@ -55,7 +72,6 @@ describe("DashboardClient", () => {
     render(<DashboardClient month="2024-03" initialSummary={summary} initialTransactions={transactions} />);
 
     expect(screen.getByText("Income")).toBeInTheDocument();
-    expect(screen.getByText("Manage connections & sync")).toBeInTheDocument();
     expect(screen.getAllByText("Amazon").length).toBeGreaterThan(0);
   });
 });

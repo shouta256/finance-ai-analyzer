@@ -10,7 +10,9 @@ vi.mock("@/src/lib/api-client", async (importOriginal) => {
 const mocked = vi.mocked(ledgerFetch);
 
 describe("/api/accounts route", () => {
-  beforeEach(() => mocked.mockReset());
+  beforeEach(() => {
+    mocked.mockReset();
+  });
 
   it("returns 401 without authorization header", async () => {
     const req = { headers: new Headers(), url: "https://example.com/api/accounts" } as any;

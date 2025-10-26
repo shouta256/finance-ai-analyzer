@@ -1,95 +1,92 @@
-# Safepocket Native App API Usage Guide
+# Safepocket Native API Guide
 
-This guide explains how iOS/Android apps should integrate with Safepocket via the Web BFF (Next.js `/api/*`). It covers authentication (Cognito Hosted UI + PKCE), token refresh, accounts and transactions, analytics, chat, and Plaid sandbox flows.
+This guide summarises how iOS/Android clients (or partner integrations) should talk to Safepocket. All endpoints, schemas, and status codes are defined in `contracts/openapi.yaml`.
 
-## Base URL
-- Dev/Prod: use your app origin with BFF: `https://<your-web-app>/api/...`
-- The BFF proxies to the Ledger service and handles routing/security details.
+## Base URLs
 
-## Authentication Flow (PKCE)
-1) Launch Cognito Hosted UI (external browser) with PKCE (code_challenge, code_verifier). Redirect URI is your app scheme (e.g., `myapp://callback`) registered in Cognito.
-2) After redirect, exchange the `authorization_code` via public endpoint:
+- **Production:** `https://api.safepocket.app`
+- **Development:** `http://localhost:8081` (when running the ledger service locally)
 
-POST `/api/auth/token`
-Body (authorization_code):
+The web BFF exposes `/api/*` routes that proxy to the same paths without the prefix. Native clients should call the ledger service (or Lambda facade) directly.
+
+## Authentication
+
+1. Launch the Cognito Hosted UI (Authorization Code + PKCE). Redirect URI should be your custom scheme (e.g., `safepocket://auth/callback`) registered in Cognito.
+2. On success, Cognito redirects back with `code` + `state`.
+3. Exchange the code with Safepocket:
+
 ```
+POST /auth/token
+Content-Type: application/json
+
 {
   "grantType": "authorization_code",
-  "code": "...",
-  "redirectUri": "myapp://callback",
-  "codeVerifier": "..." // optional if used
+  "code": "<authorization_code>",
+  "redirectUri": "safepocket://auth/callback",
+  "codeVerifier": "<pkce verifier>"   // required when PKCE was used
 }
 ```
-Response (excerpt):
+
+4. Store the returned `accessToken` (short-lived) and `refreshToken` (if present) securely. Refresh with:
+
 ```
+POST /auth/token
 {
-  "accessToken": "...",
-  "idToken": "...", // may be null
-  "refreshToken": "...", // may be null
-  "expiresIn": 3600,
-  "tokenType": "Bearer",
-  "userId": "...",
-  "traceId": "..."
+  "grantType": "refresh_token",
+  "refreshToken": "<refresh token>"
 }
 ```
-3) Refresh access token when needed:
 
-POST `/api/auth/token`
-Body (refresh_token):
-```
-{ "grantType": "refresh_token", "refreshToken": "..." }
-```
+Include `Authorization: Bearer <accessToken>` on all subsequent requests.
 
-Store access tokens short-term; store refresh tokens in Keychain/Keystore.
+## Core Endpoints
 
-## Authenticated Requests
-Include header: `Authorization: Bearer <accessToken>`
+| Capability | Method & Path | Notes |
+|------------|---------------|-------|
+| Accounts | `GET /accounts` | Returns balances per linked Plaid item/account. |
+| Transactions | `GET /transactions?month=YYYY-MM` | Supports pagination/query filters (`page`, `pageSize`, `from`, `to`, `accountId`). |
+| Update transaction | `PATCH /transactions/{transactionId}` | Body allows updating `category` and `notes`. |
+| Trigger sync | `POST /transactions/sync` | Optional body `{ "forceFullSync": true, "demoSeed": true, "startMonth": "YYYY-MM" }`. |
+| Reset data | `POST /transactions/reset` | Optional `{ "unlinkPlaid": true }` to drop Plaid credentials. |
+| Analytics | `GET /analytics/summary?month=YYYY-MM&generateAi=true` | `generateAi` triggers fresh AI highlight creation. |
+| AI chat | `GET /ai/chat?conversationId=<uuid>` / `POST /ai/chat` | `POST` body `{ "conversationId"?, "message", "truncateFromMessageId"? }`. |
+| Plaid Link token | `POST /plaid/link-token` | Create a new Link token (cache client-side until expiry). |
+| Plaid public token exchange | `POST /plaid/exchange` | Body `{ "publicToken": "<token>" }`. |
+| RAG search | `POST /rag/search` | Semantic search with filters (`query`, `category`, `merchant`, etc.). |
+| RAG summaries | `GET /rag/summaries?month=YYYY-MM` | Lightweight summaries by month/category/merchant. |
+| RAG aggregate | `POST /rag/aggregate` | Custom window aggregations (e.g., rolling spend). |
 
-### Accounts
-GET `/api/accounts`
-- Returns currency, totalBalance, and the list of accounts.
+Responses include `traceId` for observability. Persist it in crash logs or support tickets when debugging.
 
-### Transactions
-- GET `/api/transactions?month=YYYY-MM`
-- PATCH `/api/transactions/{transactionId}` with body `{ category?, notes? }`
-- POST `/api/transactions/sync` to trigger sync (optional body `{ cursor?, forceFullSync?, demoSeed? }`)
+## Plaid Sandbox Flow
 
-For PATCH/POST, add `Idempotency-Key: <uuid>` header to avoid duplicates.
+1. `POST /plaid/link-token`
+2. Launch Plaid Link (native SDK). Obtain `public_token`.
+3. `POST /plaid/exchange` with `{ "publicToken": "<public_token>" }`.
+4. `POST /transactions/sync` (optionally `forceFullSync=true` on the first sync).
 
-### Analytics
-GET `/api/analytics/summary?month=YYYY-MM&generateAi=false|true`
+## Error Handling
 
-### AI Chat
-- GET `/api/chat?conversationId=<uuid>`
-- POST `/api/chat` with body `{ conversationId?, message, truncateFromMessageId? }`
+All non-2xx responses follow:
 
-### RAG (Search/Aggregate/Summaries)
-- POST `/api/rag/search`
-- GET `/api/rag/summaries?month=YYYY-MM`
-- POST `/api/rag/aggregate`
-
-### Plaid Sandbox Flow
-1) POST `/api/plaid/link-token` to create a link token.
-2) Launch Plaid Link natively; obtain `public_token`.
-3) POST `/api/plaid/exchange` with `{ publicToken }`.
-4) POST `/api/transactions/sync` to start ingestion.
-
-## Error Format
-All failures return `HTTP` status with a JSON payload:
-```
+```json
 {
-  "error": { "code": "...", "message": "...", "details": { } },
-  "traceId": "..."
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "Something went wrong",
+    "details": { "field": "reason" }
+  },
+  "traceId": "d4b1..."
 }
 ```
-Typical codes: `INVALID_REQUEST`, `UNAUTHENTICATED`, `FORBIDDEN`, `RATE_LIMITED`, and server-side errors.
 
-## iOS/Android Snippets
-- iOS (Swift) and Android (Kotlin) examples mirror the README section in this repo. Use secure storage for refresh tokens and retry on 401 by refreshing tokens once.
+Common `error.code` values: `INVALID_REQUEST`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `PLAID_ERROR`, `AI_UNAVAILABLE`, `RATE_LIMITED`, `INTERNAL`.
 
-## Operational Notes
-- Use HTTPS only.
-- Respect `Retry-After` on 429 responses.
-- Keep `Idempotency-Key` stable per intent on write operations.
+## Platform Recommendations
 
-If you need SDK-style wrappers (token storage, API client) for iOS/Android, open an issue and we can add them to `examples/`.
+- Use HTTPS only. Disable TLS certificate pinning during development (self-signed certificates may be in play).
+- Store refresh tokens in secure key storage (Keychain/Keystore). Access tokens can remain in memory and be refreshed on 401 responses.
+- Retry idempotent operations with exponential backoff, respecting `Retry-After` headers when present.
+- When calling write endpoints, include a UUID `Idempotency-Key` header to guard against duplicate submissions (support planned on the backend; harmless today).
+
+For additional samples (Swift/Kotlin), open an issue and we can add snippets under `examples/`.

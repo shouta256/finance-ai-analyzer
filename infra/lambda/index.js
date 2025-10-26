@@ -45,7 +45,6 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .filter(Boolean);
 const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes("*");
 const NORMALISED_ALLOWED_ORIGINS = ALLOWED_ORIGINS.map((origin) => normaliseOriginUrl(origin)).filter(Boolean);
-const ENABLE_STUBS = (process.env.SAFEPOCKET_ENABLE_STUBS || "false").toLowerCase() === "true";
 const CHAT_SYSTEM_PROMPT =
   "You are Safepocket's financial helper. Use the provided context to answer. Context JSON includes 'summary' (month totals, top categories/merchants) and 'recentTransactions' (latest activity). Provide amounts in US dollars with sign-aware formatting, cite exact dates, and do not invent data beyond the supplied context.";
 const CHAT_MAX_HISTORY_MESSAGES = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_HISTORY_LIMIT || "3", 10), 0);
@@ -1049,41 +1048,6 @@ function buildStubAccounts(userId) {
   ];
 }
 
-function buildStubChatResponse(conversationId, userMessage) {
-  const convoId = conversationId || crypto.randomUUID();
-  const now = new Date();
-  const createdAt = now.toISOString();
-  const assistantCreated = new Date(now.getTime() + 1500).toISOString();
-  const messages = [];
-  if (userMessage) {
-    messages.push({
-      id: crypto.randomUUID(),
-      role: "USER",
-      content: userMessage,
-      createdAt,
-    });
-  } else {
-    messages.push({
-      id: crypto.randomUUID(),
-      role: "USER",
-      content: "Can you summarize my spending this month?",
-      createdAt,
-    });
-  }
-  messages.push({
-    id: crypto.randomUUID(),
-    role: "ASSISTANT",
-    content:
-      "Here’s a quick look: income was $3,200, expenses $1,245 (groceries $420, dining $185, transportation $96). You’re tracking under budget, so keep up the good work!",
-    createdAt: assistantCreated,
-  });
-  return {
-    conversationId: convoId,
-    messages,
-    traceId: crypto.randomUUID(),
-  };
-}
-
 function mapChatRow(row) {
   const createdAt =
     row.created_at instanceof Date && !Number.isNaN(row.created_at.getTime())
@@ -1423,46 +1387,33 @@ async function handleAnalyticsSummary(event, query) {
   const payload = await authenticate(event);
   const { fromDate, toDate, monthLabel } = parseRange(query);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
-  let transactions;
-  let usingStub = false;
   try {
-    transactions = await queryTransactions(payload.sub, fromDate, toDate);
+    const transactions = await queryTransactions(payload.sub, fromDate, toDate);
+    const summary = summarise(transactions, fromDate, toDate, monthLabel, traceId);
+    return respond(event, 200, summary);
   } catch (error) {
-    if (!ENABLE_STUBS) throw error;
-    console.warn("[lambda] analytics summary fallback", { message: error.message });
-    transactions = buildStubTransactions(payload.sub);
-    usingStub = true;
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "ANALYTICS_FETCH_FAILED",
+        message: error?.message || "Failed to load analytics summary",
+        traceId,
+      },
+    });
   }
-  const summary = summarise(transactions, fromDate, toDate, monthLabel, traceId);
-  return respond(
-    event,
-    200,
-    summary,
-    usingStub ? { headers: { "x-safepocket-origin": "stub" } } : undefined,
-  );
 }
 
 async function handleTransactions(event, query) {
   const payload = await authenticate(event);
   const { fromDate, toDate, monthLabel } = parseRange(query);
-  let transactions;
-  let usingStub = false;
+  const traceId = event.requestContext?.requestId || crypto.randomUUID();
   try {
-    transactions = await queryTransactions(payload.sub, fromDate, toDate);
-  } catch (error) {
-    if (!ENABLE_STUBS) throw error;
-    console.warn("[lambda] transactions fallback", { message: error.message });
-    transactions = buildStubTransactions(payload.sub);
-    usingStub = true;
-  }
-  const page = Math.max(parseInt(query.page || "0", 10), 0);
-  const pageSize = Math.min(Math.max(parseInt(query.pageSize || "15", 10), 1), 100);
-  const start = page * pageSize;
-  const paged = transactions.slice(start, start + pageSize);
-  return respond(
-    event,
-    200,
-    {
+    const transactions = await queryTransactions(payload.sub, fromDate, toDate);
+    const page = Math.max(parseInt(query.page || "0", 10), 0);
+    const pageSize = Math.min(Math.max(parseInt(query.pageSize || "15", 10), 1), 100);
+    const start = page * pageSize;
+    const paged = transactions.slice(start, start + pageSize);
+    return respond(event, 200, {
       transactions: paged,
       period: {
         month: monthLabel,
@@ -1470,18 +1421,25 @@ async function handleTransactions(event, query) {
         to: monthLabel ? null : toIsoDate(new Date(toDate.getTime() - 1)),
       },
       aggregates: buildTransactionsAggregates(transactions),
-      traceId: event.requestContext?.requestId || crypto.randomUUID(),
-    },
-    usingStub ? { headers: { "x-safepocket-origin": "stub" } } : undefined,
-  );
+      traceId,
+    });
+  } catch (error) {
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "TRANSACTIONS_FETCH_FAILED",
+        message: error?.message || "Failed to load transactions",
+        traceId,
+      },
+    });
+  }
 }
 
 async function handleAccounts(event) {
   const payload = await authenticate(event);
-  let accounts;
-  let usingStub = false;
+  const traceId = event.requestContext?.requestId || crypto.randomUUID();
   try {
-    accounts = await withUserClient(payload.sub, async (client) => {
+    const accounts = await withUserClient(payload.sub, async (client) => {
       const res = await client.query(
         `SELECT a.id,
                 a.name,
@@ -1503,21 +1461,17 @@ async function handleAccounts(event) {
         createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       }));
     });
+    return respond(event, 200, { accounts, traceId });
   } catch (error) {
-    if (!ENABLE_STUBS) throw error;
-    console.warn("[lambda] accounts fallback", { message: error.message });
-    accounts = buildStubAccounts(payload.sub);
-    usingStub = true;
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "ACCOUNTS_FETCH_FAILED",
+        message: error?.message || "Failed to load accounts",
+        traceId,
+      },
+    });
   }
-  return respond(
-    event,
-    200,
-    {
-      accounts,
-      traceId: event.requestContext?.requestId || crypto.randomUUID(),
-    },
-    usingStub ? { headers: { "x-safepocket-origin": "stub" } } : undefined,
-  );
 }
 
 function parseList(value, fallback) {
@@ -2035,10 +1989,15 @@ async function handleChat(event) {
   const payload = await authenticate(event);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
 
-  const buildStub = (conversationId, userMessage) => {
-    const stub = buildStubChatResponse(conversationId, userMessage);
-    stub.traceId = traceId;
-    return respond(event, 200, stub, { headers: { "x-safepocket-origin": "stub" } });
+  const respondWithError = (error) => {
+    const status = error?.statusCode || error?.status || 500;
+    return respond(event, status, {
+      error: {
+        code: "CHAT_OPERATION_FAILED",
+        message: error?.message || "Chat operation failed",
+        traceId,
+      },
+    });
   };
 
   if (method === "GET") {
@@ -2052,10 +2011,7 @@ async function handleChat(event) {
       });
       return respond(event, 200, { ...result, traceId });
     } catch (error) {
-      if (ENABLE_STUBS) {
-        return buildStub(requestedId || crypto.randomUUID());
-      }
-      throw error;
+      return respondWithError(error);
     }
   }
 
@@ -2136,10 +2092,7 @@ async function handleChat(event) {
 
       return respond(event, 200, { ...result, traceId });
     } catch (error) {
-      if (ENABLE_STUBS) {
-        return buildStub(rawConversationId || crypto.randomUUID(), rawMessage);
-      }
-      throw error;
+      return respondWithError(error);
     }
   }
 
@@ -2165,10 +2118,7 @@ async function handleChat(event) {
       });
       return respond(event, 200, { status: "DELETED", traceId });
     } catch (error) {
-      if (ENABLE_STUBS) {
-        return respond(event, 200, { status: "DELETED", traceId });
-      }
-      throw error;
+      return respondWithError(error);
     }
   }
 

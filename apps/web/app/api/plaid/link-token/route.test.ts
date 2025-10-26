@@ -11,7 +11,9 @@ import { ledgerFetch, LedgerApiError } from "@/src/lib/api-client";
 const mocked = vi.mocked(ledgerFetch);
 
 describe("/api/plaid/link-token", () => {
-  beforeEach(() => mocked.mockReset());
+  beforeEach(() => {
+    mocked.mockReset();
+  });
 
   it("returns 401 without auth", async () => {
     const res = await POST({ headers: new Headers(), url: "https://x" } as any);

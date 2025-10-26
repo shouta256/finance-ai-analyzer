@@ -1962,7 +1962,12 @@ async function handleAuthCallback(event) {
   }
 
   const tokenUrl = `${cognito.domain}/oauth2/token`;
-  console.info("[/auth/callback] exchanging code", { tokenUrl, redirectUri: cognito.redirectUri });
+  console.info("[/auth/callback] exchanging code", {
+    tokenUrl,
+    redirectUri: cognito.redirectUri,
+    clientId: cognito.clientId,
+    hasClientSecret: Boolean(cognito.clientSecret && cognito.clientSecret.trim()),
+  });
   const resp = await fetch(tokenUrl, {
     method: "POST",
     headers,

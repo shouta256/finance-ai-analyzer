@@ -6,7 +6,9 @@ vi.mock("@/src/lib/api-client", () => ({ ledgerFetch: vi.fn() }));
 const mocked = vi.mocked(ledgerFetch);
 
 describe("/api/plaid/exchange", () => {
-  beforeEach(() => mocked.mockReset());
+  beforeEach(() => {
+    mocked.mockReset();
+  });
 
   it("returns 401 without auth", async () => {
     const res = await POST({ headers: new Headers(), url: "https://x", json: async () => ({}) } as any);

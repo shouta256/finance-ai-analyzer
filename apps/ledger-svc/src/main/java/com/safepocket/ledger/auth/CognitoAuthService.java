@@ -59,6 +59,9 @@ public class CognitoAuthService {
         }
 
         String clientSecret = properties.cognito().hasClientSecret() ? properties.cognito().clientSecret() : null;
+        boolean isNativeClient = StringUtils.hasText(properties.cognito().clientIdNative())
+                && properties.cognito().clientIdNative().equals(clientId);
+        boolean useClientSecret = clientSecret != null && !clientSecret.isBlank() && !isNativeClient;
 
         WebClient client = WebClient.builder()
                 .baseUrl(baseUrl)
@@ -70,7 +73,7 @@ public class CognitoAuthService {
                     .uri("/oauth2/token")
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .headers(headers -> {
-                        if (clientSecret != null && !clientSecret.isBlank()) {
+                        if (useClientSecret) {
                             headers.setBasicAuth(clientId, clientSecret, StandardCharsets.UTF_8);
                         }
                     })

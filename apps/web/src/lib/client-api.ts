@@ -101,9 +101,6 @@ async function handleJson<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> 
 
 export async function getAnalyticsSummary(month: string, options?: { generateAi?: boolean }): Promise<AnalyticsSummary> {
   const url = buildRequestUrl("/api/analytics/summary", { month, generateAi: options?.generateAi ? "true" : undefined });
-  if (process.env.NEXT_PUBLIC_DEBUG_API === 'true') {
-    console.debug('[client-api] getAnalyticsSummary ->', url);
-  }
   const res = await fetch(url, withCredentials({ cache: "no-store" }));
   return handleJson(res, analyticsSummarySchema);
 }

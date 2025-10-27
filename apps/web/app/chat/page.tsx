@@ -5,6 +5,11 @@ import { ChatMessage } from "@/src/lib/schemas";
 import Link from "next/link";
 import { Copy, Pencil } from "lucide-react";
 
+const enableChatLogs = process.env.NODE_ENV !== "production";
+const logChatError = (...args: unknown[]) => {
+  if (enableChatLogs) console.error(...args);
+};
+
 export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -32,7 +37,7 @@ const copyToClipboard = async (content: string) => {
   try {
     await navigator.clipboard.writeText(content);
   } catch (error) {
-    console.error("Failed to copy message", error);
+    logChatError("Failed to copy message", error);
   }
 };
 
@@ -51,7 +56,7 @@ const copyToClipboard = async (content: string) => {
         }
         requestAnimationFrame(() => scrollToBottom("auto"));
       } catch (error) {
-        console.error(error);
+        logChatError(error);
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(storageKey);
         }
@@ -98,7 +103,7 @@ const copyToClipboard = async (content: string) => {
       setEditingMessageId(null);
       requestAnimationFrame(() => scrollToBottom());
     } catch (err) {
-      console.error(err);
+      logChatError(err);
       setMessages(previousMessages);
       setInput(msg);
       if (editingMessage) {
@@ -136,7 +141,7 @@ async function handleCancelEdit() {
     }
     requestAnimationFrame(() => scrollToBottom("auto"));
   } catch (error) {
-    console.error(error);
+    logChatError(error);
   }
 }
 
@@ -160,7 +165,7 @@ async function handleSubmitEdit(event: React.FormEvent) {
     setEditingDraft("");
     requestAnimationFrame(() => scrollToBottom());
   } catch (error) {
-    console.error(error);
+    logChatError(error);
   } finally {
     setEditingLoading(false);
   }

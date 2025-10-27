@@ -413,28 +413,81 @@ public class OpenAiResponsesClient {
         if (node == null) {
             return null;
         }
+
         JsonNode candidates = node.get("candidates");
         if (candidates != null && candidates.isArray()) {
             for (JsonNode candidate : candidates) {
-                JsonNode content = candidate.get("content");
-                if (content != null) {
-                    JsonNode parts = content.get("parts");
-                    if (parts != null && parts.isArray()) {
-                        for (JsonNode part : parts) {
-                            String text = extractText(part.get("text"));
-                            if (text != null && !text.isBlank()) {
-                                return text;
-                            }
-                            String direct = extractText(part);
-                            if (direct != null && !direct.isBlank()) {
-                                return direct;
-                            }
-                        }
-                    }
+                String candidateText = extractGeminiTextFromCandidate(candidate);
+                if (candidateText != null && !candidateText.isBlank()) {
+                    return candidateText;
                 }
             }
         }
-        return null;
+
+        return extractText(node);
+    }
+
+    private String extractGeminiTextFromCandidate(JsonNode candidate) {
+        if (candidate == null || candidate.isNull()) {
+            return null;
+        }
+
+        JsonNode content = candidate.get("content");
+        if (content != null && !content.isNull()) {
+            JsonNode parts = content.get("parts");
+            if (parts != null && parts.isArray()) {
+                for (JsonNode part : parts) {
+                    String partText = extractGeminiPartText(part);
+                    if (partText != null && !partText.isBlank()) {
+                        return partText;
+                    }
+                }
+            }
+            String fallback = extractText(content);
+            if (fallback != null && !fallback.isBlank()) {
+                return fallback;
+            }
+        }
+
+        return extractText(candidate);
+    }
+
+    private String extractGeminiPartText(JsonNode part) {
+        if (part == null || part.isNull()) {
+            return null;
+        }
+
+        String text = extractText(part.get("text"));
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+
+        text = extractText(part.get("functionCall"));
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+
+        text = extractText(part.get("json"));
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+
+        text = extractText(part.get("struct"));
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+
+        text = extractText(part.get("code"));
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+
+        text = extractText(part.get("data"));
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+
+        return extractText(part);
     }
 
     private String extractText(JsonNode node) {
@@ -466,9 +519,55 @@ public class OpenAiResponsesClient {
                 return nested;
             }
         }
+        JsonNode functionCall = node.get("functionCall");
+        if (functionCall != null) {
+            String nested = extractText(functionCall);
+            if (nested != null && !nested.isBlank()) {
+                return nested;
+            }
+            JsonNode args = functionCall.get("args");
+            if (args != null && !args.isNull()) {
+                if (args.isTextual()) {
+                    return args.asText();
+                }
+                if (args.isObject() || args.isArray()) {
+                    return args.toString();
+                }
+            }
+        }
+        JsonNode args = node.get("args");
+        if (args != null && !args.isNull()) {
+            if (args.isTextual()) {
+                return args.asText();
+            }
+            if (args.isObject() || args.isArray()) {
+                return args.toString();
+            }
+        }
+        JsonNode jsonNode = node.get("json");
+        if (jsonNode != null && !jsonNode.isNull()) {
+            if (jsonNode.isTextual()) {
+                return jsonNode.asText();
+            }
+            return jsonNode.toString();
+        }
+        JsonNode struct = node.get("struct");
+        if (struct != null && !struct.isNull()) {
+            return struct.toString();
+        }
         JsonNode value = node.get("value");
         if (value != null && value.isTextual()) {
             return value.asText();
+        }
+        if (node.isObject() && node.size() > 0) {
+            JsonNode output = node.get("output");
+            if (output != null) {
+                String nested = extractText(output);
+                if (nested != null && !nested.isBlank()) {
+                    return nested;
+                }
+            }
+            return node.toString();
         }
         return null;
     }

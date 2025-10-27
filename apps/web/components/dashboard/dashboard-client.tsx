@@ -36,6 +36,14 @@ interface FetchState {
   transactions: TransactionsList;
 }
 
+const enableClientLogs = process.env.NODE_ENV !== "production";
+const logError = (...args: unknown[]) => {
+  if (enableClientLogs) console.error(...args);
+};
+const logWarn = (...args: unknown[]) => {
+  if (enableClientLogs) console.warn(...args);
+};
+
 const CACHE_TTL_MS = 3 * 60 * 1000;
 
 type SummaryCacheEntry = { data: AnalyticsSummary; expires: number };
@@ -599,7 +607,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setMessage("Sync completed successfully.");
         setStatusMessage("Sync completed successfully.");
       } catch (error) {
-        console.error(error);
+        logError(error);
         if (isUnauthorizedError(error) && typeof window !== "undefined") {
           window.location.href = "/login";
           return;
@@ -629,7 +637,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setMessage(unlinkPlaid ? "Transactions reset and account unlinked." : "Transactions reset requested.");
         setAiReady(false);
       } catch (error) {
-        console.error(error);
+        logError(error);
         setMessage((error as Error).message ?? "Reset failed.");
       }
     });
@@ -661,7 +669,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       try {
         plaid = await loadPlaidLink();
       } catch (error) {
-        console.warn("Plaid load failed; retrying", error);
+        logWarn("Plaid load failed; retrying", error);
         plaid = await loadPlaidLink(45000);
       }
       const handler = plaid.create({
@@ -686,7 +694,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             setMessage("Plaid account linked and sync triggered.");
             setStatusMessage("Plaid account linked and sync triggered.");
           } catch (error) {
-            console.error(error);
+            logError(error);
             if (isUnauthorizedError(error) && typeof window !== "undefined") {
               window.location.href = "/login";
             } else {
@@ -713,7 +721,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         },
         onEvent: (eventName, metadata) => {
           if (eventName === "ERROR") {
-            console.error("[PlaidLink] error", metadata);
+            logError("[PlaidLink] error", metadata);
             const code = (metadata as any)?.error_code || (metadata as any)?.status || "UNKNOWN";
             const msg = (metadata as any)?.error_message || (metadata as any)?.message || "Plaid initialisation failed";
             setMessage(`Plaid error (${code}): ${msg}`);
@@ -722,7 +730,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       });
       handler.open();
     } catch (error) {
-      console.error(error);
+      logError(error);
       setMessage((error as Error).message ?? "Unable to start Plaid Link.");
       setLinking(false);
     }
@@ -740,7 +748,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setAiReady(true);
         setMessage("AI summary generated.");
       } catch (error) {
-        console.error(error);
+        logError(error);
         setMessage((error as Error).message ?? "AI summary failed.");
       } finally {
         setGeneratingAi(false);
@@ -770,7 +778,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setStatusMessage("Demo data loaded.");
         setAiReady(true);
       } catch (error) {
-        console.error(error);
+        logError(error);
         const failureMessage = (error as Error).message ?? "Demo load failed.";
         setMessage(failureMessage);
         setStatusMessage(failureMessage);

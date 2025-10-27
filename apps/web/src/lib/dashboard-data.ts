@@ -5,6 +5,7 @@ import { analyticsSummarySchema, transactionsListSchema } from "./schemas";
 
 export type AnalyticsSummary = z.infer<typeof analyticsSummarySchema>;
 export type TransactionsList = z.infer<typeof transactionsListSchema>;
+const enableServerLogs = process.env.NODE_ENV !== "production";
 
 export async function getDashboardData(month: string): Promise<{
   summary: AnalyticsSummary;
@@ -15,7 +16,9 @@ export async function getDashboardData(month: string): Promise<{
     const cookieStore = cookies();
     const token = cookieStore.get("sp_token")?.value;
     if (!token) {
-      console.info("[dashboard] No sp_token cookie on server request; skipping SSR fetch and using fallback data.");
+      if (enableServerLogs) {
+        console.info("[dashboard] No sp_token cookie on server request; using fallback data.");
+      }
       return {
         summary: buildFallbackSummary(month),
         transactions: buildFallbackTransactions(month),
@@ -76,7 +79,9 @@ export async function getDashboardData(month: string): Promise<{
     };
     return { summary, transactions };
   } catch (error) {
-    console.error("[dashboard] Failed to load data. Falling back to stub values.", error);
+    if (enableServerLogs) {
+      console.error("[dashboard] Failed to load data. Falling back to stub values.", error);
+    }
     return {
       summary: buildFallbackSummary(month),
       transactions: buildFallbackTransactions(month),

@@ -654,6 +654,19 @@ components:
           description: Sorted per-day net totals with explicit period labels (month view only)
           items:
             $ref: '#/components/schemas/TransactionsSeriesPoint'
+        trendSeries:
+          type: array
+          description: Adaptive net trend series aligned to trendGranularity
+          items:
+            $ref: '#/components/schemas/TransactionsSeriesPoint'
+        trendGranularity:
+          type: string
+          description: Granularity applied to trendSeries
+          enum:
+            - DAY
+            - WEEK
+            - MONTH
+            - QUARTER
         categoryTotals:
           type: object
           additionalProperties:

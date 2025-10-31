@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
     baseUrlOverride,
   });
   const body = transactionsListSchema.parse(result);
+  const includeDailyNet = Boolean(query.month);
   const aggregates = (() => {
     if (!Array.isArray(body.transactions) || body.transactions.length === 0) {
       return {
@@ -83,12 +84,14 @@ export async function GET(request: NextRequest) {
         expenseTotal: 0,
         netTotal: 0,
         monthNet: {},
+        dayNet: includeDailyNet ? {} : undefined,
         categoryTotals: {},
         count: 0,
       };
     }
     const monthNet = new Map<string, number>();
     const categoryTotals = new Map<string, number>();
+    const dayNet = includeDailyNet ? new Map<string, number>() : undefined;
     let incomeTotal = 0;
     let expenseTotal = 0;
     for (const tx of body.transactions) {
@@ -96,6 +99,10 @@ export async function GET(request: NextRequest) {
       if (!Number.isNaN(occurred.getTime())) {
         const label = `${occurred.getUTCFullYear()}-${String(occurred.getUTCMonth() + 1).padStart(2, "0")}`;
         monthNet.set(label, (monthNet.get(label) ?? 0) + tx.amount);
+        if (dayNet) {
+          const dayLabel = `${label}-${String(occurred.getUTCDate()).padStart(2, "0")}`;
+          dayNet.set(dayLabel, (dayNet.get(dayLabel) ?? 0) + tx.amount);
+        }
       }
       // Only include expenses (negative amounts) in categoryTotals for spending mix chart
       if (tx.amount < 0) {
@@ -111,6 +118,7 @@ export async function GET(request: NextRequest) {
       expenseTotal: Number(expenseTotal.toFixed(2)),
       netTotal,
       monthNet: Object.fromEntries(monthNet),
+      dayNet: dayNet ? Object.fromEntries(dayNet) : undefined,
       categoryTotals: Object.fromEntries(categoryTotals),
       count: body.transactions.length,
     };

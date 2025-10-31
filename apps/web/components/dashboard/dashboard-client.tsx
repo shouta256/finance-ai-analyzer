@@ -291,99 +291,23 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }), []);
 
   const trendChartData = useMemo<ChartData<"line"> | null>(() => {
-    if (rangeMode === "month") {
-      const daySeries = state.transactions.aggregates?.daySeries;
-      if (daySeries && daySeries.length > 0) {
-        const data = daySeries.map((entry) => Number(entry.net.toFixed(2)));
-        const singlePoint = data.length === 1;
-        return {
-          labels: daySeries.map((entry) => formatDayLabel(entry.period)),
-          datasets: [
-            {
-              label: "Net",
-              data,
-              borderColor: "#2563eb",
-              backgroundColor: "rgba(37, 99, 235, 0.1)",
-              borderWidth: 7,
-              tension: 0.3,
-              fill: true,
-              pointRadius: singlePoint ? 4 : 0,
-              pointHoverRadius: 6,
-            },
-          ],
-        };
-      }
-
-      const dayNet = state.transactions.aggregates?.dayNet;
-      if (dayNet && Object.keys(dayNet).length > 0) {
-        const entries = Object.entries(dayNet).sort(([a], [b]) => a.localeCompare(b));
-        const data = entries.map(([, value]) => Number(value.toFixed(2)));
-        const singlePoint = data.length === 1;
-        return {
-          labels: entries.map(([label]) => formatDayLabel(label)),
-          datasets: [
-            {
-              label: "Net",
-              data,
-              borderColor: "#2563eb",
-              backgroundColor: "rgba(37, 99, 235, 0.1)",
-              borderWidth: 7,
-              tension: 0.3,
-              fill: true,
-              pointRadius: singlePoint ? 4 : 0,
-              pointHoverRadius: 6,
-            },
-          ],
-        };
-      }
-      if (state.transactions.transactions.length === 0) return null;
-      const totalsByDay = new Map<string, number>();
-      state.transactions.transactions.forEach((tx) => {
-        const date = new Date(tx.occurredAt);
-        if (Number.isNaN(date.getTime())) return;
-        const label = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
-          date.getUTCDate(),
-        ).padStart(2, "0")}`;
-        totalsByDay.set(label, (totalsByDay.get(label) ?? 0) + tx.amount);
+    const series = state.transactions.aggregates?.trendSeries;
+    const granularity = state.transactions.aggregates?.trendGranularity ?? (rangeMode === "month" ? "DAY" : "MONTH");
+    if (series && series.length > 0) {
+      const data = series.map((entry) => {
+        const value = typeof entry.net === "number" ? entry.net : Number(entry.net);
+        return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
       });
-      const labels = Array.from(totalsByDay.keys()).sort();
-      const data = labels.map((label) => Number((totalsByDay.get(label) ?? 0).toFixed(2)));
-      if (labels.length === 0) return null;
       const singlePoint = data.length === 1;
       return {
-        labels: labels.map((label) => {
-          const date = new Date(label);
-          return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
-        }),
-        datasets: [
-          {
-            label: "Net",
-            data,
-            borderColor: "#2563eb",
-            backgroundColor: "rgba(37, 99, 235, 0.1)",
-            borderWidth: 7,
-            tension: 0.3,
-            fill: true,
-            pointRadius: singlePoint ? 4 : 0,
-            pointHoverRadius: 6,
-          },
-        ],
-      };
-    }
-
-    const monthSeries = state.transactions.aggregates?.monthSeries;
-    if (monthSeries && monthSeries.length > 0) {
-      const data = monthSeries.map((entry) => Number(entry.net.toFixed(2)));
-      const singlePoint = data.length === 1;
-      return {
-        labels: monthSeries.map((entry) => formatMonthLabel(entry.period)),
+        labels: series.map((entry) => formatTrendLabel(entry.period, granularity)),
         datasets: [
           {
             label: "Net",
             data,
             borderColor: "#2563eb",
             borderWidth: 7,
-            tension: 0.4,
+            tension: granularity === "DAY" ? 0.3 : granularity === "WEEK" ? 0.35 : 0.4,
             pointRadius: singlePoint ? 4 : 0,
             pointHoverRadius: 6,
             fill: true,
@@ -391,7 +315,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
               const ctx = context.chart.ctx;
               if (!ctx) return null;
               const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
-              gradient.addColorStop(0, "rgba(37, 99, 235, 0.2)");
+              gradient.addColorStop(0, granularity === "DAY" ? "rgba(37, 99, 235, 0.1)" : "rgba(37, 99, 235, 0.2)");
               gradient.addColorStop(1, "rgba(37, 99, 235, 0)");
               return gradient;
             },
@@ -399,52 +323,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         ],
       };
     }
-
-    const monthNet = state.transactions.aggregates?.monthNet;
-    let labels: string[] = [];
-    let data: number[] = [];
-    if (monthNet && Object.keys(monthNet).length > 0) {
-      const entries = Object.entries(monthNet).sort(([a], [b]) => a.localeCompare(b));
-      labels = entries.map(([label]) => label);
-      data = entries.map(([, value]) => Number(value.toFixed(2)));
-    } else {
-      if (state.transactions.transactions.length === 0) return null;
-      const totalsByMonth = new Map<string, number>();
-      state.transactions.transactions.forEach((tx) => {
-        const date = new Date(tx.occurredAt);
-        if (Number.isNaN(date.getTime())) return;
-        const label = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-        totalsByMonth.set(label, (totalsByMonth.get(label) ?? 0) + tx.amount);
-      });
-      labels = Array.from(totalsByMonth.keys()).sort();
-      data = labels.map((label) => Number((totalsByMonth.get(label) ?? 0).toFixed(2)));
-    }
-    if (labels.length === 0) return null;
-    const singlePoint = data.length === 1;
-    return {
-      labels: labels.map((label) => formatMonthLabel(label)),
-      datasets: [
-        {
-          label: "Net",
-          data,
-          borderColor: "#2563eb",
-          borderWidth: 7,
-          tension: 0.4,
-          pointRadius: singlePoint ? 4 : 0,
-          pointHoverRadius: 6,
-          fill: true,
-          backgroundColor: (context: any) => {
-            const ctx = context.chart.ctx;
-            if (!ctx) return null;
-            const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
-            gradient.addColorStop(0, "rgba(37, 99, 235, 0.2)");
-            gradient.addColorStop(1, "rgba(37, 99, 235, 0)");
-            return gradient;
-          },
-        },
-      ],
-    };
-  }, [state.transactions, rangeMode]);
+    return null;
+  }, [state.transactions.aggregates, rangeMode]);
 
   const trendChartOptions = useMemo<ChartOptions<"line">>(() => ({
     responsive: true,
@@ -1073,6 +953,40 @@ function formatDayLabel(value?: string | null): string {
   const date = new Date(Date.UTC(year, month - 1, day));
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
+function formatWeekLabel(value?: string | null): string {
+  if (!value) return "";
+  const parts = value.split("-");
+  if (parts.length < 3) return value;
+  const [year, month, day] = parts.map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return value;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
+function formatQuarterLabel(value?: string | null): string {
+  if (!value) return "";
+  const match = /^(\d{4})-Q([1-4])$/.exec(value);
+  if (!match) return value;
+  const [, year, quarter] = match;
+  return `Q${quarter} ${year}`;
+}
+
+function formatTrendLabel(period: string, granularity: string): string {
+  switch (granularity) {
+    case "DAY":
+      return formatDayLabel(period);
+    case "WEEK":
+      return formatWeekLabel(period);
+    case "MONTH":
+      return formatMonthLabel(period);
+    case "QUARTER":
+      return formatQuarterLabel(period);
+    default:
+      return period;
+  }
 }
 
 function formatMonthLabel(value?: string | null): string {

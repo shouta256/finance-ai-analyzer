@@ -254,6 +254,10 @@ export interface components {
       dayNet?: {
         [key: string]: number;
       };
+      /** @description Sorted per-month net totals with explicit period labels */
+      monthSeries?: components["schemas"]["TransactionsSeriesPoint"][];
+      /** @description Sorted per-day net totals with explicit period labels (month view only) */
+      daySeries?: components["schemas"]["TransactionsSeriesPoint"][];
       /** @description Totals grouped by category */
       categoryTotals?: {
         [key: string]: number;
@@ -263,6 +267,15 @@ export interface components {
        * @description Number of transactions considered when computing the aggregates
        */
       count?: number;
+    };
+    TransactionsSeriesPoint: {
+      /** @description Period key (YYYY-MM or YYYY-MM-DD) */
+      period: string;
+      /**
+       * Format: double
+       * @description Net amount for the period
+       */
+      net: number;
     };
     TransactionsQueryPeriod: {
       /** @description Legacy month value (YYYY-MM) supplied by earlier clients */

@@ -292,16 +292,35 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   const trendChartData = useMemo<ChartData<"line"> | null>(() => {
     if (rangeMode === "month") {
-      const dayNet = state.transactions.aggregates?.dayNet;
-      if (dayNet && Object.keys(dayNet).length > 0) {
-        const labels = Object.keys(dayNet).sort();
-        const data = labels.map((label) => Number((dayNet[label] ?? 0).toFixed(2)));
+      const daySeries = state.transactions.aggregates?.daySeries;
+      if (daySeries && daySeries.length > 0) {
+        const data = daySeries.map((entry) => Number(entry.net.toFixed(2)));
         const singlePoint = data.length === 1;
         return {
-          labels: labels.map((label) => {
-            const date = new Date(label);
-            return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
-          }),
+          labels: daySeries.map((entry) => formatDayLabel(entry.period)),
+          datasets: [
+            {
+              label: "Net",
+              data,
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37, 99, 235, 0.1)",
+              borderWidth: 7,
+              tension: 0.3,
+              fill: true,
+              pointRadius: singlePoint ? 4 : 0,
+              pointHoverRadius: 6,
+            },
+          ],
+        };
+      }
+
+      const dayNet = state.transactions.aggregates?.dayNet;
+      if (dayNet && Object.keys(dayNet).length > 0) {
+        const entries = Object.entries(dayNet).sort(([a], [b]) => a.localeCompare(b));
+        const data = entries.map(([, value]) => Number(value.toFixed(2)));
+        const singlePoint = data.length === 1;
+        return {
+          labels: entries.map(([label]) => formatDayLabel(label)),
           datasets: [
             {
               label: "Net",
@@ -352,12 +371,42 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       };
     }
 
+    const monthSeries = state.transactions.aggregates?.monthSeries;
+    if (monthSeries && monthSeries.length > 0) {
+      const data = monthSeries.map((entry) => Number(entry.net.toFixed(2)));
+      const singlePoint = data.length === 1;
+      return {
+        labels: monthSeries.map((entry) => formatMonthLabel(entry.period)),
+        datasets: [
+          {
+            label: "Net",
+            data,
+            borderColor: "#2563eb",
+            borderWidth: 7,
+            tension: 0.4,
+            pointRadius: singlePoint ? 4 : 0,
+            pointHoverRadius: 6,
+            fill: true,
+            backgroundColor: (context: any) => {
+              const ctx = context.chart.ctx;
+              if (!ctx) return null;
+              const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
+              gradient.addColorStop(0, "rgba(37, 99, 235, 0.2)");
+              gradient.addColorStop(1, "rgba(37, 99, 235, 0)");
+              return gradient;
+            },
+          },
+        ],
+      };
+    }
+
     const monthNet = state.transactions.aggregates?.monthNet;
     let labels: string[] = [];
     let data: number[] = [];
     if (monthNet && Object.keys(monthNet).length > 0) {
-      labels = Object.keys(monthNet).sort();
-      data = labels.map((label) => Number((monthNet[label] ?? 0).toFixed(2)));
+      const entries = Object.entries(monthNet).sort(([a], [b]) => a.localeCompare(b));
+      labels = entries.map(([label]) => label);
+      data = entries.map(([, value]) => Number(value.toFixed(2)));
     } else {
       if (state.transactions.transactions.length === 0) return null;
       const totalsByMonth = new Map<string, number>();
@@ -1013,6 +1062,17 @@ function friendlyBody(err: { code: string; traceId?: string; details?: string })
     default:
       return err.details || "An unknown error occurred.";
   }
+}
+
+function formatDayLabel(value?: string | null): string {
+  if (!value) return "";
+  const parts = value.split("-");
+  if (parts.length < 3) return value;
+  const [year, month, day] = parts.map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return value;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
 }
 
 function formatMonthLabel(value?: string | null): string {

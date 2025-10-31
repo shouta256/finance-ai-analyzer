@@ -19,15 +19,19 @@ import com.safepocket.ledger.service.TransactionMaintenanceService;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.http.ResponseEntity;
@@ -149,14 +153,17 @@ public class TransactionsController {
 
     private AggregatesDto buildAggregates(List<Transaction> transactions, TransactionWindow window) {
         if (transactions.isEmpty()) {
+            boolean includeDaily = window.month().isPresent();
             return new AggregatesDto(
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                     Map.of(),
-                    window.month().isPresent() ? Map.of() : null,
+                    includeDaily ? Map.of() : null,
                     List.of(),
-                    window.month().isPresent() ? List.of() : null,
+                    includeDaily ? List.of() : null,
+                    List.of(),
+                    includeDaily ? TrendGranularity.DAY.name() : TrendGranularity.MONTH.name(),
                     Map.of(),
                     0
             );
@@ -170,6 +177,9 @@ public class TransactionsController {
         Map<String, BigDecimal> categoryTotals = new LinkedHashMap<>();
         DateTimeFormatter monthFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneOffset.UTC);
         DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
+        TreeMap<String, BigDecimal> timelineTotals = new TreeMap<>();
+        LocalDate minDate = null;
+        LocalDate maxDate = null;
 
         for (Transaction transaction : transactions) {
             BigDecimal amount = transaction.amount() != null ? transaction.amount() : BigDecimal.ZERO;
@@ -183,10 +193,15 @@ public class TransactionsController {
             if (transaction.occurredAt() != null) {
                 String monthKey = monthFormatter.format(transaction.occurredAt());
                 monthNet.merge(monthKey, scaledAmount, BigDecimal::add);
+                LocalDate occurredDate = transaction.occurredAt().atOffset(ZoneOffset.UTC).toLocalDate();
+                minDate = minDate == null || occurredDate.isBefore(minDate) ? occurredDate : minDate;
+                maxDate = maxDate == null || occurredDate.isAfter(maxDate) ? occurredDate : maxDate;
                 if (dayNet != null) {
                     String dayKey = dayFormatter.format(transaction.occurredAt());
                     dayNet.merge(dayKey, scaledAmount, BigDecimal::add);
                 }
+                // timeline totals will use placeholder key; final granularity decided later
+                timelineTotals.merge(occurredDate.toString(), scaledAmount, BigDecimal::add);
             }
 
             if (scaledAmount.compareTo(BigDecimal.ZERO) < 0) {
@@ -236,6 +251,9 @@ public class TransactionsController {
                         LinkedHashMap::new
                 ));
 
+        TrendGranularity trendGranularity = determineTrendGranularity(includeDaily, minDate, maxDate);
+        List<SeriesPointDto> trendSeries = aggregateTimeline(timelineTotals, trendGranularity);
+
         return new AggregatesDto(
                 incomeTotal.setScale(2, RoundingMode.HALF_UP),
                 expenseTotal.setScale(2, RoundingMode.HALF_UP),
@@ -244,9 +262,54 @@ public class TransactionsController {
                 normalisedDayNet,
                 monthSeries,
                 daySeries,
+                trendSeries,
+                trendGranularity.name(),
                 normalisedCategoryTotals,
                 transactions.size()
         );
+    }
+
+    private TrendGranularity determineTrendGranularity(boolean includeDaily, LocalDate minDate, LocalDate maxDate) {
+        if (includeDaily) {
+            return TrendGranularity.DAY;
+        }
+        if (minDate == null || maxDate == null) {
+            return TrendGranularity.MONTH;
+        }
+        long days = ChronoUnit.DAYS.between(minDate, maxDate) + 1;
+        if (days <= 120) {
+            return TrendGranularity.WEEK;
+        }
+        if (days <= 730) {
+            return TrendGranularity.MONTH;
+        }
+        return TrendGranularity.QUARTER;
+    }
+
+    private List<SeriesPointDto> aggregateTimeline(Map<String, BigDecimal> dailyTotals, TrendGranularity granularity) {
+        if (dailyTotals.isEmpty()) {
+            return List.of();
+        }
+        Map<String, BigDecimal> buckets = new TreeMap<>();
+        DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        for (Map.Entry<String, BigDecimal> entry : dailyTotals.entrySet()) {
+            LocalDate date = LocalDate.parse(entry.getKey(), dayFormatter);
+            String key = switch (granularity) {
+                case DAY -> date.toString();
+                case WEEK -> date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).toString();
+                case MONTH -> YearMonth.from(date).toString();
+                case QUARTER -> {
+                    int quarter = ((date.getMonthValue() - 1) / 3) + 1;
+                    yield date.getYear() + "-Q" + quarter;
+                }
+            };
+            buckets.merge(key, entry.getValue(), BigDecimal::add);
+        }
+
+        return buckets.entrySet().stream()
+                .map(entry -> new SeriesPointDto(entry.getKey(), entry.getValue().setScale(2, RoundingMode.HALF_UP)))
+                .toList();
     }
 
     private static TransactionWindow resolveWindow(String month, String from, String to) {
@@ -286,5 +349,12 @@ public class TransactionsController {
         } catch (DateTimeParseException ex) {
             throw new IllegalArgumentException("Invalid " + param + " format");
         }
+    }
+
+    private enum TrendGranularity {
+        DAY,
+        WEEK,
+        MONTH,
+        QUARTER
     }
 }

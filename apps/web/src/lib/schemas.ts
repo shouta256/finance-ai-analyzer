@@ -74,6 +74,15 @@ export const transactionsListSchema = z
             }),
           )
           .optional(),
+        trendSeries: z
+          .array(
+            z.object({
+              period: z.string(),
+              net: z.number(),
+            }),
+          )
+          .optional(),
+        trendGranularity: z.enum(["DAY", "WEEK", "MONTH", "QUARTER"]).optional(),
         categoryTotals: z.record(z.number()).optional(),
         count: z.number().optional(),
       })

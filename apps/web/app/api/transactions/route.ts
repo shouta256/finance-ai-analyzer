@@ -162,6 +162,7 @@ function computeAggregatesFromTransactions(
   includeDailyNet: boolean,
 ) {
   if (!Array.isArray(transactions) || transactions.length === 0) {
+    const timeline = buildTrendSeries([], includeDailyNet);
     return {
       incomeTotal: 0,
       expenseTotal: 0,
@@ -170,8 +171,8 @@ function computeAggregatesFromTransactions(
       dayNet: includeDailyNet ? {} : undefined,
       monthSeries: [] as Array<{ period: string; net: number }>,
       daySeries: includeDailyNet ? ([] as Array<{ period: string; net: number }>) : undefined,
-      trendSeries: [] as Array<{ period: string; net: number }>,
-      trendGranularity: includeDailyNet ? "DAY" : "MONTH",
+      trendSeries: timeline.series,
+      trendGranularity: timeline.granularity,
       categoryTotals: {},
       count: 0,
     };
@@ -221,6 +222,7 @@ function computeAggregatesFromTransactions(
       .map(([category, value]) => [category, toCurrencyValue(value)] as const)
       .sort(([a], [b]) => a.localeCompare(b)),
   );
+  const timeline = buildTrendSeries(transactions, includeDailyNet);
 
   return {
     incomeTotal: toCurrencyValue(incomeTotal),
@@ -230,8 +232,8 @@ function computeAggregatesFromTransactions(
     dayNet: normalizedDayNet,
     monthSeries,
     daySeries,
-    trendSeries: [] as Array<{ period: string; net: number }>, // placeholder; populated later
-    trendGranularity: includeDailyNet ? "DAY" : "MONTH",
+    trendSeries: timeline.series,
+    trendGranularity: timeline.granularity,
     categoryTotals: normalizedCategoryTotals,
     count: transactions.length,
   };
@@ -268,6 +270,11 @@ function normalizeExistingAggregates(
     }
   }
 
+  let trendSeries = normalizeSeries(aggregates.trendSeries as Array<{ period?: string; net?: unknown }> | undefined);
+  let trendGranularity = typeof aggregates.trendGranularity === "string" && TREND_GRANULARITIES.includes(aggregates.trendGranularity as TrendGranularity)
+    ? (aggregates.trendGranularity as TrendGranularity)
+    : undefined;
+
   return {
     incomeTotal: toCurrencyValue(aggregates.incomeTotal),
     expenseTotal: toCurrencyValue(aggregates.expenseTotal),
@@ -276,8 +283,8 @@ function normalizeExistingAggregates(
     dayNet: includeDailyNet ? normalizedDayNet : undefined,
     monthSeries,
     daySeries: includeDailyNet ? daySeries : undefined,
-    trendSeries: [] as Array<{ period: string; net: number }>,
-    trendGranularity: includeDailyNet ? "DAY" : "MONTH",
+    trendSeries,
+    trendGranularity,
     categoryTotals: normalizeRecord(aggregates.categoryTotals as Record<string, unknown> | undefined),
     count: typeof aggregates.count === "number" ? aggregates.count : fallbackCount,
   };
@@ -361,11 +368,17 @@ export async function GET(request: NextRequest) {
       aggregates = normalizeExistingAggregates(existing, includeDailyNet, transactions.length);
     }
   }
-  const timeline = buildTrendSeries(transactions, includeDailyNet);
+  let trendSeries = aggregates.trendSeries ?? [];
+  let trendGranularity = aggregates.trendGranularity;
+  if (!trendSeries || trendSeries.length === 0 || !trendGranularity) {
+    const timeline = buildTrendSeries(transactions, includeDailyNet);
+    trendSeries = timeline.series;
+    trendGranularity = timeline.granularity;
+  }
   aggregates = {
     ...aggregates,
-    trendSeries: timeline.series,
-    trendGranularity: timeline.granularity,
+    trendSeries,
+    trendGranularity,
   };
   const page = query.page ?? 0;
   const size = query.pageSize ?? 15;

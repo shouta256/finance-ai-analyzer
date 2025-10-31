@@ -153,6 +153,7 @@ function buildFallbackTransactions(month: string): TransactionsList {
       expenseTotal: 0,
       netTotal: 0,
       monthNet: {},
+      dayNet: {},
       categoryTotals: {},
       count: 0,
     },

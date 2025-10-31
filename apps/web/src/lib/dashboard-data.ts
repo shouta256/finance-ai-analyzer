@@ -156,6 +156,8 @@ function buildFallbackTransactions(month: string): TransactionsList {
       dayNet: {},
       monthSeries: [],
       daySeries: [],
+      trendSeries: [],
+      trendGranularity: "MONTH",
       categoryTotals: {},
       count: 0,
     },

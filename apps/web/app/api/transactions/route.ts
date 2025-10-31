@@ -86,6 +86,8 @@ export async function GET(request: NextRequest) {
         monthNet: {},
         dayNet: includeDailyNet ? {} : undefined,
         categoryTotals: {},
+        monthSeries: [],
+        daySeries: includeDailyNet ? [] : undefined,
         count: 0,
       };
     }
@@ -113,12 +115,34 @@ export async function GET(request: NextRequest) {
       if (tx.amount < 0) expenseTotal += tx.amount;
     }
     const netTotal = Number((incomeTotal + expenseTotal).toFixed(2));
+    const monthEntries = Array.from(monthNet.entries()).sort(([a], [b]) => a.localeCompare(b));
+    const normalizedMonthNet = Object.fromEntries(
+      monthEntries.map(([period, value]) => [period, Number(value.toFixed(2))]),
+    );
+    const monthSeries = monthEntries.map(([period, value]) => ({
+      period,
+      net: Number(value.toFixed(2)),
+    }));
+    let normalizedDayNet: Record<string, number> | undefined;
+    let daySeries: Array<{ period: string; net: number }> | undefined;
+    if (dayNet) {
+      const dayEntries = Array.from(dayNet.entries()).sort(([a], [b]) => a.localeCompare(b));
+      normalizedDayNet = Object.fromEntries(
+        dayEntries.map(([period, value]) => [period, Number(value.toFixed(2))]),
+      );
+      daySeries = dayEntries.map(([period, value]) => ({
+        period,
+        net: Number(value.toFixed(2)),
+      }));
+    }
     return {
       incomeTotal: Number(incomeTotal.toFixed(2)),
       expenseTotal: Number(expenseTotal.toFixed(2)),
       netTotal,
-      monthNet: Object.fromEntries(monthNet),
-      dayNet: dayNet ? Object.fromEntries(dayNet) : undefined,
+      monthNet: normalizedMonthNet,
+      dayNet: normalizedDayNet,
+      monthSeries,
+      daySeries,
       categoryTotals: Object.fromEntries(categoryTotals),
       count: body.transactions.length,
     };

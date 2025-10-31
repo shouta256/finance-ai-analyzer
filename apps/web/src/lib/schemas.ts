@@ -58,6 +58,22 @@ export const transactionsListSchema = z
         netTotal: z.number(),
         monthNet: z.record(z.number()).optional(),
         dayNet: z.record(z.number()).optional(),
+        monthSeries: z
+          .array(
+            z.object({
+              period: z.string(),
+              net: z.number(),
+            }),
+          )
+          .optional(),
+        daySeries: z
+          .array(
+            z.object({
+              period: z.string(),
+              net: z.number(),
+            }),
+          )
+          .optional(),
         categoryTotals: z.record(z.number()).optional(),
         count: z.number().optional(),
       })

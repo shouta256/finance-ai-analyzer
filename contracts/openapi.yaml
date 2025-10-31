@@ -638,6 +638,12 @@ components:
             type: number
             format: double
           description: Per-month net totals keyed by YYYY-MM
+        dayNet:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+          description: Per-day net totals keyed by YYYY-MM-DD
         categoryTotals:
           type: object
           additionalProperties:

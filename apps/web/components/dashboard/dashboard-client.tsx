@@ -292,6 +292,31 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   const trendChartData = useMemo<ChartData<"line"> | null>(() => {
     if (rangeMode === "month") {
+      const dayNet = state.transactions.aggregates?.dayNet;
+      if (dayNet && Object.keys(dayNet).length > 0) {
+        const labels = Object.keys(dayNet).sort();
+        const data = labels.map((label) => Number((dayNet[label] ?? 0).toFixed(2)));
+        const singlePoint = data.length === 1;
+        return {
+          labels: labels.map((label) => {
+            const date = new Date(label);
+            return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+          }),
+          datasets: [
+            {
+              label: "Net",
+              data,
+              borderColor: "#2563eb",
+              backgroundColor: "rgba(37, 99, 235, 0.1)",
+              borderWidth: 7,
+              tension: 0.3,
+              fill: true,
+              pointRadius: singlePoint ? 4 : 0,
+              pointHoverRadius: 6,
+            },
+          ],
+        };
+      }
       if (state.transactions.transactions.length === 0) return null;
       const totalsByDay = new Map<string, number>();
       state.transactions.transactions.forEach((tx) => {
@@ -305,6 +330,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const labels = Array.from(totalsByDay.keys()).sort();
       const data = labels.map((label) => Number((totalsByDay.get(label) ?? 0).toFixed(2)));
       if (labels.length === 0) return null;
+      const singlePoint = data.length === 1;
       return {
         labels: labels.map((label) => {
           const date = new Date(label);
@@ -319,7 +345,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             borderWidth: 7,
             tension: 0.3,
             fill: true,
-            pointRadius: 0,
+            pointRadius: singlePoint ? 4 : 0,
             pointHoverRadius: 6,
           },
         ],
@@ -345,6 +371,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       data = labels.map((label) => Number((totalsByMonth.get(label) ?? 0).toFixed(2)));
     }
     if (labels.length === 0) return null;
+    const singlePoint = data.length === 1;
     return {
       labels: labels.map((label) => formatMonthLabel(label)),
       datasets: [
@@ -354,7 +381,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           borderColor: "#2563eb",
           borderWidth: 7,
           tension: 0.4,
-          pointRadius: 0,
+          pointRadius: singlePoint ? 4 : 0,
           pointHoverRadius: 6,
           fill: true,
           backgroundColor: (context: any) => {

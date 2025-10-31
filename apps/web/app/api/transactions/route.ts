@@ -73,6 +73,90 @@ const normalizeSeries = (series?: Array<{ period?: string; net?: unknown }>): Ar
     .sort((a, b) => a.period.localeCompare(b.period));
 };
 
+const TREND_GRANULARITIES = ["DAY", "WEEK", "MONTH", "QUARTER"] as const;
+type TrendGranularity = (typeof TREND_GRANULARITIES)[number];
+
+const startOfUtcDay = (date: Date): Date =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+const startOfUtcWeek = (date: Date): Date => {
+  const base = startOfUtcDay(date);
+  const day = base.getUTCDay(); // 0 (Sun) - 6 (Sat)
+  const diff = (day + 6) % 7; // convert to Monday=0
+  base.setUTCDate(base.getUTCDate() - diff);
+  return base;
+};
+
+const formatUtcDate = (date: Date): string =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+
+const determineTrendGranularity = (includeDailyNet: boolean, minDate: Date | null, maxDate: Date | null): TrendGranularity => {
+  if (includeDailyNet) return "DAY";
+  if (!minDate || !maxDate) return "MONTH";
+  const spanMs = startOfUtcDay(maxDate).getTime() - startOfUtcDay(minDate).getTime();
+  const spanDays = Math.max(1, Math.round(spanMs / (24 * 60 * 60 * 1000)) + 1);
+  if (spanDays <= 120) return "WEEK";
+  if (spanDays <= 730) return "MONTH";
+  return "QUARTER";
+};
+
+const quarterKey = (date: Date): string => {
+  const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
+  return `${date.getUTCFullYear()}-Q${quarter}`;
+};
+
+const buildTrendSeries = (
+  transactions: Array<{ occurredAt: string; amount: number }>,
+  includeDailyNet: boolean,
+): { series: Array<{ period: string; net: number }>; granularity: TrendGranularity } => {
+  if (!Array.isArray(transactions) || transactions.length === 0) {
+    return { series: [], granularity: includeDailyNet ? "DAY" : "MONTH" };
+  }
+
+  const points: Array<{ date: Date; amount: number }> = [];
+  for (const tx of transactions) {
+    const amount = typeof tx.amount === "number" && Number.isFinite(tx.amount) ? tx.amount : 0;
+    const occurred = tx.occurredAt ? new Date(tx.occurredAt) : null;
+    if (!occurred || Number.isNaN(occurred.getTime())) continue;
+    points.push({ date: occurred, amount });
+  }
+  if (points.length === 0) {
+    return { series: [], granularity: includeDailyNet ? "DAY" : "MONTH" };
+  }
+
+  points.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const granularity = determineTrendGranularity(includeDailyNet, points[0]?.date ?? null, points.at(-1)?.date ?? null);
+  const buckets = new Map<string, number>();
+
+  for (const point of points) {
+    const baseDate = startOfUtcDay(point.date);
+    let key: string;
+    switch (granularity) {
+      case "DAY":
+        key = formatUtcDate(baseDate);
+        break;
+      case "WEEK":
+        key = formatUtcDate(startOfUtcWeek(baseDate));
+        break;
+      case "MONTH":
+        key = `${baseDate.getUTCFullYear()}-${String(baseDate.getUTCMonth() + 1).padStart(2, "0")}`;
+        break;
+      case "QUARTER":
+        key = quarterKey(baseDate);
+        break;
+      default:
+        key = formatUtcDate(baseDate);
+    }
+    buckets.set(key, (buckets.get(key) ?? 0) + point.amount);
+  }
+
+  const series = Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, value]) => ({ period, net: toCurrencyValue(value) }));
+
+  return { series, granularity };
+};
+
 function computeAggregatesFromTransactions(
   transactions: Array<{ occurredAt: string; amount: number; category?: string | null }>,
   includeDailyNet: boolean,
@@ -86,6 +170,8 @@ function computeAggregatesFromTransactions(
       dayNet: includeDailyNet ? {} : undefined,
       monthSeries: [] as Array<{ period: string; net: number }>,
       daySeries: includeDailyNet ? ([] as Array<{ period: string; net: number }>) : undefined,
+      trendSeries: [] as Array<{ period: string; net: number }>,
+      trendGranularity: includeDailyNet ? "DAY" : "MONTH",
       categoryTotals: {},
       count: 0,
     };
@@ -144,6 +230,8 @@ function computeAggregatesFromTransactions(
     dayNet: normalizedDayNet,
     monthSeries,
     daySeries,
+    trendSeries: [] as Array<{ period: string; net: number }>, // placeholder; populated later
+    trendGranularity: includeDailyNet ? "DAY" : "MONTH",
     categoryTotals: normalizedCategoryTotals,
     count: transactions.length,
   };
@@ -188,6 +276,8 @@ function normalizeExistingAggregates(
     dayNet: includeDailyNet ? normalizedDayNet : undefined,
     monthSeries,
     daySeries: includeDailyNet ? daySeries : undefined,
+    trendSeries: [] as Array<{ period: string; net: number }>,
+    trendGranularity: includeDailyNet ? "DAY" : "MONTH",
     categoryTotals: normalizeRecord(aggregates.categoryTotals as Record<string, unknown> | undefined),
     count: typeof aggregates.count === "number" ? aggregates.count : fallbackCount,
   };
@@ -250,6 +340,8 @@ export async function GET(request: NextRequest) {
       dayNet: includeDailyNet ? {} : undefined,
       monthSeries: [] as Array<{ period: string; net: number }>,
       daySeries: includeDailyNet ? ([] as Array<{ period: string; net: number }>) : undefined,
+      trendSeries: [] as Array<{ period: string; net: number }>,
+      trendGranularity: includeDailyNet ? "DAY" : "MONTH",
       categoryTotals: {},
       count: 0,
     };
@@ -269,6 +361,12 @@ export async function GET(request: NextRequest) {
       aggregates = normalizeExistingAggregates(existing, includeDailyNet, transactions.length);
     }
   }
+  const timeline = buildTrendSeries(transactions, includeDailyNet);
+  aggregates = {
+    ...aggregates,
+    trendSeries: timeline.series,
+    trendGranularity: timeline.granularity,
+  };
   const page = query.page ?? 0;
   const size = query.pageSize ?? 15;
   const start = page * size;

@@ -17,31 +17,6 @@ Safepocket links bank accounts via Plaid Sandbox, syncs transactions into a secu
 - **Transaction tooling** – edit categories and notes, request backfills from specific months, clear chat history, and reset synced data via authenticated APIs.
 - **Security first** – Cognito Hosted UI + JWT, Redis-backed session helpers, request tracing, RLS enforcement with `SET LOCAL appsec.user_id`, Plaid token encryption via KMS envelope keys, and webhook signature verification.
 
-## System Architecture
-
-```
-┌────────────┐     ┌────────────┐     ┌─────────────────┐
-│   Client   │ ──▶ │  CloudFront│ ──▶ │  Next.js (BFF)  │
-│  Web/Mobile│     │   / ALB    │     │  / Edge Lambda  │
-└────────────┘     └────────────┘     └─────────────────┘
-                                         │           │
-                                         │           ▼
-                                         │   ┌────────────────┐
-                                         └──▶│ Spring Boot API│
-                                             │  (ledger-svc)  │
-                                             └────────────────┘
-                                                   │ │ │
-                ┌──────────────────────────┬───────┘ │ └─────────────┐
-                │                          │         │               │
-        ┌──────────────┐          ┌────────────┐ ┌───────────┐ ┌──────────────┐
-        │PostgreSQL +  │◀──RLS───▶│   Redis    │ │  Secrets  │ │Plaid Sandbox │
-        │pgvector      │          │  (Caches)  │ │Mgr +  KMS │ └──────────────┘
-        └──────────────┘          └────────────┘ └───────────┘          ▲
-                ▲                          ▲                ▲           │
-                │                          │                │           │
-                └───────────── OpenAI / Gemini ─────────────┴───────────┘
-```
-
 ## Technology Stack
 
 ### Frontend (apps/web)

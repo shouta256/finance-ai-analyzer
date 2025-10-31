@@ -644,6 +644,16 @@ components:
             type: number
             format: double
           description: Per-day net totals keyed by YYYY-MM-DD
+        monthSeries:
+          type: array
+          description: Sorted per-month net totals with explicit period labels
+          items:
+            $ref: '#/components/schemas/TransactionsSeriesPoint'
+        daySeries:
+          type: array
+          description: Sorted per-day net totals with explicit period labels (month view only)
+          items:
+            $ref: '#/components/schemas/TransactionsSeriesPoint'
         categoryTotals:
           type: object
           additionalProperties:
@@ -654,6 +664,19 @@ components:
           type: integer
           format: int32
           description: Number of transactions considered when computing the aggregates
+    TransactionsSeriesPoint:
+      type: object
+      required:
+        - period
+        - net
+      properties:
+        period:
+          type: string
+          description: Period key (YYYY-MM or YYYY-MM-DD)
+        net:
+          type: number
+          format: double
+          description: Net amount for the period
     TransactionsQueryPeriod:
       type: object
       properties:

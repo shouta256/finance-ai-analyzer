@@ -31,6 +31,168 @@ const querySchema = z
       .optional(),
   });
 
+const toNumericValue = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (value instanceof Number) {
+    const unpacked = value.valueOf();
+    return Number.isFinite(unpacked) ? unpacked : 0;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const toCurrencyValue = (value: unknown): number => {
+  const numeric = toNumericValue(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number(numeric.toFixed(2));
+};
+
+const normalizeRecord = (record?: Record<string, unknown>): Record<string, number> => {
+  if (!record) return {};
+  return Object.entries(record)
+    .map(([key, value]) => [key, toCurrencyValue(value)] as const)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .reduce<Record<string, number>>((acc, [key, value]) => {
+      acc[key] = value;
+      return acc;
+    }, {});
+};
+
+const normalizeSeries = (series?: Array<{ period?: string; net?: unknown }>): Array<{ period: string; net: number }> => {
+  if (!Array.isArray(series)) return [];
+  return series
+    .map((entry) => ({
+      period: typeof entry.period === "string" ? entry.period : "",
+      net: toCurrencyValue(entry.net),
+    }))
+    .filter((entry) => entry.period)
+    .sort((a, b) => a.period.localeCompare(b.period));
+};
+
+function computeAggregatesFromTransactions(
+  transactions: Array<{ occurredAt: string; amount: number; category?: string | null }>,
+  includeDailyNet: boolean,
+) {
+  if (!Array.isArray(transactions) || transactions.length === 0) {
+    return {
+      incomeTotal: 0,
+      expenseTotal: 0,
+      netTotal: 0,
+      monthNet: {},
+      dayNet: includeDailyNet ? {} : undefined,
+      monthSeries: [] as Array<{ period: string; net: number }>,
+      daySeries: includeDailyNet ? ([] as Array<{ period: string; net: number }>) : undefined,
+      categoryTotals: {},
+      count: 0,
+    };
+  }
+
+  const monthNet = new Map<string, number>();
+  const dayNet = includeDailyNet ? new Map<string, number>() : undefined;
+  const categoryTotals = new Map<string, number>();
+  let incomeTotal = 0;
+  let expenseTotal = 0;
+
+  for (const tx of transactions) {
+    const amount = typeof tx.amount === "number" && Number.isFinite(tx.amount) ? tx.amount : 0;
+    const occurred = tx.occurredAt ? new Date(tx.occurredAt) : null;
+    if (occurred && !Number.isNaN(occurred.getTime())) {
+      const monthLabel = `${occurred.getUTCFullYear()}-${String(occurred.getUTCMonth() + 1).padStart(2, "0")}`;
+      monthNet.set(monthLabel, (monthNet.get(monthLabel) ?? 0) + amount);
+      if (dayNet) {
+        const dayLabel = `${monthLabel}-${String(occurred.getUTCDate()).padStart(2, "0")}`;
+        dayNet.set(dayLabel, (dayNet.get(dayLabel) ?? 0) + amount);
+      }
+    }
+
+    if (amount > 0) {
+      incomeTotal += amount;
+    } else if (amount < 0) {
+      expenseTotal += amount;
+      const category = typeof tx.category === "string" && tx.category.trim().length > 0 ? tx.category : "Uncategorised";
+      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + amount);
+    }
+  }
+
+  const monthEntries = Array.from(monthNet.entries()).sort(([a], [b]) => a.localeCompare(b));
+  const monthSeries = monthEntries.map(([period, value]) => ({ period, net: toCurrencyValue(value) }));
+  const normalizedMonthNet = Object.fromEntries(monthSeries.map(({ period, net }) => [period, net]));
+
+  let normalizedDayNet: Record<string, number> | undefined;
+  let daySeries: Array<{ period: string; net: number }> | undefined;
+  if (dayNet) {
+    const dayEntries = Array.from(dayNet.entries()).sort(([a], [b]) => a.localeCompare(b));
+    daySeries = dayEntries.map(([period, value]) => ({ period, net: toCurrencyValue(value) }));
+    normalizedDayNet = Object.fromEntries(daySeries.map(({ period, net }) => [period, net]));
+  }
+
+  const normalizedCategoryTotals = Object.fromEntries(
+    Array.from(categoryTotals.entries())
+      .map(([category, value]) => [category, toCurrencyValue(value)] as const)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+
+  return {
+    incomeTotal: toCurrencyValue(incomeTotal),
+    expenseTotal: toCurrencyValue(expenseTotal),
+    netTotal: toCurrencyValue(incomeTotal + expenseTotal),
+    monthNet: normalizedMonthNet,
+    dayNet: normalizedDayNet,
+    monthSeries,
+    daySeries,
+    categoryTotals: normalizedCategoryTotals,
+    count: transactions.length,
+  };
+}
+
+function normalizeExistingAggregates(
+  aggregates: Record<string, unknown>,
+  includeDailyNet: boolean,
+  fallbackCount: number,
+) {
+  let normalizedMonthNet = normalizeRecord(aggregates.monthNet as Record<string, unknown> | undefined);
+  let monthSeries = normalizeSeries(aggregates.monthSeries as Array<{ period?: string; net?: unknown }> | undefined);
+  if (monthSeries.length === 0 && Object.keys(normalizedMonthNet).length > 0) {
+    monthSeries = Object.entries(normalizedMonthNet).map(([period, net]) => ({ period, net }));
+  }
+  if (monthSeries.length > 0 && Object.keys(normalizedMonthNet).length === 0) {
+    normalizedMonthNet = Object.fromEntries(monthSeries.map(({ period, net }) => [period, net]));
+  }
+
+  let normalizedDayNet: Record<string, number> | undefined;
+  let daySeries: Array<{ period: string; net: number }> | undefined;
+  if (includeDailyNet) {
+    daySeries = normalizeSeries(aggregates.daySeries as Array<{ period?: string; net?: unknown }> | undefined);
+    if (daySeries.length === 0) {
+      normalizedDayNet = normalizeRecord(aggregates.dayNet as Record<string, unknown> | undefined);
+      if (Object.keys(normalizedDayNet).length > 0) {
+        daySeries = Object.entries(normalizedDayNet).map(([period, net]) => ({ period, net }));
+      } else {
+        normalizedDayNet = {};
+        daySeries = [];
+      }
+    } else {
+      normalizedDayNet = Object.fromEntries(daySeries.map(({ period, net }) => [period, net]));
+    }
+  }
+
+  return {
+    incomeTotal: toCurrencyValue(aggregates.incomeTotal),
+    expenseTotal: toCurrencyValue(aggregates.expenseTotal),
+    netTotal: toCurrencyValue(aggregates.netTotal),
+    monthNet: normalizedMonthNet,
+    dayNet: includeDailyNet ? normalizedDayNet : undefined,
+    monthSeries,
+    daySeries: includeDailyNet ? daySeries : undefined,
+    categoryTotals: normalizeRecord(aggregates.categoryTotals as Record<string, unknown> | undefined),
+    count: typeof aggregates.count === "number" ? aggregates.count : fallbackCount,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const headerToken = request.headers.get("authorization")?.trim();
   const cookieToken = request.cookies.get("sp_token")?.value?.trim();
@@ -77,76 +239,36 @@ export async function GET(request: NextRequest) {
   });
   const body = transactionsListSchema.parse(result);
   const includeDailyNet = Boolean(query.month);
-  const aggregates = (() => {
-    if (!Array.isArray(body.transactions) || body.transactions.length === 0) {
-      return {
-        incomeTotal: 0,
-        expenseTotal: 0,
-        netTotal: 0,
-        monthNet: {},
-        dayNet: includeDailyNet ? {} : undefined,
-        categoryTotals: {},
-        monthSeries: [],
-        daySeries: includeDailyNet ? [] : undefined,
-        count: 0,
-      };
-    }
-    const monthNet = new Map<string, number>();
-    const categoryTotals = new Map<string, number>();
-    const dayNet = includeDailyNet ? new Map<string, number>() : undefined;
-    let incomeTotal = 0;
-    let expenseTotal = 0;
-    for (const tx of body.transactions) {
-      const occurred = new Date(tx.occurredAt);
-      if (!Number.isNaN(occurred.getTime())) {
-        const label = `${occurred.getUTCFullYear()}-${String(occurred.getUTCMonth() + 1).padStart(2, "0")}`;
-        monthNet.set(label, (monthNet.get(label) ?? 0) + tx.amount);
-        if (dayNet) {
-          const dayLabel = `${label}-${String(occurred.getUTCDate()).padStart(2, "0")}`;
-          dayNet.set(dayLabel, (dayNet.get(dayLabel) ?? 0) + tx.amount);
-        }
-      }
-      // Only include expenses (negative amounts) in categoryTotals for spending mix chart
-      if (tx.amount < 0) {
-        const category = tx.category;
-        categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + tx.amount);
-      }
-      if (tx.amount > 0) incomeTotal += tx.amount;
-      if (tx.amount < 0) expenseTotal += tx.amount;
-    }
-    const netTotal = Number((incomeTotal + expenseTotal).toFixed(2));
-    const monthEntries = Array.from(monthNet.entries()).sort(([a], [b]) => a.localeCompare(b));
-    const normalizedMonthNet = Object.fromEntries(
-      monthEntries.map(([period, value]) => [period, Number(value.toFixed(2))]),
-    );
-    const monthSeries = monthEntries.map(([period, value]) => ({
-      period,
-      net: Number(value.toFixed(2)),
-    }));
-    let normalizedDayNet: Record<string, number> | undefined;
-    let daySeries: Array<{ period: string; net: number }> | undefined;
-    if (dayNet) {
-      const dayEntries = Array.from(dayNet.entries()).sort(([a], [b]) => a.localeCompare(b));
-      normalizedDayNet = Object.fromEntries(
-        dayEntries.map(([period, value]) => [period, Number(value.toFixed(2))]),
-      );
-      daySeries = dayEntries.map(([period, value]) => ({
-        period,
-        net: Number(value.toFixed(2)),
-      }));
-    }
-    return {
-      incomeTotal: Number(incomeTotal.toFixed(2)),
-      expenseTotal: Number(expenseTotal.toFixed(2)),
-      netTotal,
-      monthNet: normalizedMonthNet,
-      dayNet: normalizedDayNet,
-      monthSeries,
-      daySeries,
-      categoryTotals: Object.fromEntries(categoryTotals),
-      count: body.transactions.length,
+  const transactions = Array.isArray(body.transactions) ? body.transactions : [];
+  let aggregates;
+  if (transactions.length === 0) {
+    aggregates = {
+      incomeTotal: 0,
+      expenseTotal: 0,
+      netTotal: 0,
+      monthNet: {},
+      dayNet: includeDailyNet ? {} : undefined,
+      monthSeries: [] as Array<{ period: string; net: number }>,
+      daySeries: includeDailyNet ? ([] as Array<{ period: string; net: number }>) : undefined,
+      categoryTotals: {},
+      count: 0,
     };
-  })();
+  } else {
+    const existing = body.aggregates as Record<string, unknown> | undefined;
+    const hasMonthData = existing && (
+      (Array.isArray(existing.monthSeries) && existing.monthSeries.length > 0) ||
+      (existing.monthNet && Object.keys(existing.monthNet).length > 0)
+    );
+    const missingDailyData = includeDailyNet && (!existing || (
+      (!Array.isArray(existing.daySeries) || existing.daySeries.length === 0) &&
+      (!existing.dayNet || Object.keys(existing.dayNet).length === 0)
+    ));
+    if (!existing || !hasMonthData || missingDailyData) {
+      aggregates = computeAggregatesFromTransactions(transactions, includeDailyNet);
+    } else {
+      aggregates = normalizeExistingAggregates(existing, includeDailyNet, transactions.length);
+    }
+  }
   const page = query.page ?? 0;
   const size = query.pageSize ?? 15;
   const start = page * size;

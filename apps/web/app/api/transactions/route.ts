@@ -387,10 +387,10 @@ export async function GET(request: NextRequest) {
     const monthSeriesFallback = Array.isArray(aggregates.monthSeries) ? aggregates.monthSeries.map((entry) => ({
       period: entry.period,
       net: toCurrencyValue(entry.net),
-    })) : Object.entries(aggregates.monthNet ?? {}).map(([period, net]) => ({
+    })) : Object.entries(aggregates.monthNet ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([period, net]) => ({
       period,
       net: toCurrencyValue(net),
-    })).sort(([a], [b]) => a.localeCompare(b)).map(([period, net]) => ({ period, net }));
+    }));
     const shouldUseMonthFallback =
       (!trendSeries || trendSeries.length === 0) ||
       (trendGranularity === "DAY") ||

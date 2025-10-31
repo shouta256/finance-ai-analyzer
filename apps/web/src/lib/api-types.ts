@@ -258,6 +258,13 @@ export interface components {
       monthSeries?: components["schemas"]["TransactionsSeriesPoint"][];
       /** @description Sorted per-day net totals with explicit period labels (month view only) */
       daySeries?: components["schemas"]["TransactionsSeriesPoint"][];
+      /** @description Adaptive net trend series aligned to trendGranularity */
+      trendSeries?: components["schemas"]["TransactionsSeriesPoint"][];
+      /**
+       * @description Granularity applied to trendSeries
+       * @enum {string}
+       */
+      trendGranularity?: "DAY" | "WEEK" | "MONTH" | "QUARTER";
       /** @description Totals grouped by category */
       categoryTotals?: {
         [key: string]: number;

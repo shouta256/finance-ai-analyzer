@@ -250,6 +250,10 @@ export interface components {
       monthNet?: {
         [key: string]: number;
       };
+      /** @description Per-day net totals keyed by YYYY-MM-DD */
+      dayNet?: {
+        [key: string]: number;
+      };
       /** @description Totals grouped by category */
       categoryTotals?: {
         [key: string]: number;

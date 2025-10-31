@@ -23,6 +23,8 @@ public record TransactionsListResponseDto(
             Map<String, BigDecimal> dayNet,
             List<SeriesPointDto> monthSeries,
             List<SeriesPointDto> daySeries,
+            List<SeriesPointDto> trendSeries,
+            String trendGranularity,
             Map<String, BigDecimal> categoryTotals,
             Integer count
     ) {

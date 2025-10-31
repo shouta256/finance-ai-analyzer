@@ -375,6 +375,31 @@ export async function GET(request: NextRequest) {
     trendSeries = timeline.series;
     trendGranularity = timeline.granularity;
   }
+  if (includeDailyNet) {
+    if ((!trendSeries || trendSeries.length === 0) && Array.isArray(aggregates.daySeries) && aggregates.daySeries.length > 0) {
+      trendSeries = aggregates.daySeries.map((entry) => ({
+        period: entry.period,
+        net: toCurrencyValue(entry.net),
+      }));
+      trendGranularity = "DAY";
+    }
+  } else {
+    const monthSeriesFallback = Array.isArray(aggregates.monthSeries) ? aggregates.monthSeries.map((entry) => ({
+      period: entry.period,
+      net: toCurrencyValue(entry.net),
+    })) : Object.entries(aggregates.monthNet ?? {}).map(([period, net]) => ({
+      period,
+      net: toCurrencyValue(net),
+    })).sort(([a], [b]) => a.localeCompare(b)).map(([period, net]) => ({ period, net }));
+    const shouldUseMonthFallback =
+      (!trendSeries || trendSeries.length === 0) ||
+      (trendGranularity === "DAY") ||
+      (trendGranularity === "WEEK" && trendSeries.length <= 3);
+    if (shouldUseMonthFallback && monthSeriesFallback.length > 0) {
+      trendSeries = monthSeriesFallback;
+      trendGranularity = "MONTH";
+    }
+  }
   aggregates = {
     ...aggregates,
     trendSeries,

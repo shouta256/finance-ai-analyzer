@@ -118,6 +118,7 @@ function buildFallbackSummary(month: string): AnalyticsSummary {
       sentiment: "NEUTRAL",
       recommendations: ["Verify account connections", "Trigger a transaction sync"],
     },
+    latestHighlight: null,
     safeToSpend: {
       cycleStart: toIso(cycleStart),
       cycleEnd: toIso(cycleEnd),

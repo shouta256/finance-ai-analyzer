@@ -62,9 +62,23 @@ public class AnalyticsController {
                         summary.aiHighlight().sentiment().name(),
                         summary.aiHighlight().recommendations()
                 ),
+                mapLatestHighlight(summary.latestHighlight()),
                 mapSafeToSpend(summary.safeToSpend()),
                 summary.traceId()
         );
+    }
+
+    private AnalyticsSummaryResponseDto.HighlightSnapshot mapLatestHighlight(AnalyticsSummary.HighlightSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+        AnalyticsSummaryResponseDto.AiHighlight highlight = new AnalyticsSummaryResponseDto.AiHighlight(
+                snapshot.highlight().title(),
+                snapshot.highlight().summary(),
+                snapshot.highlight().sentiment().name(),
+                snapshot.highlight().recommendations()
+        );
+        return new AnalyticsSummaryResponseDto.HighlightSnapshot(snapshot.month().toString(), highlight);
     }
 
     private AnalyticsSummaryResponseDto.SafeToSpend mapSafeToSpend(AnalyticsSummary.SafeToSpend safeToSpend) {

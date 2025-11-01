@@ -21,6 +21,15 @@ describe("DashboardClient", () => {
         sentiment: "POSITIVE" as const,
         recommendations: ["Save"]
       },
+      latestHighlight: {
+        month: "2024-03",
+        highlight: {
+          title: "Monthly financial health",
+          summary: "Income $4200 vs spend $188.65.",
+          sentiment: "POSITIVE" as const,
+          recommendations: ["Save"],
+        },
+      },
       safeToSpend: {
         cycleStart: "2024-03-01",
         cycleEnd: "2024-03-31",
@@ -64,6 +73,8 @@ describe("DashboardClient", () => {
         expenseTotal: -188.65,
         netTotal: 4011.35,
         monthNet: { "2024-03": 4011.35 },
+        trendSeries: [{ period: "2024-03", net: 4011.35 }],
+        trendGranularity: "MONTH",
         categoryTotals: { Groceries: -120.45 },
       },
       traceId: "trace",

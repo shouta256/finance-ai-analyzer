@@ -2,35 +2,38 @@ import { formatCurrency, formatDateTime } from "@/src/lib/date";
 import type { AnalyticsSummary } from "@/src/lib/dashboard-data";
 
 interface AiHighlightCardProps {
-  aiReady: boolean;
   analyticsLabel: string;
-  summary: AnalyticsSummary;
+  highlightSnapshot: AnalyticsSummary["latestHighlight"];
+  currentMonth: string;
   netValue: string;
   anomalyCount: number;
   topCategory?: { category: string; amount: number };
   topMerchant?: { merchant: string; amount: number };
-  sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
   onGenerate?: () => void;
   generateDisabled?: boolean;
 }
 
 export function AiHighlightCard(props: AiHighlightCardProps) {
   const {
-    aiReady,
     analyticsLabel,
-    summary,
+    highlightSnapshot,
+    currentMonth,
     netValue,
     anomalyCount,
     topCategory,
     topMerchant,
-    sentiment,
     onGenerate,
     generateDisabled,
   } = props;
+  const highlight = highlightSnapshot?.highlight ?? null;
+  const sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" = highlight?.sentiment ?? "NEUTRAL";
+  const hasHighlight = highlightSnapshot != null && highlight != null;
+  const highlightMonthLabel = highlightSnapshot ? formatMonthLabel(highlightSnapshot.month) : null;
+  const isCurrent = highlightSnapshot ? highlightSnapshot.month === currentMonth : false;
   return (
     <section className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
       <h2 className="text-lg font-semibold tracking-tight text-slate-900">AI Monthly Highlight</h2>
-      {!aiReady ? (
+      {!hasHighlight ? (
         <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-slate-500">
             Click the button to generate an AI highlight for {analyticsLabel}.
@@ -49,10 +52,17 @@ export function AiHighlightCard(props: AiHighlightCardProps) {
       ) : (
         <>
           <div className="flex items-center gap-2">
-            <p className="text-sm text-slate-600">{summary.aiHighlight.title}</p>
+            <p className="text-sm font-semibold text-slate-700">
+              {highlight?.title ?? "AI monthly insight"}
+            </p>
             <SentimentBadge sentiment={sentiment} />
           </div>
-          <p className="mt-3 text-sm text-slate-700">{summary.aiHighlight.summary}</p>
+          {highlightMonthLabel ? (
+            <p className="mt-1 text-xs text-slate-500">
+              {isCurrent ? `Generated for ${highlightMonthLabel}.` : `Latest highlight from ${highlightMonthLabel}.`}
+            </p>
+          ) : null}
+          <p className="mt-3 text-sm text-slate-700">{highlight?.summary ?? ""}</p>
           <ul className="mt-3 grid gap-3 sm:grid-cols-2 text-xs text-slate-600">
             <li className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               Net this period: <span className="font-medium text-slate-900">{netValue}</span>
@@ -74,7 +84,7 @@ export function AiHighlightCard(props: AiHighlightCardProps) {
             ) : null}
           </ul>
           <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-            {summary.aiHighlight.recommendations.map((recommendation) => (
+            {highlight?.recommendations.map((recommendation) => (
               <span
                 key={recommendation}
                 className="rounded-full border border-slate-200 bg-white px-4 py-1 font-medium text-slate-600"
@@ -146,4 +156,15 @@ function SentimentBadge({ sentiment }: { sentiment: "POSITIVE" | "NEUTRAL" | "NE
       {sentiment}
     </span>
   );
+}
+
+function formatMonthLabel(value?: string | null): string {
+  if (!value) return "";
+  const parts = value.split("-");
+  if (parts.length < 2) return value;
+  const [year, month] = parts.map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return value;
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date);
 }

@@ -11,6 +11,7 @@ public record AnalyticsSummary(
         List<MerchantBreakdown> merchants,
         List<AnomalyInsight> anomalies,
         AiHighlight aiHighlight,
+        HighlightSnapshot latestHighlight,
         SafeToSpend safeToSpend,
         String traceId
 ) {
@@ -41,6 +42,9 @@ public record AnalyticsSummary(
             NEUTRAL,
             NEGATIVE
         }
+    }
+
+    public record HighlightSnapshot(YearMonth month, AiHighlight highlight) {
     }
 
     public record SafeToSpend(

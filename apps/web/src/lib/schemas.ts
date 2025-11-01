@@ -89,6 +89,13 @@ export const transactionsListSchema = z
       .optional(),
   });
 
+const aiHighlightSchema = z.object({
+  title: z.string(),
+  summary: z.string(),
+  sentiment: z.enum(["POSITIVE", "NEUTRAL", "NEGATIVE"]),
+  recommendations: z.array(z.string()),
+});
+
 export const analyticsSummarySchema = z.object({
   month: z.string(),
   totals: z.object({
@@ -122,12 +129,13 @@ export const analyticsSummarySchema = z.object({
       commentary: z.string().nullable().optional(),
     }),
   ),
-  aiHighlight: z.object({
-    title: z.string(),
-    summary: z.string(),
-    sentiment: z.enum(["POSITIVE", "NEUTRAL", "NEGATIVE"]),
-    recommendations: z.array(z.string()),
-  }),
+  aiHighlight: aiHighlightSchema,
+  latestHighlight: z
+    .object({
+      month: z.string(),
+      highlight: aiHighlightSchema,
+    })
+    .nullable(),
   safeToSpend: z.object({
     cycleStart: z
       .string()

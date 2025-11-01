@@ -56,7 +56,7 @@ public class UserDeletionService {
         transactionRepository.deleteByUserId(userId);
         accountRepository.deleteByUserId(userId);
         plaidItemRepository.deleteByUserId(userId);
-        aiHighlightRepository.deleteById(userId);
+        aiHighlightRepository.deleteByUserId(userId);
 
         transactionSyncService.clearUserSyncState(userId);
 

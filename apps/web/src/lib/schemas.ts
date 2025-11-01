@@ -135,7 +135,8 @@ export const analyticsSummarySchema = z.object({
       month: z.string(),
       highlight: aiHighlightSchema,
     })
-    .nullable(),
+    .nullable()
+    .optional(),
   safeToSpend: z.object({
     cycleStart: z
       .string()

@@ -793,6 +793,10 @@ components:
             $ref: '#/components/schemas/AnomalyInsight'
         aiHighlight:
           $ref: '#/components/schemas/AiHighlight'
+        latestHighlight:
+          allOf:
+            - $ref: '#/components/schemas/AiHighlightSnapshot'
+          nullable: true
         safeToSpend:
           $ref: '#/components/schemas/SafeToSpendSummary'
         traceId:
@@ -1006,6 +1010,17 @@ components:
           items:
             type: string
           description: Optional next-best-actions surfaced by AI
+    AiHighlightSnapshot:
+      type: object
+      required:
+        - month
+        - highlight
+      properties:
+        month:
+          type: string
+          description: Month (YYYY-MM) associated with the saved highlight
+        highlight:
+          $ref: '#/components/schemas/AiHighlight'
     ErrorResponse:
       type: object
       required:

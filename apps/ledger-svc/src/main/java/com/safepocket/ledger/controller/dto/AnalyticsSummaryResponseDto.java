@@ -11,6 +11,7 @@ public record AnalyticsSummaryResponseDto(
         List<MerchantBreakdown> topMerchants,
         List<AnomalyInsight> anomalies,
         AiHighlight aiHighlight,
+        HighlightSnapshot latestHighlight,
         SafeToSpend safeToSpend,
         String traceId
 ) {
@@ -35,6 +36,9 @@ public record AnalyticsSummaryResponseDto(
     }
 
     public record AiHighlight(String title, String summary, String sentiment, List<String> recommendations) {
+    }
+
+    public record HighlightSnapshot(String month, AiHighlight highlight) {
     }
 
     public record SafeToSpend(

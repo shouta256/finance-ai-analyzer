@@ -69,7 +69,8 @@ public class AnalyticsService {
                 .map(RequestContextHolder.RequestContext::traceId)
                 .orElse(null);
         AnalyticsSummary.SafeToSpend safeToSpend = safeToSpendCalculator.calculate(userId, month, transactions);
-        return new AnalyticsSummary(month, totals, categories, merchants, anomalies, highlight, safeToSpend, traceId);
+        AnalyticsSummary.HighlightSnapshot latestHighlight = aiHighlightService.latestHighlight(userId).orElse(null);
+        return new AnalyticsSummary(month, totals, categories, merchants, anomalies, highlight, latestHighlight, safeToSpend, traceId);
     }
 
     private AnalyticsSummary.Totals calculateTotals(List<Transaction> transactions) {

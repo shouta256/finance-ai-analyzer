@@ -332,6 +332,7 @@ export interface components {
       topMerchants: components["schemas"]["MerchantBreakdown"][];
       anomalies: components["schemas"]["AnomalyInsight"][];
       aiHighlight: components["schemas"]["AiHighlight"];
+      latestHighlight?: components["schemas"]["AiHighlightSnapshot"] | null;
       safeToSpend: components["schemas"]["SafeToSpendSummary"];
       /** @description Identifier for correlating AI computations */
       traceId: string;
@@ -476,6 +477,11 @@ export interface components {
       sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE";
       /** @description Optional next-best-actions surfaced by AI */
       recommendations?: string[];
+    };
+    AiHighlightSnapshot: {
+      /** @description Month (YYYY-MM) associated with the saved highlight */
+      month: string;
+      highlight: components["schemas"]["AiHighlight"];
     };
     ErrorResponse: {
       error: {

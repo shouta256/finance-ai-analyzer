@@ -7,6 +7,7 @@ import com.safepocket.ledger.model.Transaction;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -116,9 +117,14 @@ public class AiHighlightService {
         }
     }
 
-    private void saveHighlight(UUID userId, java.time.YearMonth month, AnalyticsSummary.AiHighlight highlight) {
+    public Optional<AnalyticsSummary.HighlightSnapshot> latestHighlight(UUID userId) {
+        return highlightRepository.findFirstByUserIdOrderByMonthDesc(userId)
+                .map(this::toSnapshot);
+    }
+
+    private void saveHighlight(UUID userId, YearMonth month, AnalyticsSummary.AiHighlight highlight) {
         String recommendations = String.join("\n", highlight.recommendations());
-        AiMonthlyHighlightEntity entity = highlightRepository.findById(userId)
+        AiMonthlyHighlightEntity entity = highlightRepository.findByUserIdAndMonth(userId, month.toString())
                 .orElse(new AiMonthlyHighlightEntity(userId, month.toString(), highlight.title(), highlight.summary(), highlight.sentiment().name(), recommendations));
         entity.setMonth(month.toString());
         entity.setTitle(highlight.title());
@@ -128,14 +134,24 @@ public class AiHighlightService {
         highlightRepository.save(entity);
     }
 
-    private java.util.Optional<AnalyticsSummary.AiHighlight> loadStoredHighlight(UUID userId, java.time.YearMonth month) {
-        return highlightRepository.findById(userId)
-                .filter(entity -> month.toString().equals(entity.getMonth()))
-                .map(entity -> new AnalyticsSummary.AiHighlight(
-                        entity.getTitle(),
-                        entity.getSummary(),
-                        AnalyticsSummary.AiHighlight.Sentiment.valueOf(entity.getSentiment()),
-                        parseRecommendations(entity.getRecommendations())));
+    private java.util.Optional<AnalyticsSummary.AiHighlight> loadStoredHighlight(UUID userId, YearMonth month) {
+        return highlightRepository.findByUserIdAndMonth(userId, month.toString())
+                .map(this::toHighlight);
+    }
+
+    private AnalyticsSummary.HighlightSnapshot toSnapshot(AiMonthlyHighlightEntity entity) {
+        return new AnalyticsSummary.HighlightSnapshot(
+                YearMonth.parse(entity.getMonth()),
+                toHighlight(entity)
+        );
+    }
+
+    private AnalyticsSummary.AiHighlight toHighlight(AiMonthlyHighlightEntity entity) {
+        return new AnalyticsSummary.AiHighlight(
+                entity.getTitle(),
+                entity.getSummary(),
+                AnalyticsSummary.AiHighlight.Sentiment.valueOf(entity.getSentiment()),
+                parseRecommendations(entity.getRecommendations()));
     }
 
     private List<String> parseRecommendations(String stored) {

@@ -77,7 +77,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [aiReady, setAiReady] = useState<boolean>(false);
   const [errorState, setErrorState] = useState<{ code: string; traceId?: string; details?: string } | null>(null);
   const [linking, setLinking] = useState<boolean>(false);
   const [sandboxLoading, setSandboxLoading] = useState<boolean>(false);
@@ -126,7 +125,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const topCategory = expenseCategories[0];
   const topMerchant = topMerchants[0];
   const net = useMemo(() => state.summary.totals.net, [state.summary.totals.net]);
-  const sentimentTone = useMemo(() => state.summary.aiHighlight.sentiment, [state.summary.aiHighlight.sentiment]);
 
   const customRangeError = useMemo(() => {
     if (customFromMonth && customToMonth && customFromMonth > customToMonth) {
@@ -591,7 +589,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         invalidateCaches();
         await refreshData();
         setMessage(unlinkPlaid ? "Transactions reset and account unlinked." : "Transactions reset requested.");
-        setAiReady(false);
       } catch (error) {
         logError(error);
         setMessage((error as Error).message ?? "Reset failed.");
@@ -701,7 +698,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       try {
         const summary = await getAnalyticsSummary(analyticsMonth, { generateAi: true });
         setState((prev) => ({ ...prev, summary }));
-        setAiReady(true);
         setMessage("AI summary generated.");
       } catch (error) {
         logError(error);
@@ -732,7 +728,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         await refreshData();
         setMessage("Demo data loaded.");
         setStatusMessage("Demo data loaded.");
-        setAiReady(true);
       } catch (error) {
         logError(error);
         const failureMessage = (error as Error).message ?? "Demo load failed.";
@@ -822,18 +817,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       </section>
 
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
-        <AiHighlightCard
-          aiReady={aiReady}
-          analyticsLabel={analyticsLabel}
-          summary={state.summary}
-          netValue={formatCurrency(net)}
-          anomalyCount={anomalies.length}
-          topCategory={topCategory}
-          topMerchant={topMerchant}
-          sentiment={sentimentTone}
-          onGenerate={handleGenerateAi}
-          generateDisabled={generatingAi || syncing || linking || sandboxLoading}
-        />
+          <AiHighlightCard
+            analyticsLabel={analyticsLabel}
+            highlightSnapshot={state.summary.latestHighlight}
+            currentMonth={state.summary.month ?? focusMonth ?? month}
+            netValue={formatCurrency(net)}
+            anomalyCount={anomalies.length}
+            topCategory={topCategory}
+            topMerchant={topMerchant}
+            onGenerate={handleGenerateAi}
+            generateDisabled={generatingAi || syncing || linking || sandboxLoading}
+          />
       </div>
 
       <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-500">

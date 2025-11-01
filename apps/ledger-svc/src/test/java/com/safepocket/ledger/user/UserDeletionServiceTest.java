@@ -66,7 +66,7 @@ class UserDeletionServiceTest {
         verify(transactionRepository).deleteByUserId(userId);
         verify(accountRepository).deleteByUserId(userId);
         verify(plaidItemRepository).deleteByUserId(userId);
-        verify(aiHighlightRepository).deleteById(userId);
+        verify(aiHighlightRepository).deleteByUserId(userId);
         verify(transactionSyncService).clearUserSyncState(userId);
         verify(userRepository).deleteById(userId);
         verifyNoMoreInteractions(

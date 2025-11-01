@@ -2,17 +2,27 @@ package com.safepocket.ledger.ai;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "ai_monthly_highlights")
+@Table(
+        name = "ai_monthly_highlights",
+        uniqueConstraints = @UniqueConstraint(name = "ai_monthly_highlights_user_month_unique", columnNames = {"user_id", "month"})
+)
 public class AiMonthlyHighlightEntity {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    @Column(name = "id", nullable = false, updatable = false)
+    private UUID id;
+
     @Column(name = "user_id", nullable = false, updatable = false)
     private UUID userId;
 
@@ -31,13 +41,18 @@ public class AiMonthlyHighlightEntity {
     @Column(name = "recommendations", nullable = false, columnDefinition = "text")
     private String recommendations;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     protected AiMonthlyHighlightEntity() {
     }
 
     public AiMonthlyHighlightEntity(UUID userId, String month, String title, String summary, String sentiment, String recommendations) {
+        this(UUID.randomUUID(), userId, month, title, summary, sentiment, recommendations);
+    }
+
+    public AiMonthlyHighlightEntity(UUID id, UUID userId, String month, String title, String summary, String sentiment, String recommendations) {
+        this.id = id;
         this.userId = userId;
         this.month = month;
         this.title = title;
@@ -51,6 +66,13 @@ public class AiMonthlyHighlightEntity {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+    }
+
+    public UUID getId() {
+        return id;
     }
 
     public UUID getUserId() {

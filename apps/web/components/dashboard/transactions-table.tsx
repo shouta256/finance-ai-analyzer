@@ -75,8 +75,9 @@ export function TransactionsTable({ transactions, page, pageSize, onPageChange }
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Recent Transactions</h2>
         <span className="text-xs text-slate-500">Page {page + 1}</span>
       </div>
-      <div className="flow-root">
-        <table className="min-w-full text-sm">
+      <div className="flow-root rounded-2xl border border-slate-100">
+        <div className="max-w-full overflow-x-auto">
+        <table className="min-w-[640px] text-sm">
           <thead className="text-left">
             <tr>
               <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-slate-500">Transaction</th>
@@ -141,6 +142,7 @@ export function TransactionsTable({ transactions, page, pageSize, onPageChange }
             ) : null}
           </tbody>
         </table>
+        </div>
       </div>
       <div className="mt-4 flex items-center justify-between">
         <button

@@ -43,7 +43,7 @@ export function AiHighlightCard(props: AiHighlightCardProps) {
               type="button"
               onClick={onGenerate}
               disabled={generateDisabled}
-              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
             >
               Generate AI Summary
             </button>
@@ -110,7 +110,8 @@ export function AnomaliesTable({ anomalies }: AnomaliesTableProps) {
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Anomaly Watch</h2>
         <span className="text-xs text-slate-500">{anomalies.length} alert{anomalies.length === 1 ? "" : "s"}</span>
       </div>
-      <div className="flow-root overflow-hidden rounded-2xl border border-slate-100">
+      <div className="flow-root rounded-2xl border border-slate-100">
+        <div className="max-w-full overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-100 text-sm">
           <thead className="bg-slate-50">
             <tr>
@@ -140,6 +141,7 @@ export function AnomaliesTable({ anomalies }: AnomaliesTableProps) {
             ) : null}
           </tbody>
         </table>
+        </div>
       </div>
     </section>
   );

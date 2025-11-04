@@ -98,14 +98,17 @@ export function ChartsSection({ categoryData, categoryOptions, trendData, trendO
     };
   }, [trendData]);
 
+  const chartContainerClass = "mt-4 h-56 overflow-hidden rounded-2xl bg-white/0";
+  const chartStyle = { width: "100%", height: "100%" } as const;
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="min-h-[280px] rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Spending mix</h2>
         <p className="text-sm text-slate-500">Category distribution for the current view.</p>
-        <div className="mt-4 h-56">
+        <div className={chartContainerClass}>
           {categoryData ? (
-            <Doughnut data={categoryData} options={doughnutOptions} />
+            <Doughnut data={categoryData} options={doughnutOptions} style={chartStyle} />
           ) : (
             <p className="text-sm text-slate-500">Not enough category data yet.</p>
           )}
@@ -114,9 +117,9 @@ export function ChartsSection({ categoryData, categoryOptions, trendData, trendO
       <div className="min-h-[280px] rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Net trend</h2>
         <p className="text-sm text-slate-500">Monthly net movement based on the selected period.</p>
-        <div className="mt-4 h-56">
+        <div className={chartContainerClass}>
           {netChartData ? (
-            <Line data={netChartData} options={trendOptions} />
+            <Line data={netChartData} options={trendOptions} style={chartStyle} />
           ) : (
             <p className="text-sm text-slate-500">Add more transactions or expand the range to see a trend.</p>
           )}

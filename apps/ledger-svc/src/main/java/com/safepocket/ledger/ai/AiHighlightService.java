@@ -14,6 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -65,21 +69,47 @@ public class AiHighlightService {
                 ? AnalyticsSummary.AiHighlight.Sentiment.POSITIVE
                 : AnalyticsSummary.AiHighlight.Sentiment.NEUTRAL;
 
+        Optional<AiMonthlyHighlightEntity> existingEntity = highlightRepository.findByUserIdAndMonth(userId, month.toString());
+        AnalyticsSummary.AiHighlight existingHighlight = existingEntity.map(this::toHighlight).orElse(null);
+
+        String fingerprint = computeFingerprint(transactions, anomalies);
+        if (existingHighlight != null) {
+            String storedFingerprint = existingEntity.map(AiMonthlyHighlightEntity::getFingerprint).orElse(null);
+            if (storedFingerprint != null && storedFingerprint.equals(fingerprint)) {
+                return existingHighlight;
+            }
+        }
+
         if (!generateAi || !openAiClient.hasCredentials()) {
-            return loadStoredHighlight(userId, month)
-                    .orElseGet(() -> fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment));
+            if (existingHighlight != null) {
+                return existingHighlight;
+            }
+            return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
         }
 
         String prompt = buildPrompt(transactions, anomalies, totalIncome, totalSpend, topAnomaly);
-        AnalyticsSummary.AiHighlight highlight = openAiClient.generateText(
-                        List.of(new OpenAiResponsesClient.Message("user", prompt)),
-                        700)
-                .map(response -> buildHighlightFromResponse(response, totalIncome, totalSpend, topAnomaly, sentiment))
-                .orElseGet(() -> {
-                    log.warn("AI highlight: OpenAI response missing, using fallback");
-                    return fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
-                });
-        saveHighlight(userId, month, highlight);
+        AnalyticsSummary.AiHighlight highlight;
+        boolean aiGenerated = false;
+        try {
+            Optional<String> aiResponse = openAiClient.generateText(
+                    List.of(new OpenAiResponsesClient.Message("user", prompt)),
+                    700);
+            if (aiResponse.isPresent()) {
+                highlight = buildHighlightFromResponse(aiResponse.get(), totalIncome, totalSpend, topAnomaly, sentiment);
+                aiGenerated = true;
+            } else {
+                log.warn("AI highlight: OpenAI response missing, using fallback");
+                highlight = fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
+            }
+        } catch (Exception ex) {
+            log.warn("AI highlight: failed to generate highlight, using fallback", ex);
+            highlight = fallbackHighlight(totalIncome, totalSpend, topAnomaly, sentiment);
+        }
+
+        if (aiGenerated) {
+            saveHighlight(userId, month, highlight, fingerprint);
+        }
+
         return highlight;
     }
 
@@ -122,7 +152,7 @@ public class AiHighlightService {
                 .map(this::toSnapshot);
     }
 
-    private void saveHighlight(UUID userId, YearMonth month, AnalyticsSummary.AiHighlight highlight) {
+    private void saveHighlight(UUID userId, YearMonth month, AnalyticsSummary.AiHighlight highlight, String fingerprint) {
         String recommendations = String.join("\n", highlight.recommendations());
         AiMonthlyHighlightEntity entity = highlightRepository.findByUserIdAndMonth(userId, month.toString())
                 .orElse(new AiMonthlyHighlightEntity(userId, month.toString(), highlight.title(), highlight.summary(), highlight.sentiment().name(), recommendations));
@@ -131,12 +161,8 @@ public class AiHighlightService {
         entity.setSummary(highlight.summary());
         entity.setSentiment(highlight.sentiment().name());
         entity.setRecommendations(recommendations);
+        entity.setFingerprint(fingerprint);
         highlightRepository.save(entity);
-    }
-
-    private java.util.Optional<AnalyticsSummary.AiHighlight> loadStoredHighlight(UUID userId, YearMonth month) {
-        return highlightRepository.findByUserIdAndMonth(userId, month.toString())
-                .map(this::toHighlight);
     }
 
     private AnalyticsSummary.HighlightSnapshot toSnapshot(AiMonthlyHighlightEntity entity) {
@@ -297,6 +323,45 @@ public class AiHighlightService {
                 summary.toString(),
                 sentiment,
                 List.copyOf(recs));
+    }
+
+    private String computeFingerprint(List<Transaction> transactions, List<AnalyticsSummary.AnomalyInsight> anomalies) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateDigest(digest, "txCount:" + transactions.size());
+            transactions.stream()
+                    .sorted(Comparator.comparing(Transaction::id))
+                    .forEach(tx -> {
+                        updateDigest(digest, tx.id() != null ? tx.id().toString() : "");
+                        updateDigest(digest, tx.amount() != null ? tx.amount().setScale(2, RoundingMode.HALF_UP).toPlainString() : "0");
+                        updateDigest(digest, tx.category());
+                        updateDigest(digest, tx.merchantName());
+                        updateDigest(digest, tx.occurredAt() != null ? tx.occurredAt().toString() : "");
+                        updateDigest(digest, tx.pending() ? "1" : "0");
+                    });
+            updateDigest(digest, "anomalyCount:" + anomalies.size());
+            anomalies.stream()
+                    .sorted(Comparator.comparing(AnalyticsSummary.AnomalyInsight::transactionId, Comparator.nullsLast(String::compareTo)))
+                    .forEach(anomaly -> {
+                        updateDigest(digest, anomaly.transactionId());
+                        updateDigest(digest, anomaly.method() != null ? anomaly.method().name() : "");
+                        updateDigest(digest, anomaly.amount() != null ? anomaly.amount().setScale(2, RoundingMode.HALF_UP).toPlainString() : "0");
+                        updateDigest(digest, anomaly.deltaAmount() != null ? anomaly.deltaAmount().setScale(2, RoundingMode.HALF_UP).toPlainString() : "0");
+                        updateDigest(digest, anomaly.budgetImpactPercent() != null ? anomaly.budgetImpactPercent().setScale(2, RoundingMode.HALF_UP).toPlainString() : "0");
+                    });
+            byte[] hash = digest.digest();
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 digest unavailable", ex);
+        }
+    }
+
+    private void updateDigest(MessageDigest digest, String value) {
+        if (value == null) {
+            digest.update((byte) 0);
+        } else {
+            digest.update(value.getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     private String buildPrompt(

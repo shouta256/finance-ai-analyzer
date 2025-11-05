@@ -105,10 +105,12 @@ export async function getAnalyticsSummary(month: string, options?: { generateAi?
   return handleJson(res, analyticsSummarySchema);
 }
 
-export async function listTransactions(month: string): Promise<TransactionsList> {
-  const url = buildRequestUrl("/api/transactions", { month });
-  const res = await fetch(url, withCredentials({ cache: "no-store" }));
-  return handleJson(res, transactionsListSchema);
+export async function listTransactions(month: string, options?: { page?: number; pageSize?: number }): Promise<TransactionsList> {
+  return queryTransactions({
+    month,
+    page: options?.page,
+    pageSize: options?.pageSize,
+  });
 }
 
 export interface TransactionsQuery {
@@ -134,10 +136,14 @@ export async function queryTransactions(params: TransactionsQuery = {}): Promise
 }
 
 // from/to expect YYYY-MM boundaries; month remains YYYY-MM for single-month view.
-export async function listTransactionsRange(params: { from?: string; to?: string; month?: string }): Promise<TransactionsList> {
-  const url = buildRequestUrl("/api/transactions", { month: params.month, from: params.from, to: params.to });
-  const res = await fetch(url, withCredentials({ cache: "no-store" }));
-  return handleJson(res, transactionsListSchema);
+export async function listTransactionsRange(params: { from?: string; to?: string; month?: string; page?: number; pageSize?: number }): Promise<TransactionsList> {
+  return queryTransactions({
+    month: params.month,
+    from: params.from,
+    to: params.to,
+    page: params.page,
+    pageSize: params.pageSize,
+  });
 }
 
 export interface TriggerSyncOptions {

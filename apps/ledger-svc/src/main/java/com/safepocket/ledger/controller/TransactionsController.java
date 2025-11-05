@@ -12,6 +12,7 @@ import com.safepocket.ledger.controller.dto.TransactionsSyncRequestDto;
 import com.safepocket.ledger.controller.dto.TransactionsSyncResponseDto;
 import com.safepocket.ledger.model.AnomalyScore;
 import com.safepocket.ledger.model.Transaction;
+import com.safepocket.ledger.repository.TransactionRepository;
 import com.safepocket.ledger.security.RequestContextHolder;
 import com.safepocket.ledger.service.TransactionService;
 import com.safepocket.ledger.service.TransactionSyncService;
@@ -23,10 +24,10 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,13 +68,18 @@ public class TransactionsController {
             @RequestParam(value = "month", required = false) String month,
             @RequestParam(value = "from", required = false) String from,
             @RequestParam(value = "to", required = false) String to,
-            @RequestParam(value = "accountId", required = false) String accountId
+            @RequestParam(value = "accountId", required = false) String accountId,
+            @RequestParam(value = "page", required = false, defaultValue = "0") Integer page,
+            @RequestParam(value = "pageSize", required = false, defaultValue = "15") Integer pageSize
     ) {
         var window = resolveWindow(month, from, to);
         Optional<UUID> accountUuid = Optional.ofNullable(accountId).filter(value -> !value.isBlank()).map(UUID::fromString);
-        var result = transactionService.listTransactions(window.fromDate(), window.toDate(), window.month(), accountUuid);
+        int safePage = page == null ? 0 : Math.max(page, 0);
+        int safeSize = pageSize == null ? 15 : Math.min(100, Math.max(1, pageSize));
+        var result = transactionService.listTransactions(window.fromDate(), window.toDate(), window.month(), accountUuid, safePage, safeSize);
         String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId).orElse(null);
-        AggregatesDto aggregates = buildAggregates(result.transactions(), window);
+        boolean includeDaily = window.month().isPresent();
+        AggregatesDto aggregates = buildAggregates(result.aggregates(), includeDaily, result.totalElements());
         var response = new TransactionsListResponseDto(
                 new PeriodDto(
                         result.month().map(YearMonth::toString).orElse(null),
@@ -81,7 +87,10 @@ public class TransactionsController {
                         window.toProvided() ? result.to() : null
                 ),
                 aggregates,
-                result.transactions().stream().map(this::map).toList(),
+                safePage,
+                result.pageTransactions().size(),
+                result.totalElements(),
+                result.pageTransactions().stream().map(this::map).toList(),
                 traceId
         );
         return ResponseEntity.ok(response);
@@ -151,9 +160,8 @@ public class TransactionsController {
         );
     }
 
-    private AggregatesDto buildAggregates(List<Transaction> transactions, TransactionWindow window) {
-        if (transactions.isEmpty()) {
-            boolean includeDaily = window.month().isPresent();
+    private AggregatesDto buildAggregates(TransactionRepository.AggregateSnapshot snapshot, boolean includeDaily, long totalCount) {
+        if (snapshot == null || snapshot.count() == 0) {
             return new AggregatesDto(
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
@@ -169,56 +177,14 @@ public class TransactionsController {
             );
         }
 
-        boolean includeDaily = window.month().isPresent();
-        BigDecimal incomeTotal = BigDecimal.ZERO;
-        BigDecimal expenseTotal = BigDecimal.ZERO;
-        Map<String, BigDecimal> monthNet = new LinkedHashMap<>();
-        Map<String, BigDecimal> dayNet = includeDaily ? new LinkedHashMap<>() : null;
-        Map<String, BigDecimal> categoryTotals = new LinkedHashMap<>();
-        DateTimeFormatter monthFormatter = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneOffset.UTC);
-        DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC);
-        TreeMap<String, BigDecimal> timelineTotals = new TreeMap<>();
-        LocalDate minDate = null;
-        LocalDate maxDate = null;
-
-        for (Transaction transaction : transactions) {
-            BigDecimal amount = transaction.amount() != null ? transaction.amount() : BigDecimal.ZERO;
-            BigDecimal scaledAmount = amount.setScale(2, RoundingMode.HALF_UP);
-            if (scaledAmount.compareTo(BigDecimal.ZERO) > 0) {
-                incomeTotal = incomeTotal.add(scaledAmount);
-            } else if (scaledAmount.compareTo(BigDecimal.ZERO) < 0) {
-                expenseTotal = expenseTotal.add(scaledAmount);
-            }
-
-            if (transaction.occurredAt() != null) {
-                String monthKey = monthFormatter.format(transaction.occurredAt());
-                monthNet.merge(monthKey, scaledAmount, BigDecimal::add);
-                LocalDate occurredDate = transaction.occurredAt().atOffset(ZoneOffset.UTC).toLocalDate();
-                minDate = minDate == null || occurredDate.isBefore(minDate) ? occurredDate : minDate;
-                maxDate = maxDate == null || occurredDate.isAfter(maxDate) ? occurredDate : maxDate;
-                if (dayNet != null) {
-                    String dayKey = dayFormatter.format(transaction.occurredAt());
-                    dayNet.merge(dayKey, scaledAmount, BigDecimal::add);
-                }
-                // timeline totals will use placeholder key; final granularity decided later
-                timelineTotals.merge(occurredDate.toString(), scaledAmount, BigDecimal::add);
-            }
-
-            if (scaledAmount.compareTo(BigDecimal.ZERO) < 0) {
-                String category = Optional.ofNullable(transaction.category())
-                        .map(String::trim)
-                        .filter(value -> !value.isEmpty())
-                        .orElse("Uncategorised");
-                categoryTotals.merge(category, scaledAmount, BigDecimal::add);
-            }
-        }
-
+        BigDecimal incomeTotal = snapshot.incomeTotal().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal expenseTotal = snapshot.expenseTotal().setScale(2, RoundingMode.HALF_UP);
         BigDecimal netTotal = incomeTotal.add(expenseTotal).setScale(2, RoundingMode.HALF_UP);
-        Map<String, BigDecimal> normalisedMonthNet = monthNet.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
+        Map<String, BigDecimal> normalisedMonthNet = snapshot.monthBuckets().stream()
+                .sorted(Comparator.comparing(TransactionRepository.AggregateBucket::key))
                 .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> entry.getValue().setScale(2, RoundingMode.HALF_UP),
+                        TransactionRepository.AggregateBucket::key,
+                        bucket -> bucket.amount().setScale(2, RoundingMode.HALF_UP),
                         (left, right) -> right,
                         LinkedHashMap::new
                 ));
@@ -228,12 +194,13 @@ public class TransactionsController {
 
         Map<String, BigDecimal> normalisedDayNet = null;
         List<SeriesPointDto> daySeries = null;
-        if (dayNet != null) {
-            normalisedDayNet = dayNet.entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
+        Map<LocalDate, BigDecimal> timelineTotals = new TreeMap<>();
+        if (includeDaily) {
+            normalisedDayNet = snapshot.dayBuckets().stream()
+                    .sorted(Comparator.comparing(TransactionRepository.AggregateBucket::key))
                     .collect(Collectors.toMap(
-                            Map.Entry::getKey,
-                            entry -> entry.getValue().setScale(2, RoundingMode.HALF_UP),
+                            TransactionRepository.AggregateBucket::key,
+                            bucket -> bucket.amount().setScale(2, RoundingMode.HALF_UP),
                             (left, right) -> right,
                             LinkedHashMap::new
                     ));
@@ -241,12 +208,18 @@ public class TransactionsController {
                     .map(entry -> new SeriesPointDto(entry.getKey(), entry.getValue()))
                     .toList();
         }
+        snapshot.dayBuckets().forEach(bucket -> {
+            LocalDate date = LocalDate.parse(bucket.key());
+            timelineTotals.merge(date, bucket.amount(), BigDecimal::add);
+        });
+        LocalDate minDate = snapshot.minOccurredAt() != null ? snapshot.minOccurredAt().atZone(ZoneOffset.UTC).toLocalDate() : null;
+        LocalDate maxDate = snapshot.maxOccurredAt() != null ? snapshot.maxOccurredAt().atZone(ZoneOffset.UTC).toLocalDate() : null;
 
-        Map<String, BigDecimal> normalisedCategoryTotals = categoryTotals.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
+        Map<String, BigDecimal> normalisedCategoryTotals = snapshot.categoryBuckets().stream()
+                .sorted(Comparator.comparing(TransactionRepository.AggregateBucket::key))
                 .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> entry.getValue().setScale(2, RoundingMode.HALF_UP),
+                        bucket -> Optional.ofNullable(bucket.key()).orElse("Uncategorised"),
+                        bucket -> bucket.amount().setScale(2, RoundingMode.HALF_UP),
                         (left, right) -> right,
                         LinkedHashMap::new
                 ));
@@ -259,13 +232,13 @@ public class TransactionsController {
                 expenseTotal.setScale(2, RoundingMode.HALF_UP),
                 netTotal,
                 normalisedMonthNet,
-                normalisedDayNet,
+                includeDaily ? normalisedDayNet : null,
                 monthSeries,
-                daySeries,
+                includeDaily ? daySeries : null,
                 trendSeries,
                 trendGranularity.name(),
                 normalisedCategoryTotals,
-                transactions.size()
+                Math.toIntExact(totalCount)
         );
     }
 
@@ -286,15 +259,14 @@ public class TransactionsController {
         return TrendGranularity.QUARTER;
     }
 
-    private List<SeriesPointDto> aggregateTimeline(Map<String, BigDecimal> dailyTotals, TrendGranularity granularity) {
+    private List<SeriesPointDto> aggregateTimeline(Map<LocalDate, BigDecimal> dailyTotals, TrendGranularity granularity) {
         if (dailyTotals.isEmpty()) {
             return List.of();
         }
         Map<String, BigDecimal> buckets = new TreeMap<>();
-        DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-        for (Map.Entry<String, BigDecimal> entry : dailyTotals.entrySet()) {
-            LocalDate date = LocalDate.parse(entry.getKey(), dayFormatter);
+        for (Map.Entry<LocalDate, BigDecimal> entry : dailyTotals.entrySet()) {
+            LocalDate date = entry.getKey();
             String key = switch (granularity) {
                 case DAY -> date.toString();
                 case WEEK -> date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).toString();

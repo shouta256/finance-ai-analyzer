@@ -40,20 +40,27 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public TransactionListResult listTransactions(LocalDate from, LocalDate to, Optional<YearMonth> month, Optional<UUID> accountId) {
+    public TransactionListResult listTransactions(
+            LocalDate from,
+            LocalDate to,
+            Optional<YearMonth> month,
+            Optional<UUID> accountId,
+            int page,
+            int size
+    ) {
         UUID userId = authenticatedUserProvider.requireCurrentUserId();
         rlsGuard.setAppsecUser(userId);
         var fromInstant = from.atStartOfDay(ZoneOffset.UTC).toInstant();
         var toInstant = to.atStartOfDay(ZoneOffset.UTC).toInstant();
-        List<Transaction> transactions = accountId
-                .map(uuid -> transactionRepository.findByUserIdAndRangeAndAccount(userId, fromInstant, toInstant, uuid))
-                .orElseGet(() -> transactionRepository.findByUserIdAndRange(userId, fromInstant, toInstant));
-        var anomalies = anomalyDetectionService.detectAnomalies(transactions).stream()
+        TransactionRepository.AggregateSnapshot snapshot = transactionRepository.loadAggregates(userId, fromInstant, toInstant, accountId);
+        TransactionRepository.PageResult pageResult = transactionRepository.findPageByUserIdAndRange(userId, fromInstant, toInstant, accountId, page, size);
+        List<Transaction> debitTransactions = transactionRepository.findDebitTransactions(userId, fromInstant, toInstant, accountId);
+        var anomalies = anomalyDetectionService.detectAnomalies(debitTransactions).stream()
                 .collect(Collectors.toMap(AnalyticsSummary.AnomalyInsight::transactionId, insight -> insight));
-        List<Transaction> annotated = transactions.stream()
+        List<Transaction> annotatedPage = pageResult.transactions().stream()
                 .map(tx -> annotateWithAnomaly(tx, anomalies.get(tx.id().toString())))
                 .toList();
-        return new TransactionListResult(annotated, from, to, month);
+        return new TransactionListResult(annotatedPage, from, to, month, snapshot, pageResult.totalElements());
     }
 
     @Transactional
@@ -90,10 +97,11 @@ public class TransactionService {
     }
 
     public record TransactionListResult(
-            List<Transaction> transactions,
+            List<Transaction> pageTransactions,
             LocalDate from,
             LocalDate to,
-            Optional<YearMonth> month
-    ) {
-    }
+            Optional<YearMonth> month,
+            TransactionRepository.AggregateSnapshot aggregates,
+            long totalElements
+    ) {}
 }

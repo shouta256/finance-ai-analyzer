@@ -248,6 +248,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     maintainAspectRatio: false,
   }), []);
 
+  const totalTransactions = state.transactions.total ?? state.transactions.transactions.length;
+  const maxPage = totalTransactions > 0 ? Math.max(Math.ceil(totalTransactions / pageSize) - 1, 0) : 0;
+  const pageStartIndex = page * pageSize;
+  const pageEndIndex = totalTransactions > 0
+    ? Math.min(pageStartIndex + state.transactions.transactions.length, totalTransactions)
+    : pageStartIndex + state.transactions.transactions.length;
+  const canGoNext =
+    totalTransactions === 0
+      ? state.transactions.transactions.length === pageSize
+      : page < maxPage;
+
   const trendChartData = useMemo(() => {
     const monthNet = state.transactions.aggregates?.monthNet;
     let labels: string[] = [];
@@ -930,14 +941,21 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           >
             Previous
           </button>
-          <div className="text-xs text-slate-500">{state.transactions.transactions.length} records</div>
+          <div className="text-xs text-slate-500">
+            {totalTransactions > 0
+              ? `Showing ${pageStartIndex + 1}-${pageEndIndex} of ${totalTransactions}`
+              : `${state.transactions.transactions.length} records`}
+          </div>
           <button
             onClick={() => {
               const nextPage = page + 1;
-              setPage(nextPage);
-              startTransition(() => refreshData({ page: nextPage }));
+              if (!canGoNext) return;
+              const capped = Math.min(nextPage, maxPage);
+              setPage(capped);
+              startTransition(() => refreshData({ page: capped }));
             }}
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+            disabled={!canGoNext}
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
           >
             Next
           </button>

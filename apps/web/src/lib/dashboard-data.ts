@@ -148,6 +148,9 @@ function buildFallbackTransactions(month: string): TransactionsList {
       from: null,
       to: null,
     },
+    page: 0,
+    pageSize: 15,
+    total: 0,
     transactions: [],
     aggregates: {
       incomeTotal: 0,

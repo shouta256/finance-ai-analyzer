@@ -41,6 +41,9 @@ public class AiMonthlyHighlightEntity {
     @Column(name = "recommendations", nullable = false, columnDefinition = "text")
     private String recommendations;
 
+    @Column(name = "fingerprint", length = 128)
+    private String fingerprint;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -117,6 +120,14 @@ public class AiMonthlyHighlightEntity {
 
     public void setRecommendations(String recommendations) {
         this.recommendations = recommendations;
+    }
+
+    public String getFingerprint() {
+        return fingerprint;
+    }
+
+    public void setFingerprint(String fingerprint) {
+        this.fingerprint = fingerprint;
     }
 
     public Instant getCreatedAt() {

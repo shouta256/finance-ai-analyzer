@@ -8,6 +8,9 @@ import java.util.Map;
 public record TransactionsListResponseDto(
         PeriodDto period,
         AggregatesDto aggregates,
+        Integer page,
+        Integer pageSize,
+        Long total,
         List<TransactionResponseDto> transactions,
         String traceId
 ) {

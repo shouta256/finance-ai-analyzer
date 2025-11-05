@@ -6,10 +6,11 @@ interface TransactionsTableProps {
   transactions: TransactionsList["transactions"];
   page: number;
   pageSize: number;
+  total: number;
   onPageChange: (page: number) => void;
 }
 
-export function TransactionsTable({ transactions, page, pageSize, onPageChange }: TransactionsTableProps) {
+export function TransactionsTable({ transactions, page, pageSize, total, onPageChange }: TransactionsTableProps) {
   const categoryStyles = useMemo(() => {
     const netByCategory = new Map<string, number>();
     const expenseByCategory = new Map<string, number>();
@@ -68,6 +69,11 @@ export function TransactionsTable({ transactions, page, pageSize, onPageChange }
     }
     return styles;
   }, [transactions]);
+
+  const startIndex = page * pageSize;
+  const endIndex = startIndex + transactions.length;
+  const finalIndex = total > 0 ? Math.min(endIndex, total) : endIndex;
+  const canGoNext = total === 0 ? transactions.length === pageSize : finalIndex < total;
 
   return (
     <section className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
@@ -152,10 +158,15 @@ export function TransactionsTable({ transactions, page, pageSize, onPageChange }
         >
           Previous
         </button>
-        <div className="text-xs text-slate-500">{Math.min(pageSize, transactions.length)} records</div>
+        <div className="text-xs text-slate-500">
+          {total > 0
+            ? `Showing ${startIndex + 1}-${finalIndex} of ${total}`
+            : `${transactions.length} records`}
+        </div>
         <button
           onClick={() => onPageChange(page + 1)}
-          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+          disabled={!canGoNext}
+          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
         >
           Next
         </button>

@@ -3,10 +3,10 @@ package com.safepocket.ledger.repository;
 import com.safepocket.ledger.entity.MerchantEntity;
 import com.safepocket.ledger.entity.TransactionEntity;
 import com.safepocket.ledger.model.Transaction;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Repository;
-
+import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -15,6 +15,14 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.springframework.context.annotation.Primary;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Repository;
 
 @Repository
 @Primary
@@ -22,6 +30,7 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
 
     private final JpaTransactionRepository jpaTransactionRepository;
     private final JpaMerchantRepository jpaMerchantRepository;
+    private final ConcurrentHashMap<String, UUID> merchantCache = new ConcurrentHashMap<>();
 
     public PostgreSQLTransactionRepository(JpaTransactionRepository jpaTransactionRepository,
                                          JpaMerchantRepository jpaMerchantRepository) {
@@ -94,6 +103,9 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
                 .map(entity -> {
                     MerchantEntity merchant = merchantMap.get(entity.getMerchantId());
                     String merchantName = merchant != null ? merchant.getName() : "Unknown Merchant";
+                    if (merchant != null) {
+                        merchantCache.putIfAbsent(normalizeMerchantName(merchantName), merchant.getId());
+                    }
                     return toModel(entity, merchantName);
                 })
                 .collect(Collectors.toList());
@@ -104,6 +116,9 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
         MerchantEntity merchant = jpaMerchantRepository.findById(entity.getMerchantId())
                 .orElse(null);
         String merchantName = merchant != null ? merchant.getName() : "Unknown Merchant";
+        if (merchant != null) {
+            merchantCache.putIfAbsent(normalizeMerchantName(merchantName), merchant.getId());
+        }
         return toModel(entity, merchantName);
     }
 
@@ -127,7 +142,7 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
 
     private TransactionEntity toEntity(Transaction model) {
         // Find or create merchant by name
-        UUID merchantId = findOrCreateMerchantByName(model.merchantName());
+        UUID merchantId = resolveMerchantId(model.merchantName());
         
         return new TransactionEntity(
             model.id(),
@@ -145,22 +160,133 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
         );
     }
     
-    private UUID findOrCreateMerchantByName(String merchantName) {
-        // First try to find existing merchant
-        List<MerchantEntity> merchants = jpaMerchantRepository.findAll();
-        for (MerchantEntity merchant : merchants) {
-            if (merchant.getName().equalsIgnoreCase(merchantName)) {
-                return merchant.getId();
-            }
+    private UUID resolveMerchantId(String merchantName) {
+        String normalized = normalizeMerchantName(merchantName);
+        return merchantCache.computeIfAbsent(normalized, key -> lookupOrCreateMerchant(normalized, merchantName));
+    }
+
+    private UUID lookupOrCreateMerchant(String normalized, String originalName) {
+        String candidateName = originalName == null || originalName.isBlank() ? "Unknown Merchant" : originalName.trim();
+        Optional<MerchantEntity> existing = jpaMerchantRepository.findByNameIgnoreCase(candidateName);
+        if (existing.isPresent()) {
+            return existing.get().getId();
         }
-        
-        // If not found, create new merchant
-        MerchantEntity newMerchant = new MerchantEntity(
-            UUID.randomUUID(),
-            merchantName,
-            java.time.Instant.now()
+        MerchantEntity entity = new MerchantEntity(
+                UUID.randomUUID(),
+                candidateName,
+                java.time.Instant.now()
         );
-        MerchantEntity savedMerchant = jpaMerchantRepository.save(newMerchant);
-        return savedMerchant.getId();
+        try {
+            MerchantEntity saved = jpaMerchantRepository.save(entity);
+            return saved.getId();
+        } catch (DataIntegrityViolationException ex) {
+            return jpaMerchantRepository.findByNameIgnoreCase(candidateName)
+                    .map(MerchantEntity::getId)
+                    .orElseThrow(() -> ex);
+        }
+    }
+
+    private String normalizeMerchantName(String merchantName) {
+        if (merchantName == null) {
+            return "unknown";
+        }
+        String trimmed = merchantName.trim().toLowerCase();
+        return trimmed.isEmpty() ? "unknown" : trimmed;
+    }
+
+    @Override
+    public PageResult findPageByUserIdAndRange(UUID userId, Instant fromInclusive, Instant toExclusive, Optional<UUID> accountId, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.max(1, size));
+        Page<TransactionEntity> entityPage = accountId
+                .map(uuid -> jpaTransactionRepository.findPageByUserIdAndRangeAndAccount(userId, fromInclusive, toExclusive, uuid, pageable))
+                .orElseGet(() -> jpaTransactionRepository.findPageByUserIdAndRange(userId, fromInclusive, toExclusive, pageable));
+        List<Transaction> models = convertToModels(entityPage.getContent());
+        return new PageResult(models, entityPage.getTotalElements());
+    }
+
+    @Override
+    public AggregateSnapshot loadAggregates(UUID userId, Instant fromInclusive, Instant toExclusive, Optional<UUID> accountId) {
+        UUID accountUuid = accountId.orElse(null);
+        Object[] totals = jpaTransactionRepository.totalsForRange(userId, fromInclusive, toExclusive, accountUuid);
+        BigDecimal income = totals[0] instanceof BigDecimal b ? b : BigDecimal.ZERO;
+        BigDecimal expense = totals[1] instanceof BigDecimal b ? b : BigDecimal.ZERO;
+        long count = totals[2] instanceof Number n ? n.longValue() : 0L;
+        Instant minOccurredAt = totals[3] instanceof Timestamp tsMin ? tsMin.toInstant() : null;
+        Instant maxOccurredAt = totals[4] instanceof Timestamp tsMax ? tsMax.toInstant() : null;
+
+        List<AggregateBucket> monthBuckets = jpaTransactionRepository.monthNetByRange(userId, fromInclusive, toExclusive, accountUuid)
+                .stream()
+                .map(row -> new AggregateBucket(formatMonthBucket(row[0]), amountOrZero(row[1])))
+                .toList();
+        List<AggregateBucket> dayBuckets = jpaTransactionRepository.dayNetByRange(userId, fromInclusive, toExclusive, accountUuid)
+                .stream()
+                .map(row -> new AggregateBucket(formatDayBucket(row[0]), amountOrZero(row[1])))
+                .toList();
+        List<AggregateBucket> categoryBuckets = jpaTransactionRepository.expenseByCategory(userId, fromInclusive, toExclusive, accountUuid)
+                .stream()
+                .map(row -> new AggregateBucket(
+                        String.valueOf(row[0]),
+                        amountOrZero(row[1])
+                ))
+                .toList();
+
+        return new AggregateSnapshot(
+                income,
+                expense,
+                count,
+                minOccurredAt,
+                maxOccurredAt,
+                monthBuckets,
+                dayBuckets,
+                categoryBuckets
+        );
+    }
+
+    private BigDecimal amountOrZero(Object value) {
+        if (value instanceof BigDecimal big) {
+            return big;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private String formatMonthBucket(Object value) {
+        Instant instant = toInstant(value);
+        if (instant == null) {
+            return "";
+        }
+        YearMonth month = YearMonth.from(instant.atZone(ZoneOffset.UTC));
+        return month.toString();
+    }
+
+    private String formatDayBucket(Object value) {
+        Instant instant = toInstant(value);
+        if (instant == null) {
+            return "";
+        }
+        LocalDate date = instant.atZone(ZoneOffset.UTC).toLocalDate();
+        return date.toString();
+    }
+
+    private Instant toInstant(Object value) {
+        if (value instanceof Timestamp ts) {
+            return ts.toInstant();
+        }
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        if (value instanceof java.util.Date date) {
+            return date.toInstant();
+        }
+        return null;
+    }
+
+    @Override
+    public List<Transaction> findDebitTransactions(UUID userId, Instant fromInclusive, Instant toExclusive, Optional<UUID> accountId) {
+        UUID accountUuid = accountId.orElse(null);
+        List<TransactionEntity> entities = jpaTransactionRepository.findDebitsByUserIdAndRange(userId, fromInclusive, toExclusive, accountUuid);
+        return convertToModels(entities);
     }
 }

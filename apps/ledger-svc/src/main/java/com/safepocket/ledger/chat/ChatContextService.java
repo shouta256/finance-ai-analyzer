@@ -3,12 +3,15 @@ package com.safepocket.ledger.chat;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.safepocket.ledger.rag.RagService;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,6 +23,8 @@ public class ChatContextService {
 
     private final RagService ragService;
     private final ObjectMapper objectMapper;
+    private final ConcurrentHashMap<SummaryCacheKey, CachedSummary> summaryCache = new ConcurrentHashMap<>();
+    private static final Duration SUMMARY_CACHE_TTL = Duration.ofMinutes(2);
 
     public ChatContextService(RagService ragService, ObjectMapper objectMapper) {
         this.ragService = ragService;
@@ -35,7 +40,7 @@ public class ChatContextService {
         try {
             // 1) Monthly summary (for dashboard-aligned numbers)
             var ym = YearMonth.now();
-            var summaries = ragService.summaries(ym);
+            var summaries = fetchSummariesWithCache(userId, ym);
 
             // 2) Targeted retrieval for the chat turn
             // Use last 90 days by default to keep context concise
@@ -111,4 +116,25 @@ public class ChatContextService {
     private static String nullToEmpty(String s) {
         return s == null ? "" : s;
     }
+
+    private RagService.SummariesResponse fetchSummariesWithCache(UUID userId, YearMonth month) {
+        Instant now = Instant.now();
+        SummaryCacheKey key = new SummaryCacheKey(userId, month);
+        CachedSummary cached = summaryCache.get(key);
+        if (cached != null && cached.expiresAt().isAfter(now)) {
+            return cached.value();
+        }
+        RagService.SummariesResponse fresh = ragService.summaries(month);
+        summaryCache.put(key, new CachedSummary(fresh, now.plus(SUMMARY_CACHE_TTL)));
+        evictExpiredSummaries(now);
+        return fresh;
+    }
+
+    private void evictExpiredSummaries(Instant now) {
+        summaryCache.entrySet().removeIf(entry -> entry.getValue().expiresAt().isBefore(now));
+    }
+
+    private record SummaryCacheKey(UUID userId, YearMonth month) {}
+
+    private record CachedSummary(RagService.SummariesResponse value, Instant expiresAt) {}
 }

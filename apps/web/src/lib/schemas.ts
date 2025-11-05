@@ -51,13 +51,16 @@ export const transactionsListSchema = z
   })
   .extend({
     month: z.string().optional(),
+    page: z.number().int().min(0).optional(),
+    pageSize: z.number().int().min(1).optional(),
+    total: z.number().int().min(0).optional(),
     aggregates: z
       .object({
         incomeTotal: z.number(),
         expenseTotal: z.number(),
         netTotal: z.number(),
         monthNet: z.record(z.number()).optional(),
-        dayNet: z.record(z.number()).optional(),
+        dayNet: z.record(z.number()).nullable().optional(),
         monthSeries: z
           .array(
             z.object({
@@ -73,6 +76,7 @@ export const transactionsListSchema = z
               net: z.number(),
             }),
           )
+          .nullable()
           .optional(),
         trendSeries: z
           .array(

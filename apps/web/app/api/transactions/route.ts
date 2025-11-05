@@ -328,6 +328,8 @@ export async function GET(request: NextRequest) {
   if (normalizedFrom) endpoint.searchParams.set("from", normalizedFrom);
   if (normalizedTo) endpoint.searchParams.set("to", normalizedTo);
   if (query.accountId) endpoint.searchParams.set("accountId", query.accountId);
+  endpoint.searchParams.set("page", String(query.page ?? 0));
+  endpoint.searchParams.set("pageSize", String(query.pageSize ?? 15));
 
   const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, {
     method: "GET",
@@ -337,8 +339,9 @@ export async function GET(request: NextRequest) {
   const body = transactionsListSchema.parse(result);
   const includeDailyNet = Boolean(query.month);
   const transactions = Array.isArray(body.transactions) ? body.transactions : [];
+  const fallbackTotal = Number.isFinite(body.total) ? Number(body.total) : transactions.length;
   let aggregates;
-  if (transactions.length === 0) {
+  if (!body.aggregates) {
     aggregates = {
       incomeTotal: 0,
       expenseTotal: 0,
@@ -353,44 +356,30 @@ export async function GET(request: NextRequest) {
       count: 0,
     };
   } else {
-    const existing = body.aggregates as Record<string, unknown> | undefined;
-    const hasMonthData = existing && (
-      (Array.isArray(existing.monthSeries) && existing.monthSeries.length > 0) ||
-      (existing.monthNet && Object.keys(existing.monthNet).length > 0)
-    );
-    const missingDailyData = includeDailyNet && (!existing || (
-      (!Array.isArray(existing.daySeries) || existing.daySeries.length === 0) &&
-      (!existing.dayNet || Object.keys(existing.dayNet).length === 0)
-    ));
-    if (!existing || !hasMonthData || missingDailyData) {
-      aggregates = computeAggregatesFromTransactions(transactions, includeDailyNet);
-    } else {
-      aggregates = normalizeExistingAggregates(existing, includeDailyNet, transactions.length);
-    }
+    const existing = body.aggregates as Record<string, unknown>;
+    aggregates = normalizeExistingAggregates(existing, includeDailyNet, fallbackTotal);
   }
-  let trendSeries = aggregates.trendSeries ?? [];
+  let trendSeries = Array.isArray(aggregates.trendSeries) ? aggregates.trendSeries : [];
   let trendGranularity = aggregates.trendGranularity;
-  if (!trendSeries || trendSeries.length === 0 || !trendGranularity) {
-    const timeline = buildTrendSeries(transactions, includeDailyNet);
-    trendSeries = timeline.series;
-    trendGranularity = timeline.granularity;
-  }
-  if (includeDailyNet) {
-    if ((!trendSeries || trendSeries.length === 0) && Array.isArray(aggregates.daySeries) && aggregates.daySeries.length > 0) {
-      trendSeries = aggregates.daySeries.map((entry) => ({
-        period: entry.period,
-        net: toCurrencyValue(entry.net),
-      }));
-      trendGranularity = "DAY";
-    }
-  } else {
-    const monthSeriesFallback = Array.isArray(aggregates.monthSeries) ? aggregates.monthSeries.map((entry) => ({
+  if ((!trendSeries || trendSeries.length === 0) && includeDailyNet && Array.isArray(aggregates.daySeries) && aggregates.daySeries.length > 0) {
+    trendSeries = aggregates.daySeries.map((entry) => ({
       period: entry.period,
       net: toCurrencyValue(entry.net),
-    })) : Object.entries(aggregates.monthNet ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([period, net]) => ({
-      period,
-      net: toCurrencyValue(net),
     }));
+    trendGranularity = "DAY";
+  }
+  if (!includeDailyNet) {
+    const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
+      ? aggregates.monthSeries.map((entry) => ({
+        period: entry.period,
+        net: toCurrencyValue(entry.net),
+      }))
+      : Object.entries(aggregates.monthNet ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([period, net]) => ({
+            period,
+            net: toCurrencyValue(net),
+          }));
     const shouldUseMonthFallback =
       (!trendSeries || trendSeries.length === 0) ||
       (trendGranularity === "DAY") ||
@@ -405,10 +394,17 @@ export async function GET(request: NextRequest) {
     trendSeries,
     trendGranularity,
   };
-  const page = query.page ?? 0;
-  const size = query.pageSize ?? 15;
-  const start = page * size;
-  const end = start + size;
-  const paged = { ...body, transactions: body.transactions.slice(start, end), aggregates };
-  return NextResponse.json(paged);
+  const ledgerPage = Number.isFinite(body.page) ? Number(body.page) : query.page ?? 0;
+  const ledgerSize = Number.isFinite(body.pageSize) ? Number(body.pageSize) : query.pageSize ?? 15;
+  const total = Number.isFinite(body.total) ? Number(body.total) : aggregates.count ?? transactions.length;
+  const normalizedTransactions = Array.isArray(body.transactions) ? body.transactions : [];
+  const responseBody = {
+    ...body,
+    page: ledgerPage,
+    pageSize: ledgerSize,
+    total,
+    transactions: normalizedTransactions,
+    aggregates,
+  };
+  return NextResponse.json(responseBody);
 }

@@ -226,6 +226,21 @@ export interface components {
     TransactionsListResponse: {
       period?: components["schemas"]["TransactionsQueryPeriod"];
       aggregates?: components["schemas"]["TransactionsAggregates"];
+      /**
+       * Format: int32
+       * @description Zero-based page index returned in this response
+       */
+      page?: number;
+      /**
+       * Format: int32
+       * @description Number of transactions included in this page
+       */
+      pageSize?: number;
+      /**
+       * Format: int64
+       * @description Total number of transactions matching the query
+       */
+      total?: number;
       transactions: components["schemas"]["Transaction"][];
       /** @description Request trace identifier for auditing */
       traceId: string;
@@ -799,6 +814,10 @@ export interface operations {
         to?: string;
         /** @description Filter by account identifier */
         accountId?: string;
+        /** @description Zero-based page index (default 0) */
+        page?: number;
+        /** @description Page size (default 15, max 100) */
+        pageSize?: number;
       };
     };
     responses: {

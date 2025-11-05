@@ -766,6 +766,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   const handlePageChange = (nextPage: number) => {
     const safePage = Math.max(nextPage, 0);
+    const total = state.transactions.total ?? state.transactions.transactions.length;
+    const maxPage = total > 0 ? Math.max(Math.ceil(total / pageSize) - 1, 0) : undefined;
+    if (maxPage !== undefined && safePage > maxPage) {
+      return;
+    }
     setPage(safePage);
     startTransition(() => refreshData({ page: safePage }));
   };
@@ -839,6 +844,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           transactions={state.transactions.transactions}
           page={page}
           pageSize={pageSize}
+          total={state.transactions.total ?? state.transactions.transactions.length}
           onPageChange={handlePageChange}
         />
       </div>

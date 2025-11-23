@@ -8,6 +8,7 @@ apps/web/out
 apps/web/node_modules
 apps/web/coverage
 apps/web/.next/cache
+apps/web/tsconfig.tsbuildinfo
 apps/web/.turbo
 apps/web/.vercel
 apps/web/dist

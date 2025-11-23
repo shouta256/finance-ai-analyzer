@@ -4,34 +4,39 @@ This guide captures day-2 operational tasks for Safepocket: database interventio
 
 ## Database Operations
 
+Primary database provider: **Neon (serverless Postgres)**. The migration drops existing RDS data; expect a clean slate after provisioning.
+
 ### Missing Database (`DB_NOT_FOUND`)
 Indicates the PostgreSQL instance is reachable but the configured database name is absent.
 
-1. Create the database and user:
+1. In Neon, create a new project/branch (fresh start) and grab the admin connection string (`sslmode=require`).
+2. Create the database and user:
    ```bash
-   psql "postgresql://<master_user>:<password>@<endpoint>:5432/postgres" \
-     -v ON_ERROR_STOP=1 \
+   psql "<neon_admin_url>" -v ON_ERROR_STOP=1 <<'SQL'
      -c "CREATE DATABASE safepocket;" \
      -c "CREATE USER safepocket WITH PASSWORD '<app_password>';" \
      -c "GRANT ALL PRIVILEGES ON DATABASE safepocket TO safepocket;"
+   SQL
    ```
-2. Ensure the application URL points at the new database:
+3. Point services at the Neon endpoint (TLS required):
    ```
-   SPRING_DATASOURCE_URL=jdbc:postgresql://<endpoint>:5432/safepocket?sslmode=require
+   SPRING_DATASOURCE_URL=jdbc:postgresql://<neon-endpoint>:5432/safepocket?sslmode=require
+   SAFEPOCKET_DATABASE_URL=postgresql://safepocket:<app_password>@<neon-endpoint>:5432/safepocket?sslmode=require
    ```
-3. Restart the ECS service (or local process) so Hikari re-initialises the pool.
+4. Restart the ECS service/Lambda (or local process) so Hikari and pg pools re-initialise.
 
 Notes:
-- Confirm network paths (security groups, NACLs, IAM auth if applicable).
+- Allowlist egress IPs in the Neon console if outbound traffic is restricted.
+- Flyway/bootstrappers will recreate the empty schema; set `SAFEPOCKET_DB_BOOTSTRAP=true` locally to seed demo data.
 - Store credentials in Secrets Manager / Parameter Store rather than environment variables.
 
 ### Temporary Unavailability (`DB_UNAVAILABLE`)
 Raised when the database exists but cannot be reached (network partition, failover, or resource exhaustion).
 
 Checklist:
-- Inspect CloudWatch/RDS metrics (CPU, connections, freeable memory, deadlocks).
-- Validate security group changes and subnet routing.
-- Confirm `max_connections` not exceeded; tune Hikari pool if needed.
+- Inspect Neon dashboard metrics/events (connection cap, compute resume state, storage).
+- If IP allowlisting is enabled in Neon, confirm the current egress IP is permitted.
+- Confirm `max_connections` not exceeded; tune Hikari/pg pool sizes if needed (Neon caps are lower than RDS defaults).
 - Review application logs for leak warnings or slow queries.
 
 ### Local Development Tips
@@ -53,7 +58,7 @@ FLYWAY_USER=safepocket
 FLYWAY_PASSWORD=safepocket
 ```
 
-Override with `-Dflyway.url=...` when targeting a different instance.
+Override with `-Dflyway.url=...` when targeting a different instance (e.g., `jdbc:postgresql://<neon-endpoint>:5432/safepocket?sslmode=require`).
 
 ## Plaid Configuration
 

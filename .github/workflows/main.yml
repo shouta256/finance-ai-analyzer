@@ -158,17 +158,17 @@ jobs:
             --output json)
           
           # Only update database config if secrets are provided
-          DB_HOST="${{ secrets.DB_HOST }}"
-          DB_USER="${{ secrets.DB_USER }}"
-          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-          DB_NAME="${{ secrets.DB_NAME }}"
-          DB_PORT="${{ secrets.DB_PORT || '5432' }}"
-          DB_SSLMODE="${{ secrets.DB_SSLMODE || 'require' }}"
+          DB_HOST='${{ secrets.DB_HOST }}'
+          DB_USER='${{ secrets.DB_USER }}'
+          DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+          DB_NAME='${{ secrets.DB_NAME }}'
+          DB_PORT='${{ secrets.DB_PORT || '5432' }}'
+          DB_SSLMODE='${{ secrets.DB_SSLMODE || 'require' }}'
           
           if [ -n "${DB_HOST:-}" ] && [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
             echo "Updating Lambda database configuration..."
-            # URL-encode the password to handle special characters
-            ENCODED_PASSWORD=$(echo -n "$DB_PASSWORD" | jq -sRr @uri)
+            # URL-encode the password to handle special characters (using single quotes to prevent variable expansion)
+            ENCODED_PASSWORD=$(echo -n "${DB_PASSWORD}" | jq -sRr @uri)
             DATABASE_URL="postgresql://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
             
             UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \

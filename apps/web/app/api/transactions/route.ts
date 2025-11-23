@@ -75,6 +75,48 @@ const normalizeSeries = (series?: Array<{ period?: string; net?: unknown }>): Ar
 
 const TREND_GRANULARITIES = ["DAY", "WEEK", "MONTH", "QUARTER"] as const;
 type TrendGranularity = (typeof TREND_GRANULARITIES)[number];
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const parseMonthStart = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const [year, month] = value.split("-").map((v) => parseInt(v, 10));
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+  return new Date(Date.UTC(year, month - 1, 1));
+};
+
+const resolveDateRange = (query: { month?: string; from?: string; to?: string }): { from: Date; to: Date } => {
+  const now = new Date();
+  const hasFrom = Boolean(query.from);
+  const hasTo = Boolean(query.to);
+  const hasMonth = Boolean(query.month);
+
+  if (hasFrom || hasTo) {
+    const fromDate = parseMonthStart(query.from) ?? new Date(Date.UTC(1970, 0, 1));
+    const toMonth = parseMonthStart(query.to);
+    const toDate = toMonth
+      ? new Date(Date.UTC(toMonth.getUTCFullYear(), toMonth.getUTCMonth() + 1, 1))
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return { from: fromDate, to: toDate };
+  }
+
+  if (hasMonth && query.month) {
+    const start = parseMonthStart(query.month) ?? startOfUtcDay(now);
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+    return { from: start, to: end };
+  }
+
+  const defaultEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const defaultStart = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), 1));
+  return { from: defaultStart, to: defaultEnd };
+};
+
+const pickTargetGranularity = (from: Date, to: Date): TrendGranularity => {
+  const spanDays = Math.max(1, Math.round((startOfUtcDay(to).getTime() - startOfUtcDay(from).getTime()) / MS_PER_DAY));
+  if (spanDays <= 45) return "DAY";
+  if (spanDays <= 180) return "WEEK";
+  if (spanDays <= 730) return "MONTH";
+  return "QUARTER";
+};
 
 const startOfUtcDay = (date: Date): Date =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -320,6 +362,8 @@ export async function GET(request: NextRequest) {
     page: searchParams.get("page") ?? undefined,
     pageSize: searchParams.get("pageSize") ?? undefined,
   });
+  const dateRange = resolveDateRange(query);
+  const targetTrendGranularity = pickTargetGranularity(dateRange.from, dateRange.to);
 
   const endpoint = new URL("/transactions", "http://localhost");
   if (query.month) endpoint.searchParams.set("month", query.month.slice(0, 7));
@@ -380,15 +424,14 @@ export async function GET(request: NextRequest) {
           net: toCurrencyValue(net),
         }));
   const shouldUseMonthFallback =
-    (!trendSeries || trendSeries.length === 0) ||
-    (trendGranularity === "WEEK" && trendSeries.length <= 3);
+    targetTrendGranularity !== "DAY" &&
+    ((!trendSeries || trendSeries.length === 0) ||
+      (trendGranularity === "WEEK" && trendSeries.length <= 3));
   if (shouldUseMonthFallback && monthSeriesFallback.length > 0) {
     trendSeries = monthSeriesFallback;
     trendGranularity = trendGranularity && trendGranularity !== "DAY" ? trendGranularity : "MONTH";
   }
-  if (trendGranularity === "MONTH" && trendSeries.length === 1) {
-    trendSeries = padMonthSeries(trendSeries);
-  }
+  trendGranularity = trendGranularity ?? targetTrendGranularity;
   aggregates = {
     ...aggregates,
     trendSeries,
@@ -407,24 +450,4 @@ export async function GET(request: NextRequest) {
     aggregates,
   };
   return NextResponse.json(responseBody);
-}
-
-function padMonthSeries(series: Array<{ period: string; net: number }>): Array<{ period: string; net: number }> {
-  if (series.length !== 1) return series;
-  const only = series[0];
-  const [yearStr, monthStr] = (only.period ?? "").split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  if (!Number.isFinite(year) || !Number.isFinite(month)) return series;
-  const shift = (delta: number) => {
-    const date = new Date(Date.UTC(year, month - 1 + delta, 1));
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-    return `${y}-${m}`;
-  };
-  return [
-    { period: shift(-1), net: 0 },
-    only,
-    { period: shift(1), net: 0 },
-  ];
 }

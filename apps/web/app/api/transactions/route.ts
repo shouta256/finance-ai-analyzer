@@ -386,6 +386,9 @@ export async function GET(request: NextRequest) {
     trendSeries = monthSeriesFallback;
     trendGranularity = trendGranularity && trendGranularity !== "DAY" ? trendGranularity : "MONTH";
   }
+  if (trendGranularity === "MONTH" && trendSeries.length === 1) {
+    trendSeries = padMonthSeries(trendSeries);
+  }
   aggregates = {
     ...aggregates,
     trendSeries,
@@ -404,4 +407,24 @@ export async function GET(request: NextRequest) {
     aggregates,
   };
   return NextResponse.json(responseBody);
+}
+
+function padMonthSeries(series: Array<{ period: string; net: number }>): Array<{ period: string; net: number }> {
+  if (series.length !== 1) return series;
+  const only = series[0];
+  const [yearStr, monthStr] = (only.period ?? "").split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return series;
+  const shift = (delta: number) => {
+    const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  };
+  return [
+    { period: shift(-1), net: 0 },
+    only,
+    { period: shift(1), net: 0 },
+  ];
 }

@@ -368,26 +368,23 @@ export async function GET(request: NextRequest) {
     }));
     trendGranularity = "DAY";
   }
-  if (!includeDailyNet) {
-    const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
-      ? aggregates.monthSeries.map((entry) => ({
-        period: entry.period,
-        net: toCurrencyValue(entry.net),
-      }))
-      : Object.entries(aggregates.monthNet ?? {})
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([period, net]) => ({
-            period,
-            net: toCurrencyValue(net),
-          }));
-    const shouldUseMonthFallback =
-      (!trendSeries || trendSeries.length === 0) ||
-      (trendGranularity === "DAY") ||
-      (trendGranularity === "WEEK" && trendSeries.length <= 3);
-    if (shouldUseMonthFallback && monthSeriesFallback.length > 0) {
-      trendSeries = monthSeriesFallback;
-      trendGranularity = "MONTH";
-    }
+  const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
+    ? aggregates.monthSeries.map((entry) => ({
+      period: entry.period,
+      net: toCurrencyValue(entry.net),
+    }))
+    : Object.entries(aggregates.monthNet ?? {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([period, net]) => ({
+          period,
+          net: toCurrencyValue(net),
+        }));
+  const shouldUseMonthFallback =
+    (!trendSeries || trendSeries.length === 0) ||
+    (trendGranularity === "WEEK" && trendSeries.length <= 3);
+  if (shouldUseMonthFallback && monthSeriesFallback.length > 0) {
+    trendSeries = monthSeriesFallback;
+    trendGranularity = trendGranularity && trendGranularity !== "DAY" ? trendGranularity : "MONTH";
   }
   aggregates = {
     ...aggregates,

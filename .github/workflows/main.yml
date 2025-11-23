@@ -167,8 +167,9 @@ jobs:
           
           if [ -n "${DB_HOST:-}" ] && [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
             echo "Updating Lambda database configuration..."
-            # URL-encode the password to handle special characters (using single quotes to prevent variable expansion)
-            ENCODED_PASSWORD=$(echo -n "${DB_PASSWORD}" | jq -sRr @uri)
+            # URL-encode the password to handle special characters
+            # Use printf instead of echo to avoid trailing newlines
+            ENCODED_PASSWORD=$(printf '%s' "${DB_PASSWORD}" | jq -sRr @uri)
             DATABASE_URL="postgresql://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
             
             UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \

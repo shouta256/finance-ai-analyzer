@@ -301,19 +301,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }), []);
 
   const trendChartData = useMemo<ChartData<"line"> | null>(() => {
-    const series =
-      rangeMode === "month" ? state.summary.netTrend : state.transactions.aggregates?.trendSeries;
+    const series = state.transactions.aggregates?.trendSeries;
     const granularity =
-      (rangeMode === "month" ? state.summary.trendGranularity : state.transactions.aggregates?.trendGranularity) ??
-      (rangeMode === "month" ? "DAY" : "MONTH");
+      state.transactions.aggregates?.trendGranularity ?? (rangeMode === "month" ? "DAY" : "MONTH");
     if (series && series.length > 0) {
-      const data = series.map((entry) => {
+      const data = series.map((entry: { net: number; period: string }) => {
         const value = typeof entry.net === "number" ? entry.net : Number(entry.net);
         return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
       });
       const singlePoint = data.length === 1;
       return {
-        labels: series.map((entry) => formatTrendLabel(entry.period, granularity)),
+        labels: series.map((entry: { net: number; period: string }) => formatTrendLabel(entry.period, granularity)),
         datasets: [
           {
             label: "Net",

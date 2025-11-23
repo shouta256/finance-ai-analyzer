@@ -156,7 +156,9 @@ jobs:
             --function-name "$FUNCTION_NAME" \
             --query 'Environment.Variables' \
             --output json)
-          DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT || '5432' }}/${{ secrets.DB_NAME }}?sslmode=${{ secrets.DB_SSLMODE || 'require' }}"
+          # URL-encode the password to handle special characters
+          ENCODED_PASSWORD=$(printf '%s' "${{ secrets.DB_PASSWORD }}" | jq -sRr @uri)
+          DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${ENCODED_PASSWORD}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT || '5432' }}/${{ secrets.DB_NAME }}?sslmode=${{ secrets.DB_SSLMODE || 'require' }}"
           UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \
             --arg node_path "$NODE_PATH_VALUE" \
             --arg config_bump "$CONFIG_BUMP" \

@@ -424,9 +424,8 @@ export async function GET(request: NextRequest) {
           net: toCurrencyValue(net),
         }));
   const shouldUseMonthFallback =
-    targetTrendGranularity !== "DAY" &&
-    ((!trendSeries || trendSeries.length === 0) ||
-      (trendGranularity === "WEEK" && trendSeries.length <= 3));
+    (!trendSeries || trendSeries.length === 0) ||
+    (trendGranularity === "WEEK" && trendSeries.length <= 3);
   if (shouldUseMonthFallback && monthSeriesFallback.length > 0) {
     trendSeries = monthSeriesFallback;
     trendGranularity = trendGranularity && trendGranularity !== "DAY" ? trendGranularity : "MONTH";

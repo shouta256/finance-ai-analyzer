@@ -74,7 +74,7 @@ describe("DashboardClient", () => {
         netTotal: 4011.35,
         monthNet: { "2024-03": 4011.35 },
         trendSeries: [{ period: "2024-03", net: 4011.35 }],
-        trendGranularity: "MONTH",
+        trendGranularity: "MONTH" as const,
         categoryTotals: { Groceries: -120.45 },
       },
       traceId: "trace",

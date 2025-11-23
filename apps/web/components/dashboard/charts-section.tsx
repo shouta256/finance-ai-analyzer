@@ -72,32 +72,6 @@ export function ChartsSection({ categoryData, categoryOptions, trendData, trendO
     } satisfies ChartOptions<"doughnut">;
   }, [categoryOptions, categoryData, spendingScore, scoreLabel]);
 
-  const createNetGradient = (chart: Chart, opacity: number) => {
-    const { ctx, chartArea } = chart;
-    if (!chartArea) {
-      return `rgba(37,99,235,${opacity})`;
-    }
-    const gradient = ctx.createLinearGradient(chartArea.left, chartArea.bottom, chartArea.right, chartArea.top);
-    gradient.addColorStop(0, `rgba(59,130,246,${opacity})`);
-    gradient.addColorStop(0.5, `rgba(168,85,247,${opacity})`);
-    gradient.addColorStop(1, `rgba(236,72,153,${opacity})`);
-    return gradient;
-  };
-
-  const netChartData = useMemo(() => {
-    if (!trendData) return null;
-    return {
-      ...trendData,
-      datasets: trendData.datasets.map((dataset) => ({
-        ...dataset,
-        borderColor: (ctx: { chart: Chart }) => createNetGradient(ctx.chart, 0.95),
-        backgroundColor: (ctx: { chart: Chart }) => createNetGradient(ctx.chart, 0.18),
-        pointBackgroundColor: "#2563eb",
-        pointBorderColor: "transparent",
-      })),
-    };
-  }, [trendData]);
-
   const chartContainerClass = "mt-4 h-56 w-full overflow-hidden rounded-2xl bg-white/0";
   const chartStyle = { width: "100%", height: "100%" } as const;
 
@@ -118,8 +92,8 @@ export function ChartsSection({ categoryData, categoryOptions, trendData, trendO
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Net trend</h2>
         <p className="text-sm text-slate-500">Monthly net movement based on the selected period.</p>
         <div className={chartContainerClass}>
-          {netChartData ? (
-            <Line data={netChartData} options={trendOptions} style={chartStyle} />
+          {trendData ? (
+            <Line data={trendData} options={trendOptions} style={chartStyle} />
           ) : (
             <p className="text-sm text-slate-500">Add more transactions or expand the range to see a trend.</p>
           )}

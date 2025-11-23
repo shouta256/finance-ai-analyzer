@@ -156,31 +156,54 @@ jobs:
             --function-name "$FUNCTION_NAME" \
             --query 'Environment.Variables' \
             --output json)
-          # URL-encode the password to handle special characters
-          ENCODED_PASSWORD=$(printf '%s' "${{ secrets.DB_PASSWORD }}" | jq -sRr @uri)
-          DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${ENCODED_PASSWORD}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT || '5432' }}/${{ secrets.DB_NAME }}?sslmode=${{ secrets.DB_SSLMODE || 'require' }}"
-          UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \
-            --arg node_path "$NODE_PATH_VALUE" \
-            --arg config_bump "$CONFIG_BUMP" \
-            --arg database_url "$DATABASE_URL" \
-            --arg db_host "${{ secrets.DB_HOST }}" \
-            --arg db_port "${{ secrets.DB_PORT || '5432' }}" \
-            --arg db_name "${{ secrets.DB_NAME }}" \
-            --arg db_user "${{ secrets.DB_USER }}" \
-            --arg db_password "${{ secrets.DB_PASSWORD }}" \
-            --arg db_sslmode "${{ secrets.DB_SSLMODE || 'require' }}" \
-            '
-            (. // {}) |
-            .NODE_PATH = $node_path |
-            .CONFIG_BUMP = $config_bump |
-            .DATABASE_URL = $database_url |
-            .DB_HOST = $db_host |
-            .DB_PORT = $db_port |
-            .DB_NAME = $db_name |
-            .DB_USER = $db_user |
-            .DB_PASSWORD = $db_password |
-            .DB_SSLMODE = $db_sslmode
-          ')
+          
+          # Only update database config if secrets are provided
+          DB_HOST="${{ secrets.DB_HOST }}"
+          DB_USER="${{ secrets.DB_USER }}"
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+          DB_NAME="${{ secrets.DB_NAME }}"
+          DB_PORT="${{ secrets.DB_PORT || '5432' }}"
+          DB_SSLMODE="${{ secrets.DB_SSLMODE || 'require' }}"
+          
+          if [ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASSWORD" ] && [ -n "$DB_NAME" ]; then
+            # URL-encode the password to handle special characters
+            ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+            DATABASE_URL="postgresql://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+            
+            UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \
+              --arg node_path "$NODE_PATH_VALUE" \
+              --arg config_bump "$CONFIG_BUMP" \
+              --arg database_url "$DATABASE_URL" \
+              --arg db_host "$DB_HOST" \
+              --arg db_port "$DB_PORT" \
+              --arg db_name "$DB_NAME" \
+              --arg db_user "$DB_USER" \
+              --arg db_password "$DB_PASSWORD" \
+              --arg db_sslmode "$DB_SSLMODE" \
+              '
+              (. // {}) |
+              .NODE_PATH = $node_path |
+              .CONFIG_BUMP = $config_bump |
+              .DATABASE_URL = $database_url |
+              .DB_HOST = $db_host |
+              .DB_PORT = $db_port |
+              .DB_NAME = $db_name |
+              .DB_USER = $db_user |
+              .DB_PASSWORD = $db_password |
+              .DB_SSLMODE = $db_sslmode
+            ')
+          else
+            echo "Database secrets not configured, preserving existing database environment variables"
+            UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \
+              --arg node_path "$NODE_PATH_VALUE" \
+              --arg config_bump "$CONFIG_BUMP" \
+              '
+              (. // {}) |
+              .NODE_PATH = $node_path |
+              .CONFIG_BUMP = $config_bump
+            ')
+          fi
+          
           ENV_PAYLOAD=$(jq -n --argjson vars "$UPDATED_ENV" '{Variables: $vars}')
           aws lambda update-function-configuration \
             --function-name "$FUNCTION_NAME" \

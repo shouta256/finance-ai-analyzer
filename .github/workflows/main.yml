@@ -156,10 +156,25 @@ jobs:
             --function-name "$FUNCTION_NAME" \
             --query 'Environment.Variables' \
             --output json)
-          UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c --arg node_path "$NODE_PATH_VALUE" --arg config_bump "$CONFIG_BUMP" '
+          UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \
+            --arg node_path "$NODE_PATH_VALUE" \
+            --arg config_bump "$CONFIG_BUMP" \
+            --arg db_host "${{ secrets.DB_HOST }}" \
+            --arg db_port "${{ secrets.DB_PORT || '5432' }}" \
+            --arg db_name "${{ secrets.DB_NAME }}" \
+            --arg db_user "${{ secrets.DB_USER }}" \
+            --arg db_password "${{ secrets.DB_PASSWORD }}" \
+            --arg db_sslmode "${{ secrets.DB_SSLMODE || 'require' }}" \
+            '
             (. // {}) |
             .NODE_PATH = $node_path |
-            .CONFIG_BUMP = $config_bump
+            .CONFIG_BUMP = $config_bump |
+            .DB_HOST = $db_host |
+            .DB_PORT = $db_port |
+            .DB_NAME = $db_name |
+            .DB_USER = $db_user |
+            .DB_PASSWORD = $db_password |
+            .DB_SSLMODE = $db_sslmode
           ')
           ENV_PAYLOAD=$(jq -n --argjson vars "$UPDATED_ENV" '{Variables: $vars}')
           aws lambda update-function-configuration \

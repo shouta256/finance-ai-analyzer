@@ -1,6 +1,6 @@
 # Architecture
 
-Safepocket follows a thin-frontend/BFF topology. Next.js exposes the only public surface, while the Spring Boot ledger service, databases, and supporting infrastructure live in a private VPC. Native and partner integrations interact with the same contract via the BFF or an AWS Lambda facade.
+Safepocket follows a thin-frontend/BFF topology. Next.js exposes the only public surface, while the Spring Boot ledger service and supporting infrastructure live in a private VPC. PostgreSQL now runs on Neon (managed over TLS), and native/partner integrations interact with the same contract via the BFF or an AWS Lambda facade.
 
 ## Logical View
 
@@ -8,7 +8,7 @@ Safepocket follows a thin-frontend/BFF topology. Next.js exposes the only public
   → CloudFront / Application Load Balancer  
   → Next.js App Router (BFF + UI) and edge Lambda  
   → Spring Boot `ledger-svc` (private ECS service)  
-  → Postgres (RDS) with pgvector + Redis (ElastiCache) + Secrets Manager / KMS  
+  → Postgres (Neon) with pgvector + Redis (ElastiCache) + Secrets Manager / KMS  
   ↔ Plaid Sandbox (webhooks terminate at `/webhook/plaid`)  
   ↔ OpenAI Responses API / Google Gemini for AI highlights and chat
 
@@ -50,7 +50,7 @@ The BFF handles Cognito flows, cookie/session management, and request shaping be
 
 - **ECS Fargate**: `next-web` (Next.js) and `ledger-svc` (Spring Boot) behind a shared ALB.
 - **Lambda**: `hello-http` function acts as an API facade for mobile clients and administrative tasks.
-- **RDS (PostgreSQL)**: primary data store, pgvector extension enabled for semantic search.
+- **Neon (PostgreSQL)**: primary data store (serverless Postgres) with pgvector enabled for semantic search.
 - **ElastiCache (Redis)**: caching and lightweight coordination (pending rate-limiter support).
 - **Secrets Manager / Parameter Store**: Plaid and Cognito bundles referenced by ECS/Lambda; `SAFEPOCKET_KMS_DATA_KEY` seeded here.
 - **CI/CD**: GitHub Actions runs lint/test/build for web + backend, packages Lambda, publishes Docker layers, and deploys via OIDC.

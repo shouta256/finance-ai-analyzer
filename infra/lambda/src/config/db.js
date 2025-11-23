@@ -57,21 +57,30 @@ function readCertificate(paths) {
   return null;
 }
 
-function resolveSsl(parsedUrl) {
+function resolveSsl(parsedUrl, host) {
   const sslFlag = parseBool(process.env.SAFEPOCKET_DB_SSL, undefined);
   const explicitMode = (process.env.SAFEPOCKET_DB_SSL_MODE ||
     process.env.PGSSLMODE ||
     (parsedUrl ? parsedUrl.sslMode : null) ||
     "").trim().toLowerCase();
 
-  if (sslFlag === false) return false;
-  if (["disable", "allow", "prefer", "off"].includes(explicitMode)) return false;
+  const normalizedHost = (host || (parsedUrl ? parsedUrl.host : "") || "").toLowerCase();
+  const isLocalHost = ["localhost", "127.0.0.1", "::1", "postgres"].includes(normalizedHost);
+  const shouldUseSsl =
+    sslFlag !== undefined
+      ? sslFlag
+      : explicitMode
+        ? !["disable", "allow", "prefer", "off"].includes(explicitMode)
+        : !isLocalHost;
+
+  if (!shouldUseSsl) return false;
 
   const rejectUnauthorized = parseBool(process.env.SAFEPOCKET_DB_SSL_REJECT_UNAUTHORIZED, true);
   const inlineCa =
     process.env.SAFEPOCKET_DB_CA_CERT ||
     process.env.PGSSLROOTCERT ||
     process.env.SAFEPOCKET_DB_SSL_CA;
+  const useRdsCa = normalizedHost.includes(".rds.amazonaws.com");
 
   const ca = inlineCa && inlineCa.trim()
     ? inlineCa.includes("-----BEGIN")
@@ -79,7 +88,7 @@ function resolveSsl(parsedUrl) {
       : Buffer.from(inlineCa, "base64").toString("utf8")
     : readCertificate([
         process.env.SAFEPOCKET_DB_CA_PATH,
-        path.join(__dirname, "../../certs/rds-combined-ca-bundle.pem"),
+        useRdsCa ? path.join(__dirname, "../../certs/rds-combined-ca-bundle.pem") : null,
       ]);
 
   const ssl = { rejectUnauthorized };
@@ -175,7 +184,7 @@ function loadDbConfig() {
     config.connectionString = databaseUrl;
   }
 
-  const ssl = resolveSsl(parsed);
+  const ssl = resolveSsl(parsed, host);
   if (ssl === false) {
     config.ssl = false;
   } else if (ssl) {

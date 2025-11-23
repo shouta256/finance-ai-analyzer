@@ -2,7 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import type { ChartData, ChartOptions } from "chart.js";
+import type { Chart, ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
 import {
@@ -70,6 +70,18 @@ const setTransactionsCache = (key: string, data: TransactionsList) => {
 const invalidateCaches = () => {
   SUMMARY_CACHE.clear();
   TRANSACTIONS_CACHE.clear();
+};
+
+const createNetGradient = (chart: Chart, opacity: number) => {
+  const { ctx, chartArea } = chart;
+  if (!chartArea) {
+    return `rgba(37,99,235,${opacity})`;
+  }
+  const gradient = ctx.createLinearGradient(chartArea.left, chartArea.bottom, chartArea.right, chartArea.top);
+  gradient.addColorStop(0, `rgba(59,130,246,${opacity})`);
+  gradient.addColorStop(0.5, `rgba(168,85,247,${opacity})`);
+  gradient.addColorStop(1, `rgba(236,72,153,${opacity})`);
+  return gradient;
 };
 
 export function DashboardClient({ month, initialSummary, initialTransactions }: DashboardClientProps) {
@@ -289,8 +301,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }), []);
 
   const trendChartData = useMemo<ChartData<"line"> | null>(() => {
-    const series = state.transactions.aggregates?.trendSeries;
-    const granularity = state.transactions.aggregates?.trendGranularity ?? (rangeMode === "month" ? "DAY" : "MONTH");
+    const series =
+      rangeMode === "month" ? state.summary.netTrend : state.transactions.aggregates?.trendSeries;
+    const granularity =
+      (rangeMode === "month" ? state.summary.trendGranularity : state.transactions.aggregates?.trendGranularity) ??
+      (rangeMode === "month" ? "DAY" : "MONTH");
     if (series && series.length > 0) {
       const data = series.map((entry) => {
         const value = typeof entry.net === "number" ? entry.net : Number(entry.net);
@@ -303,26 +318,21 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           {
             label: "Net",
             data,
-            borderColor: "#2563eb",
             borderWidth: 7,
             tension: granularity === "DAY" ? 0.3 : granularity === "WEEK" ? 0.35 : 0.4,
             pointRadius: singlePoint ? 4 : 0,
             pointHoverRadius: 6,
             fill: true,
-            backgroundColor: (context: any) => {
-              const ctx = context.chart.ctx;
-              if (!ctx) return null;
-              const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
-              gradient.addColorStop(0, granularity === "DAY" ? "rgba(37, 99, 235, 0.1)" : "rgba(37, 99, 235, 0.2)");
-              gradient.addColorStop(1, "rgba(37, 99, 235, 0)");
-              return gradient;
-            },
+            borderColor: (ctx: { chart: Chart }) => createNetGradient(ctx.chart, 0.95),
+            backgroundColor: (ctx: { chart: Chart }) => createNetGradient(ctx.chart, 0.18),
+            pointBackgroundColor: "#2563eb",
+            pointBorderColor: "transparent",
           },
         ],
       };
     }
     return null;
-  }, [state.transactions.aggregates, rangeMode]);
+  }, [state.summary, state.transactions.aggregates, rangeMode]);
 
   const trendChartOptions = useMemo<ChartOptions<"line">>(() => ({
     responsive: true,

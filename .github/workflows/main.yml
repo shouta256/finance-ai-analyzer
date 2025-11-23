@@ -148,7 +148,7 @@ jobs:
 
       - name: Refresh Lambda environment (CONFIG_BUMP)
         run: |
-          set -euo pipefail
+          set -eo pipefail
           FUNCTION_NAME=${{ secrets.LAMBDA_FUNCTION_NAME || 'hello-http' }}
           CONFIG_BUMP=$(date +%s)
           NODE_PATH_VALUE="/opt/nodejs/node_modules:/opt/nodejs/node20/node_modules"
@@ -165,9 +165,10 @@ jobs:
           DB_PORT="${{ secrets.DB_PORT || '5432' }}"
           DB_SSLMODE="${{ secrets.DB_SSLMODE || 'require' }}"
           
-          if [ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASSWORD" ] && [ -n "$DB_NAME" ]; then
+          if [ -n "${DB_HOST:-}" ] && [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
+            echo "Updating Lambda database configuration..."
             # URL-encode the password to handle special characters
-            ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+            ENCODED_PASSWORD=$(echo -n "$DB_PASSWORD" | jq -sRr @uri)
             DATABASE_URL="postgresql://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
             
             UPDATED_ENV=$(echo "$EXISTING_ENV" | jq -c \

@@ -132,13 +132,27 @@ const startOfUtcWeek = (date: Date): Date => {
 const formatUtcDate = (date: Date): string =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 
-const determineTrendGranularity = (includeDailyNet: boolean, minDate: Date | null, maxDate: Date | null): TrendGranularity => {
+const determineTrendGranularity = (
+  includeDailyNet: boolean,
+  minDate: Date | null,
+  maxDate: Date | null,
+  transactionCount: number,
+): TrendGranularity => {
   if (includeDailyNet) return "DAY";
   if (!minDate || !maxDate) return "MONTH";
   const spanMs = startOfUtcDay(maxDate).getTime() - startOfUtcDay(minDate).getTime();
   const spanDays = Math.max(1, Math.round(spanMs / (24 * 60 * 60 * 1000)) + 1);
+  
+  // If the span is within one month (<=31 days), always use DAY granularity for meaningful visualization
+  if (spanDays <= 31) return "DAY";
+  
+  // For 1-4 months of data, use WEEK to get more data points
   if (spanDays <= 120) return "WEEK";
+  
+  // For 4 months to 2 years, use MONTH
   if (spanDays <= 730) return "MONTH";
+  
+  // For longer periods, use QUARTER
   return "QUARTER";
 };
 
@@ -167,7 +181,7 @@ const buildTrendSeries = (
   }
 
   points.sort((a, b) => a.date.getTime() - b.date.getTime());
-  const granularity = determineTrendGranularity(includeDailyNet, points[0]?.date ?? null, points.at(-1)?.date ?? null);
+  const granularity = determineTrendGranularity(includeDailyNet, points[0]?.date ?? null, points.at(-1)?.date ?? null, points.length);
   const buckets = new Map<string, number>();
 
   for (const point of points) {

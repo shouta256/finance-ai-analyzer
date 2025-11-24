@@ -419,12 +419,22 @@ export async function GET(request: NextRequest) {
   }
   let trendSeries = Array.isArray(aggregates.trendSeries) ? aggregates.trendSeries : [];
   let trendGranularity = aggregates.trendGranularity;
+  
+  // If backend didn't provide trendSeries but we have daySeries (for monthly view), use it
   if ((!trendSeries || trendSeries.length === 0) && includeDailyNet && Array.isArray(aggregates.daySeries) && aggregates.daySeries.length > 0) {
     trendSeries = aggregates.daySeries.map((entry) => ({
       period: entry.period,
       net: toCurrencyValue(entry.net),
     }));
     trendGranularity = "DAY";
+  }
+  
+  // If still no data and backend provided trendSeries with proper granularity, trust it
+  if (trendSeries.length > 0 && trendGranularity && trendGranularity !== "MONTH") {
+    // Use backend's trendSeries as-is when granularity is DAY/WEEK/QUARTER
+    // Skip the fallback logic below
+  } else if (trendSeries.length === 0 || !trendGranularity) {
+    // No trend data from backend, need to fallback
   }
   const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
     ? aggregates.monthSeries.map((entry) => ({
@@ -437,15 +447,19 @@ export async function GET(request: NextRequest) {
           period,
           net: toCurrencyValue(net),
         }));
+  // Only use month fallback if we truly have no trend data
+  // Don't override if backend already provided valid trend data with proper granularity
   const shouldUseMonthFallback =
-    (!trendSeries || trendSeries.length === 0) ||
-    (trendGranularity === "WEEK" && trendSeries.length <= 3);
-  if (shouldUseMonthFallback && monthSeriesFallback.length > 0) {
+    (!trendSeries || trendSeries.length === 0) &&
+    monthSeriesFallback.length > 0;
+  if (shouldUseMonthFallback) {
     trendSeries = monthSeriesFallback;
-    trendGranularity = trendGranularity && trendGranularity !== "DAY" ? trendGranularity : "MONTH";
+    trendGranularity = "MONTH";
   }
   trendGranularity = trendGranularity ?? targetTrendGranularity;
-  if (!includeDailyNet && trendSeries.length === 1) {
+  // Only pad if the range is reasonable (less than 1 year) and we have exactly 1 point in MONTH granularity
+  const spanDays = Math.round((dateRange.to.getTime() - dateRange.from.getTime()) / MS_PER_DAY);
+  if (!includeDailyNet && trendSeries.length === 1 && trendGranularity === "MONTH" && spanDays <= 365) {
     const padded = padSinglePointSeries(trendSeries[0], dateRange);
     if (padded) {
       trendSeries = padded;

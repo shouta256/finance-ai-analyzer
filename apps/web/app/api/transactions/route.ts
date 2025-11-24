@@ -431,6 +431,13 @@ export async function GET(request: NextRequest) {
     trendGranularity = trendGranularity && trendGranularity !== "DAY" ? trendGranularity : "MONTH";
   }
   trendGranularity = trendGranularity ?? targetTrendGranularity;
+  if (trendSeries.length === 1) {
+    const padded = padSinglePointSeries(trendSeries[0], dateRange);
+    if (padded) {
+      trendSeries = padded;
+      trendGranularity = "DAY";
+    }
+  }
   aggregates = {
     ...aggregates,
     trendSeries,
@@ -449,4 +456,37 @@ export async function GET(request: NextRequest) {
     aggregates,
   };
   return NextResponse.json(responseBody);
+}
+
+function padSinglePointSeries(
+  point: { period: string; net: number },
+  range: { from: Date; to: Date },
+): Array<{ period: string; net: number }> | null {
+  const start = startOfUtcDay(range.from);
+  const end = startOfUtcDay(new Date(range.to.getTime() - MS_PER_DAY));
+  const midDate = parsePeriodToDate(point.period) ?? start;
+  if (end.getTime() < start.getTime()) {
+    return null;
+  }
+  const periods = [
+    { period: formatUtcDate(start), net: 0 },
+    { period: formatUtcDate(midDate), net: toCurrencyValue(point.net) },
+    { period: formatUtcDate(end), net: 0 },
+  ];
+  return periods
+    .sort((a, b) => a.period.localeCompare(b.period))
+    .filter((entry, idx, arr) => idx === 0 || entry.period !== arr[idx - 1].period);
+}
+
+function parsePeriodToDate(period: string): Date | null {
+  if (!period) return null;
+  // Try full date
+  const fullDate = new Date(`${period}T00:00:00Z`);
+  if (!Number.isNaN(fullDate.getTime())) return startOfUtcDay(fullDate);
+  // Try year-month
+  const [y, m] = period.split("-").map((v) => parseInt(v, 10));
+  if (Number.isFinite(y) && Number.isFinite(m)) {
+    return new Date(Date.UTC(y, m - 1, 1));
+  }
+  return null;
 }

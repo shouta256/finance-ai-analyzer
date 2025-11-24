@@ -143,10 +143,11 @@ const determineTrendGranularity = (
   const spanMs = startOfUtcDay(maxDate).getTime() - startOfUtcDay(minDate).getTime();
   const spanDays = Math.max(1, Math.round(spanMs / (24 * 60 * 60 * 1000)) + 1);
   
-  // If the span is within one month (<=31 days), always use DAY granularity for meaningful visualization
+  // If the actual data span is within one month (<=31 days), use DAY granularity 
+  // for meaningful visualization even if the query range is larger
   if (spanDays <= 31) return "DAY";
   
-  // For 1-4 months of data, use WEEK to get more data points
+  // For 1-4 months of actual data, use WEEK to get more data points
   if (spanDays <= 120) return "WEEK";
   
   // For 4 months to 2 years, use MONTH
@@ -418,17 +419,18 @@ export async function GET(request: NextRequest) {
     aggregates = normalizeExistingAggregates(existing, includeDailyNet, fallbackTotal);
   }
   
-  // When viewing a single month (includeDailyNet = true), always rebuild trend from transactions
-  // to ensure daily granularity with proper data points
+  // Always rebuild trend series from transactions to ensure proper granularity
+  // based on actual data distribution and date range
   let trendSeries = Array.isArray(aggregates.trendSeries) ? aggregates.trendSeries : [];
   let trendGranularity = aggregates.trendGranularity;
   
-  if (includeDailyNet && transactions.length > 0) {
+  if (transactions.length > 0) {
+    // Build trend series with appropriate granularity based on date range and data distribution
     const timeline = buildTrendSeries(transactions, includeDailyNet);
     trendSeries = timeline.series;
     trendGranularity = timeline.granularity;
   } else if (trendSeries.length === 0 || !trendGranularity) {
-    // For non-monthly views, if backend didn't provide trend data, use monthSeries as fallback
+    // Only use monthSeries fallback when there are no transactions at all
     const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
       ? aggregates.monthSeries.map((entry) => ({
         period: entry.period,

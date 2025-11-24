@@ -468,9 +468,14 @@ function padSinglePointSeries(
   if (end.getTime() < start.getTime()) {
     return null;
   }
+  const clampedMid = clampDateToRange(midDate, start, end);
+  const mid =
+    clampedMid.getTime() === start.getTime()
+      ? new Date(Math.min(end.getTime(), start.getTime() + Math.max(MS_PER_DAY, Math.floor((end.getTime() - start.getTime()) / 2))))
+      : clampedMid;
   const periods = [
     { period: formatUtcDate(start), net: 0 },
-    { period: formatUtcDate(midDate), net: toCurrencyValue(point.net) },
+    { period: formatUtcDate(mid), net: toCurrencyValue(point.net) },
     { period: formatUtcDate(end), net: 0 },
   ];
   return periods
@@ -486,7 +491,13 @@ function parsePeriodToDate(period: string): Date | null {
   // Try year-month
   const [y, m] = period.split("-").map((v) => parseInt(v, 10));
   if (Number.isFinite(y) && Number.isFinite(m)) {
-    return new Date(Date.UTC(y, m - 1, 1));
+    return new Date(Date.UTC(y, m - 1, 15));
   }
   return null;
+}
+
+function clampDateToRange(date: Date, start: Date, end: Date): Date {
+  if (date.getTime() < start.getTime()) return start;
+  if (date.getTime() > end.getTime()) return end;
+  return date;
 }

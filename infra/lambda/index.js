@@ -1309,6 +1309,7 @@ function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
     topMerchants: merchants,
     anomalies: [],
     aiHighlight: fallbackHighlight,
+    latestHighlight: null,
     safeToSpend: {
       cycleStart: toIsoDate(cycleStart),
       cycleEnd: toIsoDate(cycleEnd),
@@ -1888,6 +1889,11 @@ async function handleAnalyticsSummary(event, query) {
       const aiHighlight = await generateAiHighlightForSummary(summary, transactions, traceId);
       if (aiHighlight) {
         summary.aiHighlight = aiHighlight;
+        // Also set latestHighlight so the frontend can display it properly
+        summary.latestHighlight = {
+          month: monthLabel || summary.month,
+          highlight: aiHighlight,
+        };
       }
     }
     return respond(event, 200, summary);

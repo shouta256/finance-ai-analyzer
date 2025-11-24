@@ -250,9 +250,16 @@ public class TransactionsController {
             return TrendGranularity.MONTH;
         }
         long days = ChronoUnit.DAYS.between(minDate, maxDate) + 1;
+        
+        // For single month or periods <=31 days, use DAY granularity for meaningful visualization
+        if (days <= 31) {
+            return TrendGranularity.DAY;
+        }
+        // For 1-4 months, use WEEK
         if (days <= 120) {
             return TrendGranularity.WEEK;
         }
+        // For 4 months to 2 years, use MONTH
         if (days <= 730) {
             return TrendGranularity.MONTH;
         }

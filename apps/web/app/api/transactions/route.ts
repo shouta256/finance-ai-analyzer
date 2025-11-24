@@ -417,44 +417,34 @@ export async function GET(request: NextRequest) {
     const existing = body.aggregates as Record<string, unknown>;
     aggregates = normalizeExistingAggregates(existing, includeDailyNet, fallbackTotal);
   }
+  
+  // When viewing a single month (includeDailyNet = true), always rebuild trend from transactions
+  // to ensure daily granularity with proper data points
   let trendSeries = Array.isArray(aggregates.trendSeries) ? aggregates.trendSeries : [];
   let trendGranularity = aggregates.trendGranularity;
   
-  // If backend didn't provide trendSeries but we have daySeries (for monthly view), use it
-  if ((!trendSeries || trendSeries.length === 0) && includeDailyNet && Array.isArray(aggregates.daySeries) && aggregates.daySeries.length > 0) {
-    trendSeries = aggregates.daySeries.map((entry) => ({
-      period: entry.period,
-      net: toCurrencyValue(entry.net),
-    }));
-    trendGranularity = "DAY";
-  }
-  
-  // If still no data and backend provided trendSeries with proper granularity, trust it
-  if (trendSeries.length > 0 && trendGranularity && trendGranularity !== "MONTH") {
-    // Use backend's trendSeries as-is when granularity is DAY/WEEK/QUARTER
-    // Skip the fallback logic below
+  if (includeDailyNet && transactions.length > 0) {
+    const timeline = buildTrendSeries(transactions, includeDailyNet);
+    trendSeries = timeline.series;
+    trendGranularity = timeline.granularity;
   } else if (trendSeries.length === 0 || !trendGranularity) {
-    // No trend data from backend, need to fallback
-  }
-  const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
-    ? aggregates.monthSeries.map((entry) => ({
-      period: entry.period,
-      net: toCurrencyValue(entry.net),
-    }))
-    : Object.entries(aggregates.monthNet ?? {})
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([period, net]) => ({
-          period,
-          net: toCurrencyValue(net),
-        }));
-  // Only use month fallback if we truly have no trend data
-  // Don't override if backend already provided valid trend data with proper granularity
-  const shouldUseMonthFallback =
-    (!trendSeries || trendSeries.length === 0) &&
-    monthSeriesFallback.length > 0;
-  if (shouldUseMonthFallback) {
-    trendSeries = monthSeriesFallback;
-    trendGranularity = "MONTH";
+    // For non-monthly views, if backend didn't provide trend data, use monthSeries as fallback
+    const monthSeriesFallback = Array.isArray(aggregates.monthSeries)
+      ? aggregates.monthSeries.map((entry) => ({
+        period: entry.period,
+        net: toCurrencyValue(entry.net),
+      }))
+      : Object.entries(aggregates.monthNet ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([period, net]) => ({
+            period,
+            net: toCurrencyValue(net),
+          }));
+    
+    if (monthSeriesFallback.length > 0) {
+      trendSeries = monthSeriesFallback;
+      trendGranularity = "MONTH";
+    }
   }
   trendGranularity = trendGranularity ?? targetTrendGranularity;
   // Only pad if the range is reasonable (less than 1 year) and we have exactly 1 point in MONTH granularity

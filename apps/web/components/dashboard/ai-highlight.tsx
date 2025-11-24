@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/src/lib/date";
 import type { AnalyticsSummary } from "@/src/lib/dashboard-data";
 
@@ -30,8 +31,17 @@ export function AiHighlightCard(props: AiHighlightCardProps) {
   const hasHighlight = highlightSnapshot != null && highlight != null;
   const highlightMonthLabel = highlightSnapshot ? formatMonthLabel(highlightSnapshot.month) : null;
   const isCurrent = highlightSnapshot ? highlightSnapshot.month === currentMonth : false;
+
+  const sentimentStyles = {
+    POSITIVE: "border-emerald-200/60 bg-emerald-50/40 shadow-emerald-100/50",
+    NEGATIVE: "border-rose-200/60 bg-rose-50/40 shadow-rose-100/50",
+    NEUTRAL: "border-slate-200/70 bg-white/80 shadow-sm",
+  };
+
+  const activeStyle = hasHighlight ? sentimentStyles[sentiment] : sentimentStyles.NEUTRAL;
+
   return (
-    <section className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
+    <section className={cn("rounded-3xl border p-6 transition-colors duration-500", activeStyle)}>
       <h2 className="text-lg font-semibold tracking-tight text-slate-900">AI Monthly Highlight</h2>
       {!hasHighlight ? (
         <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

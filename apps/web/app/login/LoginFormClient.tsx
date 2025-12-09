@@ -115,11 +115,11 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
   };
 
   useEffect(() => {
-    if (cognitoEnabled && showCognito && !suppressAutoLaunch) {
+    if (cognitoEnabled && showCognito && !suppressAutoLaunch && !showDevLogin) {
       handleCognito();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cognitoEnabled, showCognito, suppressAutoLaunch]);
+  }, [cognitoEnabled, showCognito, suppressAutoLaunch, showDevLogin]);
 
   const debugEnabled = authDebug || searchParams.get("authdebug") === "1";
 

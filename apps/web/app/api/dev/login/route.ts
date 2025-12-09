@@ -33,7 +33,7 @@ function shouldUseSecureCookie(req: NextRequest) {
 
 function devLoginEnabled(): boolean {
   if (process.env.NODE_ENV !== 'production') return true;
-  return process.env.SAFEPOCKET_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true';
+  return process.env.SAFEPOCKET_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
 }
 
 export async function GET(req: NextRequest) {
@@ -76,6 +76,8 @@ export async function GET(req: NextRequest) {
           maxAge: ttl,
         };
         response.cookies.set(PRIMARY_COOKIE, token, cookieInit);
+        // Set visible cookie for client-side demo detection
+        response.cookies.set('sp_demo_mode', '1', { ...cookieInit, httpOnly: false });
         return response;
       }
     }
@@ -118,5 +120,7 @@ export async function GET(req: NextRequest) {
     maxAge: ONE_HOUR_SECONDS,
   };
   response.cookies.set(PRIMARY_COOKIE, token, cookieInit);
+  // Set visible cookie for client-side demo detection
+  response.cookies.set('sp_demo_mode', '1', { ...cookieInit, httpOnly: false });
   return response;
 }

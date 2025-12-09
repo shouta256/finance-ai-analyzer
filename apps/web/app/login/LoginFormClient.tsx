@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { Route } from "next";
 import { useSearchParams } from "next/navigation";
 
@@ -69,10 +69,6 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
   const searchParams = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const suppressAutoLaunch =
-    searchParams?.get("authError") === "1" ||
-    searchParams?.get("authdebug") === "1" ||
-    searchParams?.get("noauto") === "1";
 
   const handleDevLogin = () => {
     startTransition(async () => {
@@ -113,13 +109,6 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
     const authorizeUrl = buildCognitoUrl(domain, "/oauth2/authorize") + `?${params.toString()}`;
     window.location.href = authorizeUrl;
   };
-
-  useEffect(() => {
-    if (cognitoEnabled && showCognito && !suppressAutoLaunch && !showDevLogin) {
-      handleCognito();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cognitoEnabled, showCognito, suppressAutoLaunch, showDevLogin]);
 
   const debugEnabled = authDebug || searchParams.get("authdebug") === "1";
 

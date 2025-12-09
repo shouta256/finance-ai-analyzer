@@ -104,6 +104,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [unlinkPlaid, setUnlinkPlaid] = useState<boolean>(false);
   const [actionsOpen, setActionsOpen] = useState<boolean>(false);
   const [periodOpen, setPeriodOpen] = useState<boolean>(false);
+  const [isDemo, setIsDemo] = useState<boolean>(false);
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -111,6 +112,16 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     return () => {
       window.removeEventListener("open-actions-modal", handleOpenModal);
     };
+  }, []);
+
+  useEffect(() => {
+    // Check for demo cookie
+    if (typeof document !== "undefined") {
+      const demo = document.cookie.split("; ").find((row) => row.startsWith("sp_demo_mode="));
+      if (demo && demo.split("=")[1] === "1") {
+        setIsDemo(true);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -618,6 +629,12 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   async function handleLink() {
+    if (isDemo) {
+      if (window.confirm("This feature is not available in Demo Mode. Would you like to log in with a real account?")) {
+        window.location.href = "/logout";
+      }
+      return;
+    }
     if (linking) return;
     setErrorState(null);
     setMessage(null);

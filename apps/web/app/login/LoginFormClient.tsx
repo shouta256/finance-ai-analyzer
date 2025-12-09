@@ -171,7 +171,7 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
               disabled={isPending}
               className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {isPending ? "Signing in..." : "Log in as demo user"}
+              {isPending ? "Signing in..." : "Try Demo Account"}
             </button>
             <p className="mt-4 text-xs text-slate-500">
               Note: in local development /api/dev/login returns 403 if the dev secret is missing.

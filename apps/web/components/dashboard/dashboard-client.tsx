@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Chart, ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -105,6 +105,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [actionsOpen, setActionsOpen] = useState<boolean>(false);
   const [periodOpen, setPeriodOpen] = useState<boolean>(false);
   const [isDemo, setIsDemo] = useState<boolean>(false);
+  const demoSeedAttemptedRef = useRef<boolean>(false);
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -517,47 +518,96 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     };
   }, []);
 
-  const isProductNotReadyError = (error: unknown) => {
+  const isProductNotReadyError = useCallback((error: unknown) => {
     const payloadError = (error as { payload?: { error?: { code?: string; message?: string } } })?.payload?.error;
     const code = payloadError?.code?.toUpperCase();
     const message = payloadError?.message?.toLowerCase();
     if (code === "PRODUCT_NOT_READY") return true;
     if (code === "TRANSACTIONS_SYNC_FAILED" && message?.includes("not yet ready")) return true;
     return false;
-  };
+  }, []);
 
-  const isUnauthorizedError = (error: unknown) => {
+  const isUnauthorizedError = useCallback((error: unknown) => {
     const status = (error as { status?: number })?.status;
     const code = (error as { payload?: { error?: { code?: string } } })?.payload?.error?.code;
     return status === 401 || code === "UNAUTHENTICATED";
-  };
+  }, []);
 
-  const syncWithRetries = async (
-    payload: Parameters<typeof triggerTransactionSync>[0] | undefined,
-    options: { maxAttempts?: number; onRetry?: (attempt: number, maxAttempts: number) => void } = {},
-  ) => {
-    const maxAttempts = options.maxAttempts ?? 6;
-    const BASE_DELAY_MS = 4000;
-    let attempt = 0;
-    while (true) {
-      attempt += 1;
-      try {
-        await triggerTransactionSync(payload);
-        return;
-      } catch (error) {
-        if (isUnauthorizedError(error) && typeof window !== "undefined") {
-          window.location.href = "/login";
-          throw error;
+  const syncWithRetries = useCallback(
+    async (
+      payload: Parameters<typeof triggerTransactionSync>[0] | undefined,
+      options: { maxAttempts?: number; onRetry?: (attempt: number, maxAttempts: number) => void } = {},
+    ) => {
+      const maxAttempts = options.maxAttempts ?? 6;
+      const BASE_DELAY_MS = 4000;
+      let attempt = 0;
+      while (true) {
+        attempt += 1;
+        try {
+          await triggerTransactionSync(payload);
+          return;
+        } catch (error) {
+          if (isUnauthorizedError(error) && typeof window !== "undefined") {
+            window.location.href = "/login";
+            throw error;
+          }
+          if (!isProductNotReadyError(error) || attempt >= maxAttempts) {
+            throw error;
+          }
+          options.onRetry?.(attempt, maxAttempts);
+          const delay = Math.min(BASE_DELAY_MS * attempt, 20000);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
-        if (!isProductNotReadyError(error) || attempt >= maxAttempts) {
-          throw error;
-        }
-        options.onRetry?.(attempt, maxAttempts);
-        const delay = Math.min(BASE_DELAY_MS * attempt, 20000);
-        await new Promise((resolve) => setTimeout(resolve, delay));
       }
+    },
+    [isProductNotReadyError, isUnauthorizedError],
+  );
+
+  const loadDemoData = useCallback((options?: { auto?: boolean }) => {
+    const auto = options?.auto ?? false;
+    if (sandboxLoading || syncing || generatingAi || linking) return;
+    if (!auto) {
+      setActionsOpen(false);
     }
-  };
+    const startMsg = auto ? "Preparing your demo dashboard…" : "Loading demo data…";
+    setSandboxLoading(true);
+    setSyncing(true);
+    setMessage(startMsg);
+    setStatusMessage(startMsg);
+    startTransition(async () => {
+      try {
+        await syncWithRetries({ forceFullSync: true, demoSeed: true }, {
+          onRetry: (attempt, maxAttempts) => {
+            const retryMessage = `Preparing demo data… retrying (${attempt}/${maxAttempts})`;
+            setMessage(retryMessage);
+            setStatusMessage(retryMessage);
+          },
+        });
+        invalidateCaches();
+        await refreshData();
+        const successMessage = auto ? "Demo data ready." : "Demo data loaded.";
+        setMessage(successMessage);
+        setStatusMessage(successMessage);
+      } catch (error) {
+        logError(error);
+        const failureMessage = (error as Error).message ?? "Demo load failed.";
+        setMessage(failureMessage);
+        setStatusMessage(failureMessage);
+      } finally {
+        setSandboxLoading(false);
+        setSyncing(false);
+      }
+    });
+  }, [sandboxLoading, syncing, generatingAi, linking, syncWithRetries, refreshData, startTransition]);
+
+  useEffect(() => {
+    if (!isDemo) return;
+    const hasTransactions = (state.transactions.total ?? state.transactions.transactions.length) > 0;
+    if (hasTransactions) return;
+    if (demoSeedAttemptedRef.current) return;
+    demoSeedAttemptedRef.current = true;
+    loadDemoData({ auto: true });
+  }, [isDemo, state.transactions.total, state.transactions.transactions.length, loadDemoData]);
 
   async function handleSync() {
     if (syncing || generatingAi || linking || sandboxLoading) return;
@@ -630,7 +680,12 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
 
   async function handleLink() {
     if (isDemo) {
-      if (window.confirm("This feature is not available in Demo Mode. Would you like to log in with a real account?")) {
+      setActionsOpen(false);
+      const prompt = "Bank linking is disabled in demo mode. Sign in with Cognito to connect your real accounts.";
+      setMessage(prompt);
+      setStatusMessage(prompt);
+      if (window.confirm(`${prompt} Continue to the login page?`)) {
+        document.cookie = "sp_demo_mode=; Max-Age=0; path=/";
         window.location.href = "/logout";
       }
       return;
@@ -733,36 +788,8 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     });
   }
 
-  async function handleSandboxDemo() {
-    if (sandboxLoading || syncing || generatingAi || linking) return;
-    setActionsOpen(false);
-    setSandboxLoading(true);
-    setMessage("Loading demo data…");
-    setStatusMessage("Loading demo data…");
-    setSyncing(true);
-    startTransition(async () => {
-      try {
-        await syncWithRetries({ forceFullSync: true, demoSeed: true }, {
-          onRetry: (attempt, maxAttempts) => {
-            const retryMessage = `Preparing demo data… retrying (${attempt}/${maxAttempts})`;
-            setMessage(retryMessage);
-            setStatusMessage(retryMessage);
-          },
-        });
-        invalidateCaches();
-        await refreshData();
-        setMessage("Demo data loaded.");
-        setStatusMessage("Demo data loaded.");
-      } catch (error) {
-        logError(error);
-        const failureMessage = (error as Error).message ?? "Demo load failed.";
-        setMessage(failureMessage);
-        setStatusMessage(failureMessage);
-      } finally {
-        setSandboxLoading(false);
-        setSyncing(false);
-      }
-    });
+  function handleSandboxDemo() {
+    loadDemoData({ auto: false });
   }
 
   const handleCustomApply = () => {

@@ -134,6 +134,7 @@ const upstreamUrl = new URL("auth/callback", apiBaseUrl);
   } else {
     response.cookies.delete("sp_rt");
   }
+  response.cookies.delete("sp_demo_mode");
 
   return response;
 }

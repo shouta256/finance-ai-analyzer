@@ -15,9 +15,7 @@ export default function LoginPage() {
   const configuredRedirect =
     sanitize(process.env.COGNITO_REDIRECT_URI) ?? sanitize(process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI);
   const authDebug = process.env.NEXT_PUBLIC_AUTH_DEBUG === "true";
-  const envTag = process.env.NEXT_PUBLIC_ENV || (process.env.NODE_ENV === "production" ? "prod" : "local");
-  const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
-  const showDevLogin = envTag !== "prod" || demoEnabled;
+  const showDevLogin = true;
   const showCognito = true;
 
   const config = {

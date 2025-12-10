@@ -6,6 +6,7 @@ function clearAuthCookies(res: NextResponse) {
   res.cookies.delete("sp_at");
   res.cookies.delete("sp_it");
   res.cookies.delete("sp_rt");
+  res.cookies.delete("sp_demo_mode");
   // Backward compatibility cookie names (if any)
   res.cookies.delete("safepocket_token");
   return res;
@@ -35,4 +36,3 @@ export async function GET(req: NextRequest) {
   }
   return res;
 }
-

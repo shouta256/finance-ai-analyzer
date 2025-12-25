@@ -98,9 +98,8 @@ public class SecurityConfig {
             ));
 
             JwtDecoder activeDecoder = cognitoDecoder;
-            boolean demoEnabled = "true".equalsIgnoreCase(System.getenv("SAFEPOCKET_ENABLE_DEMO_LOGIN"));
-            if (properties.security().hasDevJwtSecret() && (!environment.acceptsProfiles(Profiles.of("prod")) || demoEnabled)) {
-                log.info("Security: enabling dev JWT fallback decoder (non-prod or demo-mode enabled)");
+            if (properties.security().hasDevJwtSecret()) {
+                log.info("Security: enabling dev JWT fallback decoder (Cognito primary)");
                 SecretKeySpec fallbackKey = new SecretKeySpec(properties.security().devJwtSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
                 NimbusJwtDecoder fallbackDecoder = NimbusJwtDecoder.withSecretKey(fallbackKey)
                         .macAlgorithm(MacAlgorithm.HS256)
@@ -122,10 +121,9 @@ public class SecurityConfig {
 
             return activeDecoder;
         }
-        // Fallback: Cognito disabled -> use dev shared secret if provided (only outside prod profile or if demo enabled)
-        boolean demoEnabled = "true".equalsIgnoreCase(System.getenv("SAFEPOCKET_ENABLE_DEMO_LOGIN"));
-        if (properties.security().hasDevJwtSecret() && (!environment.acceptsProfiles(Profiles.of("prod")) || demoEnabled)) {
-            log.warn("Security: Cognito disabled; falling back to dev shared secret (Demo Mode or Non-Prod)");
+        // Fallback: Cognito disabled -> use dev shared secret if provided
+        if (properties.security().hasDevJwtSecret()) {
+            log.warn("Security: Cognito disabled; falling back to dev shared secret");
             SecretKeySpec key = new SecretKeySpec(properties.security().devJwtSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key)
                     .macAlgorithm(MacAlgorithm.HS256)

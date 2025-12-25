@@ -7,14 +7,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.context.annotation.Profile;
 
 import java.time.Duration;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/dev/auth")
-@Profile("!prod") // Available in any non-prod profile (e.g. default, local, test)
 public class DevAuthController {
     private static final Logger log = LoggerFactory.getLogger(DevAuthController.class);
 

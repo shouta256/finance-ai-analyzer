@@ -106,6 +106,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [periodOpen, setPeriodOpen] = useState<boolean>(false);
   const [isDemo, setIsDemo] = useState<boolean>(false);
   const demoSeedAttemptedRef = useRef<boolean>(false);
+  const demoSessionEnsuredRef = useRef<boolean>(false);
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -113,7 +114,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     return () => {
       window.removeEventListener("open-actions-modal", handleOpenModal);
     };
-  }, []);
+  }, [isDemo, refreshData]);
 
   useEffect(() => {
     // Check for demo cookie
@@ -124,6 +125,20 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isDemo) return;
+    if (demoSessionEnsuredRef.current) return;
+    const hasToken = typeof document !== "undefined" && document.cookie.split("; ").some((row) => row.trim().startsWith("sp_token="));
+    if (hasToken) return;
+    demoSessionEnsuredRef.current = true;
+    // Ensure a valid demo token exists without navigating away
+    void fetch("/api/dev/login", { credentials: "include" }).then(() => {
+      startTransition(() => refreshData({ page: 0 }));
+    }).catch(() => {
+      // If it fails, the regular login check will redirect; suppress noisy errors here
+    });
+  }, [isDemo, refreshData, startTransition]);
 
   useEffect(() => {
     setFocusMonth(month);
@@ -482,8 +497,19 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       if (cancelled) return;
       try {
         const res = await fetch("/api/debug/token", { credentials: "include", cache: "no-store" });
-        // Redirect to login when the session is missing or unauthorized
+        // Redirect to login when the session is missing or unauthorized (unless we can recover demo mode)
         if (!cancelled && (!res.ok || res.status === 401 || res.status === 403)) {
+          if (isDemo) {
+            // Attempt silent demo login and retry once before redirecting
+            try {
+              await fetch("/api/dev/login", { credentials: "include" });
+              await new Promise((resolve) => setTimeout(resolve, 150));
+              await refreshData({ page: 0 });
+              return;
+            } catch {
+              // fall through to redirect
+            }
+          }
           const login = new URL("/login", window.location.origin);
           login.searchParams.set("redirect", "/dashboard");
           window.location.href = login.toString();

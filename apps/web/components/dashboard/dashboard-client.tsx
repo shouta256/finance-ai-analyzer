@@ -107,6 +107,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [isDemo, setIsDemo] = useState<boolean>(false);
   const demoSeedAttemptedRef = useRef<boolean>(false);
   const demoSessionEnsuredRef = useRef<boolean>(false);
+  const demoAuthRetryRef = useRef<boolean>(false);
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -444,6 +445,19 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const err = e as any;
       const code = err?.payload?.error?.code || "UNKNOWN_ERROR";
       if ((err.status === 401 || code === "UNAUTHENTICATED") && typeof window !== "undefined") {
+        if (isDemo && !demoAuthRetryRef.current) {
+          demoAuthRetryRef.current = true;
+          try {
+            await fetch("/api/dev/login", { credentials: "include" });
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            await refreshData({ ...overrides });
+            return;
+          } catch {
+            // fall through to redirect
+          } finally {
+            demoAuthRetryRef.current = false;
+          }
+        }
         window.location.href = "/login";
         return;
       }
@@ -468,7 +482,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       }
       setErrorState({ code, traceId, details: reason });
     }
-  }, [page, focusMonth, rangeMode, customFromMonth, customToMonth, pageSize, month]);
+  }, [page, focusMonth, rangeMode, customFromMonth, customToMonth, pageSize, month, isDemo]);
 
   useEffect(() => {
     if (!isDemo) return;

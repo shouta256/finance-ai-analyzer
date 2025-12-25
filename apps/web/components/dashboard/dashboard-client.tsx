@@ -114,7 +114,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     return () => {
       window.removeEventListener("open-actions-modal", handleOpenModal);
     };
-  }, [isDemo, refreshData]);
+  }, []);
 
   useEffect(() => {
     // Check for demo cookie
@@ -125,20 +125,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       }
     }
   }, []);
-
-  useEffect(() => {
-    if (!isDemo) return;
-    if (demoSessionEnsuredRef.current) return;
-    const hasToken = typeof document !== "undefined" && document.cookie.split("; ").some((row) => row.trim().startsWith("sp_token="));
-    if (hasToken) return;
-    demoSessionEnsuredRef.current = true;
-    // Ensure a valid demo token exists without navigating away
-    void fetch("/api/dev/login", { credentials: "include" }).then(() => {
-      startTransition(() => refreshData({ page: 0 }));
-    }).catch(() => {
-      // If it fails, the regular login check will redirect; suppress noisy errors here
-    });
-  }, [isDemo, refreshData, startTransition]);
 
   useEffect(() => {
     setFocusMonth(month);
@@ -156,7 +142,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       setStatusMessage(null);
     }
   }, [syncing]);
-
 
   const expenseCategories = useMemo(() => state.summary.byCategory, [state.summary.byCategory]);
   const topMerchants = useMemo(() => state.summary.topMerchants, [state.summary.topMerchants]);
@@ -484,6 +469,20 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       setErrorState({ code, traceId, details: reason });
     }
   }, [page, focusMonth, rangeMode, customFromMonth, customToMonth, pageSize, month]);
+
+  useEffect(() => {
+    if (!isDemo) return;
+    if (demoSessionEnsuredRef.current) return;
+    const hasToken = typeof document !== "undefined" && document.cookie.split("; ").some((row) => row.trim().startsWith("sp_token="));
+    if (hasToken) return;
+    demoSessionEnsuredRef.current = true;
+    // Ensure a valid demo token exists without navigating away
+    void fetch("/api/dev/login", { credentials: "include" }).then(() => {
+      startTransition(() => refreshData({ page: 0 }));
+    }).catch(() => {
+      // If it fails, the regular login check will redirect; suppress noisy errors here
+    });
+  }, [isDemo, refreshData, startTransition]);
 
   useEffect(() => {
     startTransition(() => refreshData({ page: 0 }));

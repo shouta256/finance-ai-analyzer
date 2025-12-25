@@ -32,8 +32,8 @@ function shouldUseSecureCookie(req: NextRequest) {
 }
 
 function devLoginEnabled(): boolean {
-  if (process.env.NODE_ENV !== 'production') return true;
-  return process.env.SAFEPOCKET_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true' || process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
+  // Demo login is always available; no env flags required.
+  return true;
 }
 
 export async function GET(req: NextRequest) {

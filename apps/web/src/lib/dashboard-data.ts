@@ -14,6 +14,7 @@ export async function getDashboardData(month: string): Promise<{
   try {
     const headerList = headers();
     const cookieStore = cookies();
+    const demoMode = cookieStore.get("sp_demo_mode")?.value === "1";
     const token = cookieStore.get("sp_token")?.value;
     if (!token) {
       if (enableServerLogs) {
@@ -45,6 +46,12 @@ export async function getDashboardData(month: string): Promise<{
       cache: "no-store",
     });
     if (summaryResponse.status === 401 || summaryResponse.status === 403) {
+      if (demoMode) {
+        if (enableServerLogs) {
+          console.warn("[dashboard] Unauthorized summary fetch in demo mode; serving fallback data.");
+        }
+        throw new Error("DEMO_UNAUTHORIZED");
+      }
       redirect("/login?redirect=/dashboard");
     }
     if (!summaryResponse.ok) {
@@ -60,6 +67,12 @@ export async function getDashboardData(month: string): Promise<{
       cache: "no-store",
     });
     if (transactionsResponse.status === 401 || transactionsResponse.status === 403) {
+      if (demoMode) {
+        if (enableServerLogs) {
+          console.warn("[dashboard] Unauthorized transactions fetch in demo mode; serving fallback data.");
+        }
+        throw new Error("DEMO_UNAUTHORIZED");
+      }
       redirect("/login?redirect=/dashboard");
     }
     if (!transactionsResponse.ok) {

@@ -23,6 +23,27 @@ type LedgerFetchInit = RequestInit & {
   baseUrlOverride?: string;
 };
 
+function buildLedgerUrl(base: string, prefix: string, path: string): string {
+  const sanitizedBase = base.replace(/\/+$/g, "");
+  const normalizedPrefix = prefix ? `/${prefix.replace(/^\/+|\/+$/g, "")}` : "";
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  try {
+    const url = new URL(sanitizedBase);
+    const basePath = url.pathname.replace(/\/+$/g, "");
+    const prefixPath = normalizedPrefix.replace(/\/+$/g, "");
+    const needsPrefix = prefixPath && !basePath.endsWith(prefixPath);
+    const finalPrefix = needsPrefix ? normalizedPrefix : "";
+    url.pathname = `${basePath}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+    return url.toString();
+  } catch {
+    // Fallback for non-URL-safe bases (should not happen in normal deployments)
+    const needsPrefix = normalizedPrefix && !sanitizedBase.endsWith(normalizedPrefix);
+    const finalPrefix = needsPrefix ? normalizedPrefix : "";
+    return `${sanitizedBase}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+  }
+}
+
 export async function ledgerFetch<T>(
   path: string,
   init: LedgerFetchInit = {},
@@ -64,7 +85,8 @@ export async function ledgerFetch<T>(
   }
   const base = baseUrlOverride ?? env.LEDGER_SERVICE_URL;
   const prefix = baseUrlOverride ? '' : (env as any).LEDGER_SERVICE_PATH_PREFIX || '';
-  const response = await fetch(`${base}${prefix}${path}`, {
+  const targetUrl = buildLedgerUrl(base, prefix, path);
+  const response = await fetch(targetUrl, {
     credentials: 'include',
     ...fetchInit,
     headers,

@@ -33,6 +33,13 @@ const LEDGER_TIMEOUT_MS = Number(process.env.LEDGER_PROXY_TIMEOUT_MS || "8000");
 const ANON_USER_ID = process.env.ANON_USER_ID || "00000000-0000-0000-0000-000000000000";
 const ADMIN_SQL_TOKEN = process.env.ADMIN_SQL_TOKEN || "";
 
+// Demo login configuration
+const DEV_JWT_SECRET = process.env.SAFEPOCKET_DEV_JWT_SECRET || "dev-secret-key-for-local-development-only";
+const DEV_USER_ID = process.env.DEV_USER_ID || "0f08d2b9-28b3-4b28-bd33-41a36161e9ab";
+const DEV_LOGIN_ENABLED = ["true", "1", "yes"].includes(
+  String(process.env.ENABLE_DEV_LOGIN || process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN || "true").toLowerCase()
+);
+
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
@@ -75,6 +82,7 @@ function loadJoseRuntime() {
       compactDecrypt: mod.compactDecrypt,
       createRemoteJWKSet: mod.createRemoteJWKSet,
       jwtVerify: mod.jwtVerify,
+      SignJWT: mod.SignJWT,
       errors: mod.errors,
     }));
   }
@@ -724,6 +732,27 @@ async function verifyJwt(token) {
     throw createHttpError(401, "Unauthorized");
   }
   const { jwtVerify, errors: joseErrors } = await loadJoseRuntime();
+
+  // Try HS256 demo token verification first if dev login is enabled
+  if (DEV_LOGIN_ENABLED && DEV_JWT_SECRET && DEV_JWT_SECRET.length >= 32) {
+    try {
+      const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+      if (header.alg === "HS256") {
+        const secretKey = new TextEncoder().encode(DEV_JWT_SECRET);
+        const { payload } = await jwtVerify(trimmedToken, secretKey, { algorithms: ["HS256"] });
+        if (payload && typeof payload === "object" && payload.sub) {
+          // Accept demo tokens with issuer "safepocket-dev"
+          if (payload.iss === "safepocket-dev") {
+            return payload;
+          }
+        }
+      }
+    } catch (e) {
+      // HS256 verification failed, fall through to Cognito RS256
+      console.debug("[auth] HS256 demo token verification failed, trying Cognito RS256", { error: e?.message });
+    }
+  }
+
   const jwkSet = await getCognitoRemoteJwkSet(cognito);
   const audiences = resolveExpectedAudiences(cognito);
   const baseOptions = {};
@@ -3189,6 +3218,49 @@ async function handleTransactionsReset(event) {
   }
 }
 
+async function handleDevAuthLogin(event) {
+  if (!DEV_LOGIN_ENABLED) {
+    return respond(event, 403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "Dev login is disabled. Set ENABLE_DEV_LOGIN=true to permit demo access.",
+      },
+    });
+  }
+  if (!DEV_JWT_SECRET || DEV_JWT_SECRET.length < 32) {
+    return respond(event, 500, {
+      error: {
+        code: "INVALID_DEV_SECRET",
+        message: "SAFEPOCKET_DEV_JWT_SECRET must be at least 32 characters.",
+      },
+    });
+  }
+  let userId = DEV_USER_ID;
+  try {
+    const body = parseJsonBody(event);
+    if (body?.userId && typeof body.userId === "string" && body.userId.length > 0) {
+      userId = body.userId;
+    }
+  } catch {
+    // use default
+  }
+  const { SignJWT } = await loadJoseRuntime();
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expiresInSeconds = 60 * 60; // 1 hour
+  const token = await new SignJWT({ sub: userId, scope: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("safepocket-dev")
+    .setAudience("safepocket-web")
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(nowSeconds + expiresInSeconds)
+    .sign(new TextEncoder().encode(DEV_JWT_SECRET));
+  return respond(event, 200, {
+    token,
+    expiresInSeconds,
+    userId,
+  });
+}
+
 exports.handler = async (event) => {
   try {
     const method = (event.requestContext?.http?.method || event.httpMethod || "GET").toUpperCase();
@@ -3215,6 +3287,9 @@ exports.handler = async (event) => {
     }
     if (method === "GET" && path === "/auth/callback") {
       return await handleAuthCallback(event);
+    }
+    if (method === "POST" && path === "/dev/auth/login") {
+      return await handleDevAuthLogin(event);
     }
     if (path === "/chat" || path === "/api/chat" || path === "/ai/chat") {
       if (method === "GET" || method === "POST") {

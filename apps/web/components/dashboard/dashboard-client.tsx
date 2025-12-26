@@ -401,8 +401,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const activePage = overrides?.page ?? page;
       const targetSummaryMonth = overrides?.focusMonth ?? focusMonth;
       const activeRangeMode = overrides?.rangeMode ?? rangeMode;
-      const fromOverride = overrides?.customFrom ?? customFromMonth;
-      const toOverride = overrides?.customTo ?? customToMonth;
+      const rawFrom = overrides?.customFrom ?? customFromMonth;
+      const rawTo = overrides?.customTo ?? customToMonth;
+      // For custom range, ensure both from and to have values
+      const fromOverride = activeRangeMode === "custom" ? (rawFrom || "2020-01") : rawFrom;
+      const toOverride = activeRangeMode === "custom" ? (rawTo || month) : rawTo;
       const analyticsMonth = targetSummaryMonth || month;
       console.log("[refreshData] Resolved values:", { activeRangeMode, fromOverride, toOverride, analyticsMonth });
       const now = Date.now();
@@ -858,18 +861,19 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       setMessage(customRangeError);
       return;
     }
-    // Both from and to are required for custom range
-    if (!customFromMonth || !customToMonth) {
-      setMessage("Both start and end months are required for custom range.");
-      return;
+    // Default From to earliest possible (2020-01) and To to current month if not specified
+    const effectiveFrom = customFromMonth || "2020-01";
+    const effectiveTo = customToMonth || month;
+    if (enableClientLogs) {
+      console.log("[handleCustomApply] effective range:", { effectiveFrom, effectiveTo });
     }
     setRangeMode("custom");
     setPage(0);
     setMessage("Custom range applied.");
     if (enableClientLogs) {
-      console.log("[handleCustomApply] calling refreshData with:", { rangeMode: "custom", customFrom: customFromMonth, customTo: customToMonth, page: 0 });
+      console.log("[handleCustomApply] calling refreshData with:", { rangeMode: "custom", customFrom: effectiveFrom, customTo: effectiveTo, page: 0 });
     }
-    startTransition(() => refreshData({ rangeMode: "custom", customFrom: customFromMonth, customTo: customToMonth, page: 0 }));
+    startTransition(() => refreshData({ rangeMode: "custom", customFrom: effectiveFrom, customTo: effectiveTo, page: 0 }));
   };
 
   const handleClearRange = () => {

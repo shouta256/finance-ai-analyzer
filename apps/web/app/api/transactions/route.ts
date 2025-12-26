@@ -382,11 +382,16 @@ export async function GET(request: NextRequest) {
   const targetTrendGranularity = pickTargetGranularity(dateRange.from, dateRange.to);
 
   const endpoint = new URL("/transactions", "http://localhost");
-  if (query.month) endpoint.searchParams.set("month", query.month.slice(0, 7));
   const normalizedFrom = query.from ? query.from.slice(0, 7) : undefined;
   const normalizedTo = query.to ? query.to.slice(0, 7) : undefined;
-  if (normalizedFrom) endpoint.searchParams.set("from", normalizedFrom);
-  if (normalizedTo) endpoint.searchParams.set("to", normalizedTo);
+  // If from/to are provided, use custom range mode and don't send month
+  // Lambda's parseRange prioritizes month over from/to
+  if (normalizedFrom && normalizedTo) {
+    endpoint.searchParams.set("from", normalizedFrom);
+    endpoint.searchParams.set("to", normalizedTo);
+  } else if (query.month) {
+    endpoint.searchParams.set("month", query.month.slice(0, 7));
+  }
   if (query.accountId) endpoint.searchParams.set("accountId", query.accountId);
   endpoint.searchParams.set("page", String(query.page ?? 0));
   endpoint.searchParams.set("pageSize", String(query.pageSize ?? 15));

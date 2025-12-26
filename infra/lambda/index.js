@@ -890,23 +890,27 @@ function parseMonth(value) {
 }
 
 function parseRange(query) {
-  if (query.month) {
-    const start = parseMonth(query.month);
-    return {
-      fromDate: start,
-      toDate: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1)),
-      monthLabel: query.month,
-    };
-  }
+  console.log("[parseRange] Input query:", JSON.stringify({ month: query.month, from: query.from, to: query.to }));
   if (query.from && query.to) {
     const fromDate = parseMonth(query.from);
     const endDate = parseMonth(query.to);
+    console.log("[parseRange] Using custom range:", { from: query.from, to: query.to });
     return {
       fromDate,
       toDate: new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth() + 1, 1)),
       monthLabel: null,
     };
   }
+  if (query.month) {
+    const start = parseMonth(query.month);
+    console.log("[parseRange] Using month:", query.month);
+    return {
+      fromDate: start,
+      toDate: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1)),
+      monthLabel: query.month,
+    };
+  }
+  console.log("[parseRange] Using default range (all history)");
   return {
     fromDate: new Date(Date.UTC(1970, 0, 1)),
     toDate: new Date(Date.now() + 24 * 60 * 60 * 1000),

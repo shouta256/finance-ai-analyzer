@@ -450,8 +450,10 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       })();
 
       const [summary, transactions] = await Promise.all([summaryPromise, transactionsPromise]);
+      console.log("[refreshData] Setting state with transactions count:", transactions.transactions?.length, "total:", transactions.total);
       setState({ summary, transactions });
     } catch (e) {
+      console.error("[refreshData] Error:", e);
       const err = e as any;
       const code = err?.payload?.error?.code || "UNKNOWN_ERROR";
       if ((err.status === 401 || code === "UNAUTHENTICATED") && typeof window !== "undefined") {

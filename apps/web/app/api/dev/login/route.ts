@@ -16,7 +16,7 @@ async function triggerDemoSync(token: string): Promise<void> {
         'content-type': 'application/json',
         'authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ demoSeed: true }),
       cache: 'no-store',
     });
   } catch {

@@ -36,7 +36,8 @@ interface FetchState {
   transactions: TransactionsList;
 }
 
-const enableClientLogs = process.env.NODE_ENV !== "production";
+// Temporarily enable logs in production for debugging
+const enableClientLogs = true;
 const logError = (...args: unknown[]) => {
   if (enableClientLogs) console.error(...args);
 };
@@ -394,6 +395,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     customTo?: string;
     page?: number;
   }) => {
+    console.log("[refreshData] Called with overrides:", JSON.stringify(overrides));
     try {
       setErrorState(null);
       const activePage = overrides?.page ?? page;
@@ -402,6 +404,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const fromOverride = overrides?.customFrom ?? customFromMonth;
       const toOverride = overrides?.customTo ?? customToMonth;
       const analyticsMonth = targetSummaryMonth || month;
+      console.log("[refreshData] Resolved values:", { activeRangeMode, fromOverride, toOverride, analyticsMonth });
       const now = Date.now();
 
       const summaryKey = cacheKey({ month: analyticsMonth });

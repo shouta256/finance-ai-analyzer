@@ -7,6 +7,23 @@ const DEV_USER_ID = '0f08d2b9-28b3-4b28-bd33-41a36161e9ab';
 const PRIMARY_COOKIE = 'sp_token';
 const ONE_HOUR_SECONDS = 60 * 60;
 
+async function triggerDemoSync(token: string): Promise<void> {
+  const backend = process.env.LEDGER_SERVICE_URL ?? 'http://localhost:8081';
+  try {
+    await fetch(`${backend}/transactions/sync`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+      cache: 'no-store',
+    });
+  } catch {
+    // Sync is best-effort; ignore errors
+  }
+}
+
 function shouldUseSecureCookie(req: NextRequest) {
   // In all non-production environments, prefer non-secure cookies to ensure local HTTP works
   if (process.env.NODE_ENV !== 'production') return false;
@@ -64,6 +81,9 @@ export async function GET(req: NextRequest) {
       const token: string | undefined = json?.token;
       const ttl: number = Number(json?.expiresInSeconds ?? ONE_HOUR_SECONDS);
       if (token && typeof token === 'string') {
+        // Trigger sync to populate demo data in the database
+        await triggerDemoSync(token);
+
         const redirect = req.nextUrl.searchParams.get('redirect');
         const response = redirect
           ? NextResponse.redirect(new URL(redirect, req.nextUrl.origin), { status: 303 })
@@ -107,6 +127,9 @@ export async function GET(req: NextRequest) {
     .setIssuedAt(nowSeconds)
     .setExpirationTime(nowSeconds + ONE_HOUR_SECONDS)
     .sign(new TextEncoder().encode(secret));
+
+  // Trigger sync to populate demo data in the database
+  await triggerDemoSync(token);
 
   const redirect = req.nextUrl.searchParams.get('redirect');
   const response = redirect

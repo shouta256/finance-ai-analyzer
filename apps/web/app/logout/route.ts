@@ -42,9 +42,14 @@ export async function GET(req: NextRequest) {
     await cleanupDemoData(token);
   }
 
-  // Always clear cookies
-  const res = NextResponse.redirect(postLogout);
-  clearAuthCookies(res);
+  // Always clear cookies first
+  const localRes = NextResponse.redirect(postLogout);
+  clearAuthCookies(localRes);
+
+  // Demo users: skip Cognito logout, just redirect to login
+  if (isDemoMode) {
+    return localRes;
+  }
 
   // If Cognito config is present, bounce through Hosted UI logout
   if (domain && clientId) {
@@ -52,11 +57,16 @@ export async function GET(req: NextRequest) {
       const base = domain.startsWith("http") ? domain.replace(/\/+$/,"") : `https://${domain}`;
       const url = new URL("/logout", base);
       url.searchParams.set("client_id", clientId);
+      // Cognito expects 'logout_uri' for hosted UI logout
       url.searchParams.set("logout_uri", postLogout);
-      return NextResponse.redirect(url.toString());
+      // Some Cognito versions also need 'redirect_uri'
+      url.searchParams.set("redirect_uri", postLogout);
+      const cognitoRes = NextResponse.redirect(url.toString());
+      clearAuthCookies(cognitoRes);
+      return cognitoRes;
     } catch {
       // fall back to local redirect
     }
   }
-  return res;
+  return localRes;
 }

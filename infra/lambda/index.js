@@ -2042,8 +2042,10 @@ async function handleAnalyticsSummary(event, query) {
 }
 
 async function handleTransactions(event, query) {
+  console.log("[handleTransactions] Received query:", JSON.stringify(query));
   const payload = await authenticate(event);
   const { fromDate, toDate, monthLabel } = parseRange(query);
+  console.log("[handleTransactions] Parsed range:", { fromDate: fromDate?.toISOString(), toDate: toDate?.toISOString(), monthLabel });
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
   try {
     const transactions = await queryTransactions(payload.sub, fromDate, toDate);

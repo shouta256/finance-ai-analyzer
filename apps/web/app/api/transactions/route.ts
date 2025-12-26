@@ -395,6 +395,8 @@ export async function GET(request: NextRequest) {
   if (query.accountId) endpoint.searchParams.set("accountId", query.accountId);
   endpoint.searchParams.set("page", String(query.page ?? 0));
   endpoint.searchParams.set("pageSize", String(query.pageSize ?? 15));
+  
+  console.log("[api/transactions GET] Calling Lambda with URL:", endpoint.pathname + endpoint.search);
 
   const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, {
     method: "GET",

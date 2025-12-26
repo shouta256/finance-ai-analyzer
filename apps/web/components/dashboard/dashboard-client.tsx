@@ -426,15 +426,25 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       const cachedTx = TRANSACTIONS_CACHE.get(txKey);
       const transactionsPromise = (async () => {
         if (cachedTx && cachedTx.expires > now) {
+          if (enableClientLogs) {
+            console.log("[refreshData] Using cached transactions for key:", txKey);
+          }
           return cachedTx.data;
         }
-        const fetched = await queryTransactions({
+        const queryParams = {
           month: activeRangeMode === "month" ? analyticsMonth : undefined,
           from: activeRangeMode === "custom" ? fromOverride : undefined,
           to: activeRangeMode === "custom" ? toOverride : undefined,
           page: activePage,
           pageSize,
-        });
+        };
+        if (enableClientLogs) {
+          console.log("[refreshData] Fetching transactions with params:", queryParams);
+        }
+        const fetched = await queryTransactions(queryParams);
+        if (enableClientLogs) {
+          console.log("[refreshData] Fetched transactions count:", fetched.transactions?.length);
+        }
         setTransactionsCache(txKey, fetched);
         return fetched;
       })();
@@ -832,6 +842,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   }
 
   const handleCustomApply = () => {
+    if (enableClientLogs) {
+      console.log("[handleCustomApply] customFromMonth:", customFromMonth, "customToMonth:", customToMonth);
+    }
     if (!customFromMonth && !customToMonth) {
       setMessage("Select at least a start or end month to apply.");
       return;
@@ -840,9 +853,17 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
       setMessage(customRangeError);
       return;
     }
+    // Both from and to are required for custom range
+    if (!customFromMonth || !customToMonth) {
+      setMessage("Both start and end months are required for custom range.");
+      return;
+    }
     setRangeMode("custom");
     setPage(0);
     setMessage("Custom range applied.");
+    if (enableClientLogs) {
+      console.log("[handleCustomApply] calling refreshData with:", { rangeMode: "custom", customFrom: customFromMonth, customTo: customToMonth, page: 0 });
+    }
     startTransition(() => refreshData({ rangeMode: "custom", customFrom: customFromMonth, customTo: customToMonth, page: 0 }));
   };
 

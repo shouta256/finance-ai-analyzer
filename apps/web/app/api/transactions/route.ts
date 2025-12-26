@@ -377,6 +377,7 @@ export async function GET(request: NextRequest) {
     page: searchParams.get("page") ?? undefined,
     pageSize: searchParams.get("pageSize") ?? undefined,
   });
+  console.log("[api/transactions GET] Query params:", { month: query.month, from: query.from, to: query.to });
   const dateRange = resolveDateRange(query);
   const targetTrendGranularity = pickTargetGranularity(dateRange.from, dateRange.to);
 

@@ -1281,6 +1281,7 @@ async function generateAiHighlightForSummary(summary, transactions, traceId) {
 }
 
 function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
+  console.log("[summarise] monthLabel:", monthLabel, "fromDate:", fromDate?.toISOString?.(), "toDate:", toDate?.toISOString?.());
   let income = 0;
   let expense = 0;
   const categoryTotals = new Map();
@@ -1335,8 +1336,11 @@ function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
   const totals = { income: round(income), expense: round(expense), net: round(net) };
   const fallbackHighlight = buildDeterministicHighlight(totals, categories, merchants);
 
+  // If no monthLabel provided, use current month instead of 1970
+  const effectiveMonth = monthLabel || new Date().toISOString().slice(0, 7);
+  console.log("[summarise] effectiveMonth:", effectiveMonth);
   return {
-    month: monthLabel || toIsoDate(cycleStart).slice(0, 7),
+    month: effectiveMonth,
     totals,
     byCategory: categories,
     topMerchants: merchants,

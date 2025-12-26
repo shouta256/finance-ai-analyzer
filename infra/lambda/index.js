@@ -2890,6 +2890,14 @@ async function handleTransactionsSync(event) {
         );
 
         const stubTransactions = buildStubTransactions(auth.sub);
+        console.log("[demo-sync] buildStubTransactions generated", stubTransactions.length, "transactions");
+        
+        // Log date range of transactions for debugging
+        if (stubTransactions.length > 0) {
+          const dates = stubTransactions.map(t => t.occurredAt).sort();
+          console.log("[demo-sync] date range:", dates[0], "to", dates[dates.length - 1]);
+        }
+        
         const alternateAccountId = crypto.randomUUID();
         const demoNow = new Date();
         const demoAnchor = Date.UTC(demoNow.getUTCFullYear(), demoNow.getUTCMonth(), 1);

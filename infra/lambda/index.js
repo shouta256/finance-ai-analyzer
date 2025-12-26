@@ -1362,8 +1362,15 @@ function summarise(transactions, fromDate, toDate, monthLabel, traceId) {
 
 function buildStubTransactions(userId) {
   const now = new Date();
+  const todayDate = now.getUTCDate();
   const anchor = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-  const addDays = (days, offsetMs = 0) => new Date(anchor + days * DAY_MS + offsetMs).toISOString();
+  
+  // For current month, only generate transactions up to today
+  const addDays = (days, offsetMs = 0) => {
+    if (days > todayDate) return null; // Skip future dates
+    return new Date(anchor + (days - 1) * DAY_MS + offsetMs).toISOString();
+  };
+  
   const prevMonth = (monthsBack, day) => {
     const d = new Date(anchor);
     d.setUTCMonth(d.getUTCMonth() - monthsBack);
@@ -1376,8 +1383,9 @@ function buildStubTransactions(userId) {
 
   const transactions = [];
   
-  // Helper to add transaction
+  // Helper to add transaction (skips if date is null/future)
   const addTx = (accountId, merchantName, amount, occurredAt, category, description, pending = false) => {
+    if (!occurredAt) return; // Skip future dates
     transactions.push({
       id: crypto.randomUUID(),
       userId,
@@ -1395,7 +1403,7 @@ function buildStubTransactions(userId) {
     });
   };
 
-  // ===== Current Month =====
+  // ===== Current Month (only up to today) =====
   addTx(primaryAccount, "Acme Corp Payroll", 4200.00, addDays(1), "Income", "Bi-weekly payroll deposit");
   addTx(primaryAccount, "Acme Corp Payroll", 4200.00, addDays(15), "Income", "Bi-weekly payroll deposit");
   addTx(primaryAccount, "City Apartments", -1850.00, addDays(3), "Housing", "Monthly rent");
@@ -3348,6 +3356,45 @@ async function handleDevAuthLogin(event) {
   });
 }
 
+async function handleDevAuthLogout(event) {
+  const auth = await authenticate(event);
+  const userId = auth.sub;
+  
+  // Only allow cleanup for demo user
+  if (userId !== DEV_USER_ID) {
+    return respond(event, 200, { ok: true, message: "Non-demo user, no cleanup needed" });
+  }
+
+  try {
+    await withUserClient(userId, async (client) => {
+      // Delete all transactions for the demo user
+      await client.query(
+        `DELETE FROM transactions
+         WHERE user_id = current_setting('appsec.user_id', true)::uuid
+            OR account_id IN (
+              SELECT id FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid
+            )`,
+      );
+      // Delete all accounts for the demo user
+      await client.query(
+        `DELETE FROM accounts WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+      );
+      // Delete chat messages if any
+      try {
+        await client.query(
+          `DELETE FROM chat_messages WHERE user_id = current_setting('appsec.user_id', true)::uuid`,
+        );
+      } catch {
+        // Table may not exist
+      }
+    });
+    return respond(event, 200, { ok: true, message: "Demo user data cleared" });
+  } catch (error) {
+    console.error("[dev/auth/logout] cleanup error", error);
+    return respond(event, 200, { ok: true, message: "Cleanup attempted", error: error?.message });
+  }
+}
+
 exports.handler = async (event) => {
   try {
     const method = (event.requestContext?.http?.method || event.httpMethod || "GET").toUpperCase();
@@ -3377,6 +3424,9 @@ exports.handler = async (event) => {
     }
     if (method === "POST" && path === "/dev/auth/login") {
       return await handleDevAuthLogin(event);
+    }
+    if (method === "POST" && path === "/dev/auth/logout") {
+      return await handleDevAuthLogout(event);
     }
     if (path === "/chat" || path === "/api/chat" || path === "/ai/chat") {
       if (method === "GET" || method === "POST") {

@@ -186,5 +186,5 @@ function formatMonthLabel(value?: string | null): string {
   if (!Number.isFinite(year) || !Number.isFinite(month)) return value;
   const date = new Date(Date.UTC(year, month - 1, 1));
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(date);
 }

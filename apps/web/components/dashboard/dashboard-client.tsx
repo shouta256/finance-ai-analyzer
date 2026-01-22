@@ -1074,7 +1074,7 @@ function formatDayLabel(value?: string | null): string {
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return value;
   const date = new Date(Date.UTC(year, month - 1, day));
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function formatWeekLabel(value?: string | null): string {
@@ -1085,7 +1085,7 @@ function formatWeekLabel(value?: string | null): string {
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return value;
   const date = new Date(Date.UTC(year, month - 1, day));
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function formatQuarterLabel(value?: string | null): string {
@@ -1117,7 +1117,7 @@ function formatMonthLabel(value?: string | null): string {
   if (parts.length < 2) return value;
   const [year, month] = parts.map(Number);
   if (!Number.isFinite(year) || !Number.isFinite(month)) return value;
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(date);
 }

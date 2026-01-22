@@ -2684,10 +2684,16 @@ async function handleAuthCallback(event) {
 
 const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
+// Helper to check if user is demo user
+function isDemoUser(userId) {
+  return userId === DEV_USER_ID;
+}
+
 async function handleChat(event) {
   const method = (event.requestContext?.http?.method || event.httpMethod || "GET").toUpperCase();
   const payload = await authenticate(event);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
+  const isDemo = isDemoUser(payload.sub);
 
   const respondWithError = (error) => {
     const status = error?.statusCode || error?.status || 500;
@@ -2700,7 +2706,17 @@ async function handleChat(event) {
     });
   };
 
+  // For demo users, always return empty history (don't persist chat)
   if (method === "GET") {
+    if (isDemo) {
+      // Demo users don't have persistent chat history
+      return respond(event, 200, { 
+        conversationId: crypto.randomUUID(), 
+        messages: [], 
+        traceId,
+        isDemo: true 
+      });
+    }
     const requestedId = event.queryStringParameters?.conversationId;
     try {
       const conversationId = UUID_REGEX.test(requestedId || "") ? requestedId : null;
@@ -2732,6 +2748,57 @@ async function handleChat(event) {
         ? body.truncateFromMessageId
         : null;
 
+    // For demo users, don't persist chat - just generate response
+    if (isDemo) {
+      try {
+        const result = await withUserClient(payload.sub, async (client) => {
+          await ensureChatTables(client);
+          await ensureUserRow(client, payload);
+          
+          const conversationId = rawConversationId || crypto.randomUUID();
+          const nowIso = new Date().toISOString();
+          
+          // Get context for AI without saving to DB
+          const assistantContent = await generateAssistantReplyForLambda(
+            client,
+            payload.sub,
+            conversationId,
+            rawMessage,
+            [], // No prior messages for demo users
+            traceId,
+          );
+
+          const userMessageId = crypto.randomUUID();
+          const assistantId = crypto.randomUUID();
+          const assistantCreatedAt = new Date().toISOString();
+
+          // Return messages without persisting to DB
+          return {
+            conversationId,
+            messages: [
+              {
+                id: userMessageId,
+                role: "USER",
+                content: rawMessage,
+                createdAt: nowIso,
+              },
+              {
+                id: assistantId,
+                role: "ASSISTANT",
+                content: assistantContent,
+                createdAt: assistantCreatedAt,
+              },
+            ],
+            isDemo: true,
+          };
+        });
+        return respond(event, 200, { ...result, traceId });
+      } catch (error) {
+        return respondWithError(error);
+      }
+    }
+
+    // Regular users - persist chat history
     try {
       const result = await withUserClient(payload.sub, async (client) => {
         await ensureChatTables(client);

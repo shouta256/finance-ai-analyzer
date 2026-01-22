@@ -2014,11 +2014,14 @@ async function handleAnalyticsSummary(event, query) {
   const { fromDate, toDate, monthLabel } = parseRange(query);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
   const generateAi = shouldGenerateAiHighlight(query);
+  console.log("[handleAnalyticsSummary] generateAi:", generateAi, "query.generateAi:", query?.generateAi);
   try {
     const transactions = await queryTransactions(payload.sub, fromDate, toDate);
     const summary = summarise(transactions, fromDate, toDate, monthLabel, traceId);
     if (generateAi) {
+      console.log("[handleAnalyticsSummary] Generating AI highlight...");
       const aiHighlight = await generateAiHighlightForSummary(summary, transactions, traceId);
+      console.log("[handleAnalyticsSummary] AI highlight result:", aiHighlight ? "generated" : "null");
       if (aiHighlight) {
         summary.aiHighlight = aiHighlight;
         // Also set latestHighlight so the frontend can display it properly

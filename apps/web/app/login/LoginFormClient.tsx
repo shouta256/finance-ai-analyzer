@@ -162,9 +162,6 @@ export default function LoginFormClient({ config }: LoginFormClientProps) {
             >
               {isPending ? "Signing in..." : "Try Demo Account"}
             </button>
-            <p className="mt-4 text-xs text-slate-500">
-              Note: in local development /api/dev/login returns 403 if the dev secret is missing.
-            </p>
           </>
         )}
         {message ? <p className="mt-4 text-sm text-rose-600">{message}</p> : null}

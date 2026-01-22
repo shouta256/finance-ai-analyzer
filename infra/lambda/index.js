@@ -1250,7 +1250,7 @@ function hasOpenAiHighlightCredentials() {
 
 async function generateAiHighlightForSummary(summary, transactions, traceId) {
   const fallback = buildDeterministicHighlight(summary?.totals, summary?.byCategory, summary?.topMerchants);
-  const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "openai").toLowerCase();
+  const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
   const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
   const prompt = buildHighlightPrompt(summary, transactions);
 
@@ -1936,7 +1936,7 @@ async function callOpenAi(model, contextText, history, userMessage, maxTokens, t
 }
 
 async function callAiAssistant(history, userMessage, context, traceId) {
-  const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "openai").toLowerCase();
+  const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
   const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
   const maxTokens = CHAT_DEFAULT_MAX_TOKENS;
   const contextJson = JSON.stringify(context, null, 2);

@@ -87,6 +87,7 @@ export function PeriodModal(props: PeriodModalProps) {
               type="month"
               value={focusMonth}
               onChange={(e) => onFocusMonthChange(e.target.value)}
+              lang="en"
               className="w-32 border-none bg-transparent text-sm font-medium text-slate-900 focus-visible:ring-0"
             />
             {focusMonth !== defaultMonth ? (
@@ -114,6 +115,7 @@ export function PeriodModal(props: PeriodModalProps) {
                 type="month"
                 value={customFromMonth}
                 onChange={(e) => onCustomFromChange(e.target.value)}
+                lang="en"
                 className="rounded-xl border border-slate-300 bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-sm"
               />
             </div>
@@ -126,6 +128,7 @@ export function PeriodModal(props: PeriodModalProps) {
                 type="month"
                 value={customToMonth}
                 onChange={(e) => onCustomToChange(e.target.value)}
+                lang="en"
                 className="rounded-xl border border-slate-300 bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-sm"
               />
             </div>

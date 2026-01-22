@@ -62,12 +62,10 @@ export function DashboardActionsModal(props: DashboardActionsModalProps) {
             <Label htmlFor="modalSyncStart" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Sync from
             </Label>
-            <Input
+            <MonthPicker
               id="modalSyncStart"
-              type="month"
               value={startMonth}
-              onChange={(event) => onStartMonthChange(event.target.value)}
-              lang="en"
+              onChange={onStartMonthChange}
               className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
             />
             <p className="mt-1 text-[11px] text-slate-500">Optional month to backfill when syncing.</p>

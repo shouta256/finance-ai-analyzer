@@ -82,13 +82,11 @@ export function PeriodModal(props: PeriodModalProps) {
 
         {rangeMode === "month" ? (
           <div className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
-            <Input
+            <MonthPicker
               id="focusMonthModal"
-              type="month"
               value={focusMonth}
-              onChange={(e) => onFocusMonthChange(e.target.value)}
-              lang="en"
-              className="w-32 border-none bg-transparent text-sm font-medium text-slate-900 focus-visible:ring-0"
+              onChange={onFocusMonthChange}
+              className="w-full border-none bg-transparent text-sm font-medium text-slate-900 focus-visible:ring-0"
             />
             {focusMonth !== defaultMonth ? (
               <Button
@@ -110,12 +108,10 @@ export function PeriodModal(props: PeriodModalProps) {
               <Label htmlFor="customFromModal" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                 From
               </Label>
-              <Input
+              <MonthPicker
                 id="customFromModal"
-                type="month"
                 value={customFromMonth}
-                onChange={(e) => onCustomFromChange(e.target.value)}
-                lang="en"
+                onChange={onCustomFromChange}
                 className="rounded-xl border border-slate-300 bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-sm"
               />
             </div>
@@ -123,12 +119,10 @@ export function PeriodModal(props: PeriodModalProps) {
               <Label htmlFor="customToModal" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                 To
               </Label>
-              <Input
+              <MonthPicker
                 id="customToModal"
-                type="month"
                 value={customToMonth}
-                onChange={(e) => onCustomToChange(e.target.value)}
-                lang="en"
+                onChange={onCustomToChange}
                 className="rounded-xl border border-slate-300 bg-white/90 px-3 py-2 text-sm text-slate-900 shadow-sm"
               />
             </div>

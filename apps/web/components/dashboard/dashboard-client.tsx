@@ -953,6 +953,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
             topMerchant={topMerchant}
             onGenerate={handleGenerateAi}
             generateDisabled={generatingAi || syncing || linking || sandboxLoading}
+            isGenerating={generatingAi}
           />
       </div>
 

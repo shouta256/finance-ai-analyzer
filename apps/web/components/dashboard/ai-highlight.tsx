@@ -12,6 +12,7 @@ interface AiHighlightCardProps {
   topMerchant?: { merchant: string; amount: number };
   onGenerate?: () => void;
   generateDisabled?: boolean;
+  isGenerating?: boolean;
 }
 
 export function AiHighlightCard(props: AiHighlightCardProps) {
@@ -25,6 +26,7 @@ export function AiHighlightCard(props: AiHighlightCardProps) {
     topMerchant,
     onGenerate,
     generateDisabled,
+    isGenerating,
   } = props;
   const highlight = highlightSnapshot?.highlight ?? null;
   const sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" = highlight?.sentiment ?? "NEUTRAL";
@@ -43,7 +45,13 @@ export function AiHighlightCard(props: AiHighlightCardProps) {
   return (
     <section className={cn("rounded-3xl border p-6 transition-colors duration-500", activeStyle)}>
       <h2 className="text-lg font-semibold tracking-tight text-slate-900">AI Monthly Highlight</h2>
-      {!hasHighlight ? (
+      {isGenerating ? (
+        <div className="mt-4 flex flex-col items-center justify-center gap-3 py-8">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"></div>
+          <p className="text-sm font-medium text-slate-600">Generating AI summary...</p>
+          <p className="text-xs text-slate-500">This may take a few moments</p>
+        </div>
+      ) : !hasHighlight ? (
         <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-slate-500">
             Click the button to generate an AI highlight for {analyticsLabel}.

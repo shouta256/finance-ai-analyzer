@@ -1252,6 +1252,9 @@ async function generateAiHighlightForSummary(summary, transactions, traceId) {
   const fallback = buildDeterministicHighlight(summary?.totals, summary?.byCategory, summary?.topMerchants);
   const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
   const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+  const hasSafepocketKey = Boolean(process.env.SAFEPOCKET_AI_KEY);
+  console.log("[generateAiHighlight] provider:", provider, "model:", model, "hasGeminiKey:", hasGeminiKey, "hasSafepocketKey:", hasSafepocketKey);
   const prompt = buildHighlightPrompt(summary, transactions);
 
   try {
@@ -1261,7 +1264,9 @@ async function generateAiHighlightForSummary(summary, transactions, traceId) {
         console.warn("[analytics] Gemini highlight requested but no API key configured");
         return fallback;
       }
+      console.log("[generateAiHighlight] Calling Gemini API...");
       raw = await callGeminiHighlight(model, prompt, HIGHLIGHT_MAX_TOKENS, traceId);
+      console.log("[generateAiHighlight] Gemini response received:", raw ? "yes" : "no");
     } else {
       if (!hasOpenAiHighlightCredentials()) {
         console.warn("[analytics] OpenAI highlight requested but no API key configured");
@@ -1270,6 +1275,7 @@ async function generateAiHighlightForSummary(summary, transactions, traceId) {
       raw = await callOpenAiHighlight(model, prompt, HIGHLIGHT_MAX_TOKENS, traceId);
     }
     if (!raw) {
+      console.warn("[generateAiHighlight] No raw response, returning fallback");
       return fallback;
     }
     const parsed = parseAiHighlightResponse(raw, fallback);
@@ -1668,6 +1674,7 @@ function formatHistoryForProvider(history) {
 
 async function callGeminiHighlight(model, prompt, maxTokens, traceId) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.SAFEPOCKET_AI_KEY || process.env.OPENAI_API_KEY;
+  console.log("[callGeminiHighlight] API key present:", !!apiKey, "model:", model);
   if (!apiKey) {
     console.warn("[analytics] Gemini highlight requested but no API key configured");
     return null;
@@ -1675,6 +1682,7 @@ async function callGeminiHighlight(model, prompt, maxTokens, traceId) {
   const base = (process.env.SAFEPOCKET_AI_ENDPOINT || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
   const modelPath = model.startsWith("models/") ? model : `models/${model}`;
   const url = `${base}/${modelPath}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  console.log("[callGeminiHighlight] Calling endpoint:", `${base}/${modelPath}:generateContent`);
   const payload = {
     systemInstruction: { parts: [{ text: HIGHLIGHT_SYSTEM_PROMPT }] },
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -1685,17 +1693,20 @@ async function callGeminiHighlight(model, prompt, maxTokens, traceId) {
     },
   };
   try {
+    console.log("[callGeminiHighlight] Making fetch request...");
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    console.log("[callGeminiHighlight] Response status:", res.status);
     if (!res.ok) {
       const text = await res.text();
       console.warn("[analytics] Gemini highlight response not ok", { status: res.status, body: text });
       return null;
     }
     const data = await res.json();
+    console.log("[callGeminiHighlight] Response data keys:", Object.keys(data || {}));
     if (Array.isArray(data.candidates) && data.candidates.length > 0) {
       for (const candidate of data.candidates) {
         const parts = candidate?.content?.parts;

@@ -23,7 +23,9 @@ const FULL_MONTHS = [
 
 export function MonthPicker({ id, value, onChange, className }: MonthPickerProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [openAbove, setOpenAbove] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
   
   const currentDate = new Date();
   const [selectedYear, selectedMonth] = value 
@@ -35,6 +37,14 @@ export function MonthPicker({ id, value, onChange, className }: MonthPickerProps
   React.useEffect(() => {
     if (isOpen) {
       setViewYear(selectedYear);
+      // Check if dropdown would overflow below viewport
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const dropdownHeight = 320; // Approximate height of dropdown
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        setOpenAbove(spaceBelow < dropdownHeight && spaceAbove > spaceBelow);
+      }
     }
   }, [isOpen, selectedYear]);
 
@@ -87,28 +97,34 @@ export function MonthPicker({ id, value, onChange, className }: MonthPickerProps
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl animate-in fade-in-0 zoom-in-95 duration-150">
+        <div 
+          ref={dropdownRef}
+          className={cn(
+            "absolute left-0 z-50 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl animate-in fade-in-0 zoom-in-95 duration-150",
+            openAbove ? "bottom-full mb-2" : "top-full mt-2"
+          )}
+        >
           {/* Year Navigation */}
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between">
             <button
               type="button"
               onClick={handlePrevYear}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
             <span className="text-sm font-semibold text-slate-900">{viewYear}</span>
             <button
               type="button"
               onClick={handleNextYear}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
           {/* Month Grid */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-1.5">
             {MONTHS.map((monthName, idx) => {
               const isSelected = idx + 1 === selectedMonth && viewYear === selectedYear;
               const isCurrentMonth = idx + 1 === currentDate.getMonth() + 1 && viewYear === currentDate.getFullYear();
@@ -118,7 +134,7 @@ export function MonthPicker({ id, value, onChange, className }: MonthPickerProps
                   type="button"
                   onClick={() => handleMonthSelect(idx)}
                   className={cn(
-                    "rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                    "rounded-lg px-2 py-2 text-xs font-medium transition-all",
                     isSelected
                       ? "bg-slate-900 text-white shadow-md"
                       : isCurrentMonth
@@ -133,7 +149,7 @@ export function MonthPicker({ id, value, onChange, className }: MonthPickerProps
           </div>
 
           {/* Quick Actions */}
-          <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
+          <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
             <button
               type="button"
               onClick={() => {
@@ -142,14 +158,14 @@ export function MonthPicker({ id, value, onChange, className }: MonthPickerProps
                 onChange(newValue);
                 setIsOpen(false);
               }}
-              className="flex-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-200"
+              className="flex-1 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-200"
             >
               This Month
             </button>
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-800"
+              className="flex-1 rounded-lg bg-slate-900 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800"
             >
               Done
             </button>

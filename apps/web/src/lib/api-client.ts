@@ -26,7 +26,10 @@ type LedgerFetchInit = RequestInit & {
 function buildLedgerUrl(base: string, prefix: string, path: string): string {
   const sanitizedBase = base.replace(/\/+$/g, "");
   const normalizedPrefix = prefix ? `/${prefix.replace(/^\/+|\/+$/g, "")}` : "";
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  
+  // Split path and query string to preserve query parameters
+  const [pathPart, queryPart] = path.split("?");
+  const normalizedPath = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
 
   try {
     const url = new URL(sanitizedBase);
@@ -35,12 +38,17 @@ function buildLedgerUrl(base: string, prefix: string, path: string): string {
     const needsPrefix = prefixPath && !basePath.endsWith(prefixPath);
     const finalPrefix = needsPrefix ? normalizedPrefix : "";
     url.pathname = `${basePath}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+    // Preserve query string from the path
+    if (queryPart) {
+      url.search = `?${queryPart}`;
+    }
     return url.toString();
   } catch {
     // Fallback for non-URL-safe bases (should not happen in normal deployments)
     const needsPrefix = normalizedPrefix && !sanitizedBase.endsWith(normalizedPrefix);
     const finalPrefix = needsPrefix ? normalizedPrefix : "";
-    return `${sanitizedBase}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+    const fullPath = `${sanitizedBase}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+    return queryPart ? `${fullPath}?${queryPart}` : fullPath;
   }
 }
 

@@ -4,6 +4,7 @@ import { fetchChatConversation, sendChatMessage } from "@/src/lib/api-client";
 import { ChatMessage } from "@/src/lib/schemas";
 import Link from "next/link";
 import { Copy, Pencil } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 const enableChatLogs = process.env.NODE_ENV !== "production";
 const logChatError = (...args: unknown[]) => {
@@ -227,8 +228,23 @@ async function handleSubmitEdit(event: React.FormEvent) {
                   </form>
                 ) : (
                   <>
-                    <div className={`inline-block rounded px-3 py-2 text-sm whitespace-pre-wrap ${bubbleTone}`}>
-                      {m.content}
+                    <div className={`inline-block rounded px-3 py-2 text-sm ${bubbleTone} ${isUser ? "whitespace-pre-wrap" : ""}`}>
+                      {isUser ? (
+                        m.content
+                      ) : (
+                        <ReactMarkdown
+                          components={{
+                            ul: ({ children }) => <ul className="list-disc pl-4 space-y-1">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 space-y-1">{children}</ol>,
+                            li: ({ children }) => <li className="ml-1">{children}</li>,
+                            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            code: ({ children }) => <code className="bg-slate-200 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                          }}
+                        >
+                          {m.content}
+                        </ReactMarkdown>
+                      )}
                     </div>
                     {isUser && !loading && !initializing && (
                       <div className="mt-1 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">

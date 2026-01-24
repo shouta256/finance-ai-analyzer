@@ -1654,6 +1654,23 @@ async function gatherChatContext(client, userId) {
   } catch (error) {
     console.warn("[chat] failed to summarise transactions", { message: error?.message });
   }
+  
+  // Transform summary to user-friendly format for AI context
+  let cleanSummary = null;
+  if (summary) {
+    const { safeToSpend, ...rest } = summary;
+    cleanSummary = {
+      ...rest,
+      budgetStatus: safeToSpend ? {
+        safeToSpendToday: `$${safeToSpend.safeToSpendToday?.toFixed(2) || '0.00'}`,
+        dailyBudget: `$${safeToSpend.dailyBase?.toFixed(2) || '0.00'}`,
+        daysRemaining: safeToSpend.daysRemaining || 0,
+        status: safeToSpend.danger ? 'Over budget - spending exceeds income' : 'On track - within budget',
+        riskLevel: safeToSpend.danger ? 'High' : 'Low',
+      } : null,
+    };
+  }
+  
   const recentTransactions = transactions.slice(0, 25).map((tx) => ({
     id: tx.id,
     occurredAt: tx.occurredAt,
@@ -1662,7 +1679,7 @@ async function gatherChatContext(client, userId) {
     category: tx.category,
     pending: tx.pending,
   }));
-  return { summary, recentTransactions };
+  return { summary: cleanSummary, recentTransactions };
 }
 
 function formatHistoryForProvider(history) {

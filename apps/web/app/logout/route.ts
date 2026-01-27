@@ -31,8 +31,6 @@ function clearAuthCookies(res: NextResponse) {
 
 export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
-  const domain = process.env.NEXT_PUBLIC_COGNITO_DOMAIN || process.env.COGNITO_DOMAIN;
-  const clientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID || process.env.COGNITO_CLIENT_ID || process.env.COGNITO_CLIENT_ID_WEB;
   const postLogout = new URL("/login", origin).toString();
 
   // Check if this is a demo user and cleanup their data
@@ -42,31 +40,10 @@ export async function GET(req: NextRequest) {
     await cleanupDemoData(token);
   }
 
-  // Always clear cookies first
+  // Clear all auth cookies and redirect to login
+  // Note: We skip Cognito hosted UI logout to avoid redirect issues.
+  // Clearing cookies is sufficient since the session is token-based.
   const localRes = NextResponse.redirect(postLogout);
   clearAuthCookies(localRes);
-
-  // Demo users: skip Cognito logout, just redirect to login
-  if (isDemoMode) {
-    return localRes;
-  }
-
-  // If Cognito config is present, bounce through Hosted UI logout
-  if (domain && clientId) {
-    try {
-      const base = domain.startsWith("http") ? domain.replace(/\/+$/,"") : `https://${domain}`;
-      const url = new URL("/logout", base);
-      url.searchParams.set("client_id", clientId);
-      // Cognito expects 'logout_uri' for hosted UI logout
-      url.searchParams.set("logout_uri", postLogout);
-      // Some Cognito versions also need 'redirect_uri'
-      url.searchParams.set("redirect_uri", postLogout);
-      const cognitoRes = NextResponse.redirect(url.toString());
-      clearAuthCookies(cognitoRes);
-      return cognitoRes;
-    } catch {
-      // fall back to local redirect
-    }
-  }
   return localRes;
 }

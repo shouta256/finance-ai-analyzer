@@ -74,12 +74,15 @@ export function TransactionsTable({ transactions, page, pageSize, total, onPageC
   const endIndex = startIndex + transactions.length;
   const finalIndex = total > 0 ? Math.min(endIndex, total) : endIndex;
   const canGoNext = total === 0 ? transactions.length === pageSize : finalIndex < total;
+  const totalPages = total > 0 ? Math.max(Math.ceil(total / pageSize), 1) : 1;
 
   return (
     <section className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Recent Transactions</h2>
-        <span className="text-xs text-slate-500">Page {page + 1}</span>
+        <span className="text-xs text-slate-500">
+          Page {Math.min(page + 1, totalPages)} of {totalPages}
+        </span>
       </div>
       <div className="flow-root rounded-2xl border border-slate-100">
         <div className="max-w-full overflow-x-auto">
@@ -152,9 +155,10 @@ export function TransactionsTable({ transactions, page, pageSize, total, onPageC
       </div>
       <div className="mt-4 flex items-center justify-between">
         <button
+          type="button"
           onClick={() => onPageChange(Math.max(page - 1, 0))}
           disabled={page === 0}
-          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:hover:bg-white"
         >
           Previous
         </button>
@@ -164,9 +168,10 @@ export function TransactionsTable({ transactions, page, pageSize, total, onPageC
             : `${transactions.length} records`}
         </div>
         <button
+          type="button"
           onClick={() => onPageChange(page + 1)}
           disabled={!canGoNext}
-          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:hover:bg-white"
         >
           Next
         </button>

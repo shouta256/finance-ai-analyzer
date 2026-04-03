@@ -7,13 +7,13 @@ import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
 import {
   getAnalyticsSummary,
-  listTransactions,
   queryTransactions,
   triggerTransactionSync,
   createPlaidLinkToken,
   exchangePlaidPublicToken,
   resetTransactions,
 } from "@/src/lib/client-api";
+import { DASHBOARD_TRANSACTIONS_PAGE_SIZE } from "@/src/lib/dashboard-constants";
 import { loadPlaidLink } from "@/src/lib/plaid";
 import { DashboardViewPeriod } from "./view-period";
 import { PeriodModal } from "./period-modal";
@@ -101,7 +101,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const [customFromMonth, setCustomFromMonth] = useState<string>("");
   const [customToMonth, setCustomToMonth] = useState<string>("");
   const [page, setPage] = useState<number>(0);
-  const pageSize = 15;
+  const pageSize = DASHBOARD_TRANSACTIONS_PAGE_SIZE;
   const [unlinkPlaid, setUnlinkPlaid] = useState<boolean>(false);
   const [actionsOpen, setActionsOpen] = useState<boolean>(false);
   const [periodOpen, setPeriodOpen] = useState<boolean>(false);
@@ -396,21 +396,35 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     page?: number;
   }) => {
     console.log("[refreshData] Called with overrides:", JSON.stringify(overrides));
+    const activePage = overrides?.page ?? page;
+    const targetSummaryMonth = overrides?.focusMonth ?? focusMonth;
+    const activeRangeMode = overrides?.rangeMode ?? rangeMode;
+    const rawFrom = overrides?.customFrom ?? customFromMonth;
+    const rawTo = overrides?.customTo ?? customToMonth;
+    const fromOverride = activeRangeMode === "custom" ? (rawFrom || "2020-01") : rawFrom;
+    const toOverride = activeRangeMode === "custom" ? (rawTo || month) : rawTo;
+    const analyticsMonth = targetSummaryMonth || month;
+    const summaryKey = cacheKey({ month: analyticsMonth });
+    const txKey = cacheKey({
+      mode: activeRangeMode,
+      month: activeRangeMode === "month" ? analyticsMonth : undefined,
+      from: activeRangeMode === "custom" ? fromOverride : undefined,
+      to: activeRangeMode === "custom" ? toOverride : undefined,
+      page: activePage,
+      size: pageSize,
+    });
+    const queryParams = {
+      month: activeRangeMode === "month" ? analyticsMonth : undefined,
+      from: activeRangeMode === "custom" ? fromOverride : undefined,
+      to: activeRangeMode === "custom" ? toOverride : undefined,
+      page: activePage,
+      pageSize,
+    };
     try {
       setErrorState(null);
-      const activePage = overrides?.page ?? page;
-      const targetSummaryMonth = overrides?.focusMonth ?? focusMonth;
-      const activeRangeMode = overrides?.rangeMode ?? rangeMode;
-      const rawFrom = overrides?.customFrom ?? customFromMonth;
-      const rawTo = overrides?.customTo ?? customToMonth;
-      // For custom range, ensure both from and to have values
-      const fromOverride = activeRangeMode === "custom" ? (rawFrom || "2020-01") : rawFrom;
-      const toOverride = activeRangeMode === "custom" ? (rawTo || month) : rawTo;
-      const analyticsMonth = targetSummaryMonth || month;
       console.log("[refreshData] Resolved values:", { activeRangeMode, fromOverride, toOverride, analyticsMonth });
       const now = Date.now();
 
-      const summaryKey = cacheKey({ month: analyticsMonth });
       const cachedSummary = SUMMARY_CACHE.get(summaryKey);
       const summaryPromise = (async () => {
         if (cachedSummary && cachedSummary.expires > now) {
@@ -421,14 +435,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         return fetched;
       })();
 
-      const txKey = cacheKey({
-        mode: activeRangeMode,
-        month: activeRangeMode === "month" ? analyticsMonth : undefined,
-        from: activeRangeMode === "custom" ? fromOverride : undefined,
-        to: activeRangeMode === "custom" ? toOverride : undefined,
-        page: activePage,
-        size: pageSize,
-      });
       const cachedTx = TRANSACTIONS_CACHE.get(txKey);
       const transactionsPromise = (async () => {
         if (cachedTx && cachedTx.expires > now) {
@@ -437,13 +443,6 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           }
           return cachedTx.data;
         }
-        const queryParams = {
-          month: activeRangeMode === "month" ? analyticsMonth : undefined,
-          from: activeRangeMode === "custom" ? fromOverride : undefined,
-          to: activeRangeMode === "custom" ? toOverride : undefined,
-          page: activePage,
-          pageSize,
-        };
         if (enableClientLogs) {
           console.log("[refreshData] Fetching transactions with params:", queryParams);
         }
@@ -487,11 +486,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         try {
           await new Promise((resolve) => setTimeout(resolve, 1200));
           const [summary2, transactions2] = await Promise.all([
-            getAnalyticsSummary(month),
-            listTransactions(month),
+            getAnalyticsSummary(analyticsMonth),
+            queryTransactions(queryParams),
           ]);
-          setSummaryCache(cacheKey({ month }), summary2);
-          setTransactionsCache(cacheKey({ mode: "month", month, page: 0, size: pageSize }), transactions2);
+          setSummaryCache(summaryKey, summary2);
+          setTransactionsCache(txKey, transactions2);
           setState({ summary: summary2, transactions: transactions2 });
           return;
         } catch {

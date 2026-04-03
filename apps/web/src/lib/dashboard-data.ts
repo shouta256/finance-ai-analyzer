@@ -1,6 +1,7 @@
 import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { DASHBOARD_TRANSACTIONS_PAGE_SIZE } from "./dashboard-constants";
 import { analyticsSummarySchema, transactionsListSchema } from "./schemas";
 
 export type AnalyticsSummary = z.infer<typeof analyticsSummarySchema>;
@@ -61,7 +62,9 @@ export async function getDashboardData(month: string): Promise<{
     const summaryJson = await summaryResponse.json();
     const summary = analyticsSummarySchema.parse(summaryJson);
 
-    const transactionsUrl = new URL(`/api/transactions?month=${month}`, appBaseUrl);
+    const transactionsUrl = new URL("/api/transactions", appBaseUrl);
+    transactionsUrl.searchParams.set("month", month);
+    transactionsUrl.searchParams.set("pageSize", String(DASHBOARD_TRANSACTIONS_PAGE_SIZE));
     const transactionsResponse = await fetch(transactionsUrl, {
       headers: commonHeaders,
       cache: "no-store",
@@ -162,7 +165,7 @@ function buildFallbackTransactions(month: string): TransactionsList {
       to: null,
     },
     page: 0,
-    pageSize: 15,
+    pageSize: DASHBOARD_TRANSACTIONS_PAGE_SIZE,
     total: 0,
     transactions: [],
     aggregates: {

@@ -1,12 +1,7 @@
-import { Suspense } from "react";
-import dynamic from "next/dynamic";
 import { BackgroundGlows } from "@/components/background-glows";
+import { DashboardClient } from "@/components/dashboard/dashboard-client";
 import { currentYearMonth } from "@/src/lib/date";
 import { getDashboardData } from "@/src/lib/dashboard-data";
-
-const DashboardClient = dynamic(() => import("@/components/dashboard").then((mod) => mod.DashboardClient), {
-  ssr: false,
-});
 
 interface DashboardPageProps {
   searchParams?: {
@@ -22,9 +17,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       <main className="relative min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 py-10">
         <BackgroundGlows />
         <div className="relative z-10 mx-auto flex w-full max-w-screen-2xl flex-col gap-10 px-6">
-          <Suspense fallback={<p className="text-sm text-slate-500">Loading dashboard…</p>}>
-            <DashboardClient month={month} initialSummary={summary} initialTransactions={transactions} />
-          </Suspense>
+          <DashboardClient month={month} initialSummary={summary} initialTransactions={transactions} />
         </div>
       </main>
     );

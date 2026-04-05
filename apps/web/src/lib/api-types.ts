@@ -530,6 +530,22 @@ export interface components {
       content: string;
       /** Format: date-time */
       createdAt: string;
+      sources: components["schemas"]["AiChatSource"][];
+    };
+    AiChatSource: {
+      txCode: string;
+      /** Format: uuid */
+      transactionId: string;
+      /** Format: date */
+      occurredOn: string;
+      merchant: string;
+      /** Format: int32 */
+      amountCents: number;
+      category: string;
+      /** Format: double */
+      score: number;
+      matchedTerms: string[];
+      reasons: string[];
     };
     AiChatResponse: {
       /** Format: uuid */
@@ -584,6 +600,8 @@ export interface components {
         };
       };
       stats: components["schemas"]["RagSearchStats"];
+      /** @description Human-readable references for each retrieved transaction, useful for debugging and UI citations */
+      references: components["schemas"]["RagSearchReference"][];
       /** @description Correlation identifier echoed from TraceIdFilter */
       traceId?: string;
       /** @description Session identifier to reuse for follow-up delta queries */
@@ -605,6 +623,25 @@ export interface components {
        * @description Average amount (cents) across returned rows
        */
       avg: number;
+    };
+    RagSearchReference: {
+      /** @description Compact transaction code matching rowsCsv */
+      txCode: string;
+      /** Format: uuid */
+      transactionId: string;
+      /** Format: date */
+      occurredOn: string;
+      merchant: string;
+      /** Format: int32 */
+      amountCents: number;
+      category: string;
+      /**
+       * Format: double
+       * @description Final ranking score after semantic and lexical reranking
+       */
+      score: number;
+      matchedTerms: string[];
+      reasons: string[];
     };
     RagSummariesResponse: {
       /** @description Month window represented (YYYY-MM) */
@@ -966,6 +1003,8 @@ export interface operations {
           "application/json": components["schemas"]["AiChatResponse"];
         };
       };
+      409: components["responses"]["ErrorResponse"];
+      503: components["responses"]["ErrorResponse"];
       default: components["responses"]["ErrorResponse"];
     };
   };

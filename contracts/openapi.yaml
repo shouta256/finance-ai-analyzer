@@ -341,6 +341,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AiChatResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
         default:
           $ref: '#/components/responses/ErrorResponse'
     post:
@@ -1090,6 +1094,7 @@ components:
         - role
         - content
         - createdAt
+        - sources
       properties:
         id:
           type: string
@@ -1102,6 +1107,49 @@ components:
         createdAt:
           type: string
           format: date-time
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiChatSource'
+    AiChatSource:
+      type: object
+      required:
+        - txCode
+        - transactionId
+        - occurredOn
+        - merchant
+        - amountCents
+        - category
+        - score
+        - matchedTerms
+        - reasons
+      properties:
+        txCode:
+          type: string
+        transactionId:
+          type: string
+          format: uuid
+        occurredOn:
+          type: string
+          format: date
+        merchant:
+          type: string
+        amountCents:
+          type: integer
+          format: int32
+        category:
+          type: string
+        score:
+          type: number
+          format: double
+        matchedTerms:
+          type: array
+          items:
+            type: string
+        reasons:
+          type: array
+          items:
+            type: string
     AiChatResponse:
       type: object
       required:
@@ -1164,6 +1212,7 @@ components:
         - rowsCsv
         - dict
         - stats
+        - references
         - chatId
       properties:
         rowsCsv:
@@ -1187,6 +1236,11 @@ components:
               description: Maps category short codes to canonical labels
         stats:
           $ref: '#/components/schemas/RagSearchStats'
+        references:
+          type: array
+          description: Human-readable references for each retrieved transaction, useful for debugging and UI citations
+          items:
+            $ref: '#/components/schemas/RagSearchReference'
         traceId:
           type: string
           description: Correlation identifier echoed from TraceIdFilter
@@ -1212,6 +1266,47 @@ components:
           type: integer
           format: int64
           description: Average amount (cents) across returned rows
+    RagSearchReference:
+      type: object
+      required:
+        - txCode
+        - transactionId
+        - occurredOn
+        - merchant
+        - amountCents
+        - category
+        - score
+        - matchedTerms
+        - reasons
+      properties:
+        txCode:
+          type: string
+          description: Compact transaction code matching rowsCsv
+        transactionId:
+          type: string
+          format: uuid
+        occurredOn:
+          type: string
+          format: date
+        merchant:
+          type: string
+        amountCents:
+          type: integer
+          format: int32
+        category:
+          type: string
+        score:
+          type: number
+          format: double
+          description: Final ranking score after semantic and lexical reranking
+        matchedTerms:
+          type: array
+          items:
+            type: string
+        reasons:
+          type: array
+          items:
+            type: string
     RagSummariesResponse:
       type: object
       required:

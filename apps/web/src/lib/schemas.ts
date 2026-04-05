@@ -186,11 +186,24 @@ export const transactionsResetResponseSchema = z.object({
 });
 
 // Chat schemas
+export const chatSourceSchema = z.object({
+  txCode: z.string(),
+  transactionId: z.string().uuid(),
+  occurredOn: z.string(),
+  merchant: z.string(),
+  amountCents: z.number(),
+  category: z.string(),
+  score: z.number(),
+  matchedTerms: z.array(z.string()),
+  reasons: z.array(z.string()),
+});
+
 export const chatMessageSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(["USER", "ASSISTANT"]),
   content: z.string(),
   createdAt: z.string().datetime(),
+  sources: z.array(chatSourceSchema).default([]),
 });
 
 export const chatResponseSchema = z.object({
@@ -214,6 +227,19 @@ export const ragSearchResponseSchema = z.object({
     sum: z.number(),
     avg: z.number(),
   }),
+  references: z.array(
+    z.object({
+      txCode: z.string(),
+      transactionId: z.string().uuid(),
+      occurredOn: z.string(),
+      merchant: z.string(),
+      amountCents: z.number(),
+      category: z.string(),
+      score: z.number(),
+      matchedTerms: z.array(z.string()),
+      reasons: z.array(z.string()),
+    }),
+  ),
   traceId: z.string().nullable().optional(),
   chatId: z.string(),
 });

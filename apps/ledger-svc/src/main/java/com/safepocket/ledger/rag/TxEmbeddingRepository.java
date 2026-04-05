@@ -7,15 +7,22 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class TxEmbeddingRepository {
+    private static final Logger log = LoggerFactory.getLogger(TxEmbeddingRepository.class);
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final EmbeddingService embeddingService;
+    private final AtomicBoolean missingTableWarned = new AtomicBoolean(false);
 
     public TxEmbeddingRepository(NamedParameterJdbcTemplate jdbcTemplate, EmbeddingService embeddingService) {
         this.jdbcTemplate = jdbcTemplate;
@@ -52,12 +59,61 @@ public class TxEmbeddingRepository {
                     .addValue("embedding", record.embedding() != null ? embeddingService.formatForSql(record.embedding()) : "[]");
             params.add(param);
         }
-        jdbcTemplate.batchUpdate(sql, params.toArray(MapSqlParameterSource[]::new));
+        try {
+            jdbcTemplate.batchUpdate(sql, params.toArray(MapSqlParameterSource[]::new));
+        } catch (DataAccessException ex) {
+            if (isMissingEmbeddingsTable(ex)) {
+                warnMissingTableOnce(ex);
+                return;
+            }
+            throw ex;
+        }
     }
 
     public void deleteByUserId(UUID userId) {
         MapSqlParameterSource params = new MapSqlParameterSource().addValue("userId", userId);
-        jdbcTemplate.update("DELETE FROM tx_embeddings WHERE user_id = :userId", params);
+        try {
+            jdbcTemplate.update("DELETE FROM tx_embeddings WHERE user_id = :userId", params);
+        } catch (DataAccessException ex) {
+            if (isMissingEmbeddingsTable(ex)) {
+                warnMissingTableOnce(ex);
+                return;
+            }
+            throw ex;
+        }
+    }
+
+    public boolean embeddingsTableExists() {
+        try {
+            Boolean exists = jdbcTemplate.queryForObject(
+                    "SELECT to_regclass('public.tx_embeddings') IS NOT NULL",
+                    new MapSqlParameterSource(),
+                    Boolean.class
+            );
+            return Boolean.TRUE.equals(exists);
+        } catch (DataAccessException ex) {
+            return false;
+        }
+    }
+
+    public long countByUserId(UUID userId) {
+        if (!embeddingsTableExists()) {
+            return 0L;
+        }
+        try {
+            Long count = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM tx_embeddings WHERE user_id = :userId",
+                    new MapSqlParameterSource().addValue("userId", userId),
+                    Long.class
+            );
+            return count != null ? count : 0L;
+        } catch (DataAccessException ex) {
+            if (isMissingEmbeddingsTable(ex)) {
+                warnMissingTableOnce(ex);
+                return 0L;
+            }
+            throw ex;
+        }
     }
 
     public List<EmbeddingMatch> findNearest(
@@ -106,7 +162,15 @@ public class TxEmbeddingRepository {
         }
         sql.append(" ORDER BY t.occurred_at DESC, t.amount DESC");
         sql.append(" LIMIT :limit");
-        return jdbcTemplate.query(sql.toString(), params, this::mapMatch);
+        try {
+            return jdbcTemplate.query(sql.toString(), params, this::mapMatch);
+        } catch (DataAccessException ex) {
+            if (isMissingEmbeddingsTable(ex)) {
+                warnMissingTableOnce(ex);
+                return List.of();
+            }
+            throw ex;
+        }
     }
 
     private EmbeddingMatch mapMatch(ResultSet rs, int rowNum) throws SQLException {
@@ -155,5 +219,29 @@ public class TxEmbeddingRepository {
             int amountCents,
             String category
     ) {
+    }
+
+    private boolean isMissingEmbeddingsTable(DataAccessException ex) {
+        String message = ex.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase();
+        if (normalized.contains("relation \"tx_embeddings\" does not exist")
+                || normalized.contains("relation 'tx_embeddings' does not exist")
+                || normalized.contains("tx_embeddings does not exist")) {
+            return true;
+        }
+        if (ex instanceof BadSqlGrammarException badSql) {
+            String sqlState = badSql.getSQLException() != null ? badSql.getSQLException().getSQLState() : null;
+            return "42P01".equals(sqlState);
+        }
+        return false;
+    }
+
+    private void warnMissingTableOnce(DataAccessException ex) {
+        if (missingTableWarned.compareAndSet(false, true)) {
+            log.warn("RAG embeddings table is missing; continuing without vector retrieval. reason={}", ex.getMessage());
+        }
     }
 }

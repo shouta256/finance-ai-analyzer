@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.safepocket.ledger.config.SafepocketProperties;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -82,7 +83,7 @@ public class OpenAiResponsesClient {
             String model,
             boolean allowFallback) {
         return switch (provider) {
-            case GEMINI -> generateGemini(inputMessages, maxOutputTokens, model);
+            case GEMINI -> generateGemini(inputMessages, maxOutputTokens, model, allowFallback);
             case OPENAI -> generateOpenAi(inputMessages, maxOutputTokens, model, allowFallback);
         };
     }
@@ -133,21 +134,51 @@ public class OpenAiResponsesClient {
         return Optional.empty();
     }
 
-    private Optional<String> generateGemini(List<Message> inputMessages, Integer maxOutputTokens, String model) {
+    private Optional<String> generateGemini(
+            List<Message> inputMessages,
+            Integer maxOutputTokens,
+            String model,
+            boolean allowFallback) {
         Optional<String> apiKey = resolveApiKey(Provider.GEMINI);
         if (apiKey.isEmpty()) {
             return Optional.empty();
         }
 
-        GeminiRequestContext context = new GeminiRequestContext(
-                inputMessages,
-                collectSystemInstruction(inputMessages),
-                geminiEndpoint(model),
-                apiKey.get(),
-                model
-        );
         int sanitizedTokens = sanitizePositive(maxOutputTokens, GEMINI_DEFAULT_MAX_TOKENS, GEMINI_MAX_TOKENS);
-        return generateGemini(context, sanitizedTokens, true);
+        List<String> candidates = geminiModelCandidates(model, allowFallback);
+        for (int i = 0; i < candidates.size(); i++) {
+            String candidateModel = candidates.get(i);
+            GeminiRequestContext context = new GeminiRequestContext(
+                    inputMessages,
+                    collectSystemInstruction(inputMessages),
+                    geminiEndpoint(candidateModel),
+                    apiKey.get(),
+                    candidateModel
+            );
+            Optional<String> result = generateGemini(context, sanitizedTokens, true);
+            if (result.isPresent()) {
+                if (i > 0) {
+                    log.warn("Gemini fallback model '{}' used after primary model '{}' returned no usable response.",
+                            candidateModel, model);
+                }
+                return result;
+            }
+        }
+        return Optional.empty();
+    }
+
+    List<String> geminiModelCandidates(String requestedModel, boolean allowFallback) {
+        List<String> candidates = new ArrayList<>();
+        if (requestedModel != null && !requestedModel.isBlank()) {
+            candidates.add(requestedModel);
+        }
+        if (allowFallback) {
+            String fallbackModel = properties.ai().fallbackModelOrNull();
+            if (fallbackModel != null && !fallbackModel.isBlank() && candidates.stream().noneMatch(fallbackModel::equals)) {
+                candidates.add(fallbackModel);
+            }
+        }
+        return candidates;
     }
 
     private Optional<String> generateGemini(GeminiRequestContext context, int maxTokens, boolean allowExpand) {

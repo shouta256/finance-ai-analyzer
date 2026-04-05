@@ -207,27 +207,24 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
     @Override
     public AggregateSnapshot loadAggregates(UUID userId, Instant fromInclusive, Instant toExclusive, Optional<UUID> accountId) {
         UUID accountUuid = accountId.orElse(null);
-        Object[] totals = jpaTransactionRepository.totalsForRange(userId, fromInclusive, toExclusive, accountUuid);
-        BigDecimal income = totals[0] instanceof BigDecimal b ? b : BigDecimal.ZERO;
-        BigDecimal expense = totals[1] instanceof BigDecimal b ? b : BigDecimal.ZERO;
-        long count = totals[2] instanceof Number n ? n.longValue() : 0L;
-        Instant minOccurredAt = totals[3] instanceof Timestamp tsMin ? tsMin.toInstant() : null;
-        Instant maxOccurredAt = totals[4] instanceof Timestamp tsMax ? tsMax.toInstant() : null;
+        Object[] totals = unwrapRow(jpaTransactionRepository.totalsForRange(userId, fromInclusive, toExclusive, accountUuid));
+        BigDecimal income = amountOrZero(valueAt(totals, 0));
+        BigDecimal expense = amountOrZero(valueAt(totals, 1));
+        long count = valueAt(totals, 2) instanceof Number n ? n.longValue() : 0L;
+        Instant minOccurredAt = toInstant(valueAt(totals, 3));
+        Instant maxOccurredAt = toInstant(valueAt(totals, 4));
 
         List<AggregateBucket> monthBuckets = jpaTransactionRepository.monthNetByRange(userId, fromInclusive, toExclusive, accountUuid)
                 .stream()
-                .map(row -> new AggregateBucket(formatMonthBucket(row[0]), amountOrZero(row[1])))
+                .map(this::toMonthBucket)
                 .toList();
         List<AggregateBucket> dayBuckets = jpaTransactionRepository.dayNetByRange(userId, fromInclusive, toExclusive, accountUuid)
                 .stream()
-                .map(row -> new AggregateBucket(formatDayBucket(row[0]), amountOrZero(row[1])))
+                .map(this::toDayBucket)
                 .toList();
         List<AggregateBucket> categoryBuckets = jpaTransactionRepository.expenseByCategory(userId, fromInclusive, toExclusive, accountUuid)
                 .stream()
-                .map(row -> new AggregateBucket(
-                        String.valueOf(row[0]),
-                        amountOrZero(row[1])
-                ))
+                .map(this::toCategoryBucket)
                 .toList();
 
         return new AggregateSnapshot(
@@ -242,6 +239,24 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
         );
     }
 
+    private AggregateBucket toMonthBucket(Object[] rawRow) {
+        Object[] row = unwrapRow(rawRow);
+        return new AggregateBucket(formatMonthBucket(valueAt(row, 0)), amountOrZero(valueAt(row, 1)));
+    }
+
+    private AggregateBucket toDayBucket(Object[] rawRow) {
+        Object[] row = unwrapRow(rawRow);
+        return new AggregateBucket(formatDayBucket(valueAt(row, 0)), amountOrZero(valueAt(row, 1)));
+    }
+
+    private AggregateBucket toCategoryBucket(Object[] rawRow) {
+        Object[] row = unwrapRow(rawRow);
+        return new AggregateBucket(
+                String.valueOf(valueAt(row, 0)),
+                amountOrZero(valueAt(row, 1))
+        );
+    }
+
     private BigDecimal amountOrZero(Object value) {
         if (value instanceof BigDecimal big) {
             return big;
@@ -250,6 +265,23 @@ public class PostgreSQLTransactionRepository implements TransactionRepository {
             return BigDecimal.valueOf(number.doubleValue());
         }
         return BigDecimal.ZERO;
+    }
+
+    private Object[] unwrapRow(Object[] row) {
+        if (row == null || row.length == 0) {
+            return new Object[0];
+        }
+        if (row.length == 1 && row[0] instanceof Object[] nested) {
+            return nested;
+        }
+        return row;
+    }
+
+    private Object valueAt(Object[] row, int index) {
+        if (row == null || index < 0 || index >= row.length) {
+            return null;
+        }
+        return row[index];
     }
 
     private String formatMonthBucket(Object value) {

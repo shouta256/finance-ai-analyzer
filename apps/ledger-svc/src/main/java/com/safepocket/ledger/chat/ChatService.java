@@ -1,18 +1,23 @@
 package com.safepocket.ledger.chat;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.safepocket.ledger.ai.OpenAiResponsesClient;
+import com.safepocket.ledger.rag.RagService;
 import com.safepocket.ledger.security.RequestContextHolder;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 public class ChatService {
@@ -22,13 +27,26 @@ public class ChatService {
     private final OpenAiResponsesClient openAiClient;
     private final ChatContextService chatContextService;
     private final ChatMessageRetentionManager retentionManager;
+    private final ObjectMapper objectMapper;
 
     private volatile boolean apiKeyWarned = false;
+    private static final DateTimeFormatter LONG_DATE_FORMAT = DateTimeFormatter.ofPattern("MMMM d, uuuu", Locale.US);
+    private static final DateTimeFormatter SHORT_DATE_FORMAT = DateTimeFormatter.ofPattern("MMM d, uuuu", Locale.US);
 
     private static final String SYSTEM_PROMPT = "You are Safepocket's financial helper. Use the provided context to answer. "
-        + "Context JSON has two parts: 'summary' (month totals, top categories/merchants) and 'retrieved' (rowsCsv + dict). "
+        + "Context JSON includes 'intent', 'assistantScope', and optionally 'summary' and 'retrieved'. "
+        + "If intent is GREETING, answer briefly and invite the user to ask about spending, income, categories, or merchants. "
+        + "If intent is OUT_OF_SCOPE, explain that you can only help with the user's own financial data and do not mention account totals or transactions. "
+        + "If intent is SUMMARY_ONLY, answer from the summary only and do not rely on transaction references. "
+        + "If intent is TRANSACTION_LOOKUP, answer from the retrieved transaction references first. "
+        + "Context JSON has two parts: 'summary' (month totals, top categories/merchants) and 'retrieved' (rowsCsv + dict + references). "
+        + "Every field ending in 'Cents' is an integer number of cents and must be divided by 100 to produce US dollars. "
         + "If 'retrieved.rowsCsv' is present, treat it as compact CSV with headers: tx,occurredOn,merchant,amountCents,category. "
         + "Use 'retrieved.dict.merchants' and 'retrieved.dict.categories' to map short codes to masked labels. "
+        + "Use 'retrieved.references' first when the user asks about a specific merchant, keyword, category, or 'how much did I spend' style question. "
+        + "Do not fall back to a generic monthly summary if retrieved transactions clearly match the question. "
+        + "For spend-total questions, sum the matching negative amountCents values, report the absolute dollar amount, and mention the matching merchants/dates. "
+        + "If no matching retrieved transactions exist, say that clearly instead of inventing an answer. "
         + "Report amounts in US dollars with sign-aware formatting, cite dates explicitly, and never invent facts beyond the context.";
 
     // Heuristics to avoid provider truncation: cap context and history message sizes
@@ -39,18 +57,36 @@ public class ChatService {
     public ChatService(ChatMessageRepository repository,
                        OpenAiResponsesClient openAiClient,
                        ChatContextService chatContextService,
-                       ChatMessageRetentionManager retentionManager) {
+                       ChatMessageRetentionManager retentionManager,
+                       ObjectMapper objectMapper) {
         this.repository = repository;
         this.openAiClient = openAiClient;
         this.chatContextService = chatContextService;
         this.retentionManager = retentionManager;
+        this.objectMapper = objectMapper;
     }
 
     public record ChatResponse(UUID conversationId, List<ChatMessageDto> messages, String traceId) {}
-    public record ChatMessageDto(UUID id, String role, String content, Instant createdAt) {}
+    public record ChatMessageDto(UUID id, String role, String content, Instant createdAt, List<ChatSourceDto> sources) {}
+    public record ChatSourceDto(
+            String txCode,
+            UUID transactionId,
+            LocalDate occurredOn,
+            String merchant,
+            int amountCents,
+            String category,
+            double score,
+            List<String> matchedTerms,
+            List<String> reasons
+    ) {}
+
+    private record GeneratedAssistantReply(String content, List<ChatSourceDto> sources) {}
+
+    private record ChatMessageMetadata(List<ChatSourceDto> sources) {}
 
     @Transactional
     public ChatResponse sendMessage(UUID userId, UUID conversationId, String message, java.util.UUID truncateFromMessageId) {
+        chatContextService.assertRagReady(userId);
         retentionManager.purgeExpiredMessagesNow();
         UUID convId = conversationId;
 
@@ -67,6 +103,7 @@ public class ChatService {
                         repository.deleteConversationTail(targetConversationId, target.getCreatedAt());
                         convId = targetConversationId;
                         target.setContent(message);
+                        target.setMetadataJson(null);
                         target.setCreatedAt(now);
                         userMsg = repository.save(target);
                     }
@@ -86,37 +123,53 @@ public class ChatService {
             repository.save(userMsg);
         }
 
-        String assistantContent;
+        GeneratedAssistantReply assistantReply;
         try {
-            assistantContent = generateAssistantReply(convId, userId, message);
+            assistantReply = generateAssistantReply(convId, userId, message);
         } catch (Exception ex) {
             String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
                     .orElseGet(() -> UUID.randomUUID().toString());
             log.error("AI chat: failed to generate reply for conversation {} user {} traceId {}", convId, userId, traceId, ex);
-            assistantContent = "(Fallback) I cannot create a reply now. Please contact support and share traceId=" + traceId + ".";
+            assistantReply = new GeneratedAssistantReply(
+                    "(Fallback) I cannot create a reply now. Please contact support and share traceId=" + traceId + ".",
+                    List.of()
+            );
         }
-        ChatMessageEntity assistantMsg = new ChatMessageEntity(UUID.randomUUID(), convId, userId, ChatMessageEntity.Role.ASSISTANT, assistantContent, Instant.now());
+        ChatMessageEntity assistantMsg = new ChatMessageEntity(
+                UUID.randomUUID(),
+                convId,
+                userId,
+                ChatMessageEntity.Role.ASSISTANT,
+                assistantReply.content(),
+                Instant.now()
+        );
+        assistantMsg.setMetadataJson(serializeMetadata(assistantReply.sources()));
         repository.save(assistantMsg);
 
         Instant cutoff = retentionManager.currentCutoff();
         List<ChatMessageDto> msgs = repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(convId, userId).stream()
                 .filter(e -> !e.getCreatedAt().isBefore(cutoff))
-                .map(e -> new ChatMessageDto(e.getId(), e.getRole().name(), e.getContent(), e.getCreatedAt()))
+                .map(this::toDto)
                 .collect(Collectors.toList());
         return new ChatResponse(convId, msgs, UUID.randomUUID().toString());
     }
 
-    private String generateAssistantReply(UUID conversationId, UUID userId, String latestUserMessage) {
+    private GeneratedAssistantReply generateAssistantReply(UUID conversationId, UUID userId, String latestUserMessage) {
         try {
             if (!openAiClient.hasCredentials()) {
                 if (!apiKeyWarned) {
-                    log.warn("AI chat: OPENAI_API_KEY missing, using fallback (this warning is printed once)" );
+                    log.warn("AI chat: no provider credentials configured, using fallback (this warning is printed once)");
                     apiKeyWarned = true;
                 }
-                return "(Fallback) I understand. The assistant runs in sandbox mode now. Your message: " + latestUserMessage;
+                return new GeneratedAssistantReply(
+                        "(Fallback) I understand. The assistant runs in sandbox mode now. Your message: " + latestUserMessage,
+                        List.of()
+                );
             }
 
-            String context = chatContextService.buildContext(userId, conversationId, latestUserMessage);
+            ChatContextService.ChatContextBundle contextBundle =
+                    chatContextService.buildContextBundle(userId, conversationId, latestUserMessage);
+            String context = contextBundle.contextJson();
             if (context != null && context.length() > MAX_CONTEXT_CHARS) {
                 context = context.substring(0, MAX_CONTEXT_CHARS) + "\n[...context truncated...]";
             }
@@ -151,16 +204,20 @@ public class ChatService {
             Optional<String> aiReply = openAiClient.generateText(messages, 1200);
 
             if (aiReply.isPresent()) {
-                return aiReply.get();
+                List<ChatSourceDto> citedSources = filterSourcesForReply(aiReply.get(), mapSources(contextBundle.sources()));
+                return new GeneratedAssistantReply(aiReply.get(), citedSources);
             }
             log.warn("AI chat: model did not return content, using fallback");
-            return "(Fallback) I could not create a reply, but your message is saved.";
+            return new GeneratedAssistantReply("(Fallback) I could not create a reply, but your message is saved.", List.of());
         } catch (Exception ex) {
             String traceId = RequestContextHolder.get().map(RequestContextHolder.RequestContext::traceId)
                     .orElseGet(() -> UUID.randomUUID().toString());
             log.error("AI chat: unexpected failure building reply traceId {}", traceId, ex);
             // Use phrasing consistent with outer fallback for test stability and UX
-            return "(Fallback) I could not create a reply. Please share traceId=" + traceId + " with support.";
+            return new GeneratedAssistantReply(
+                    "(Fallback) I could not create a reply. Please share traceId=" + traceId + " with support.",
+                    List.of()
+            );
         }
     }
 
@@ -188,9 +245,113 @@ public class ChatService {
             return new ChatResponse(newConvId, List.of(), UUID.randomUUID().toString());
         }
         List<ChatMessageDto> msgs = history.stream()
-                .map(e -> new ChatMessageDto(e.getId(), e.getRole().name(), e.getContent(), e.getCreatedAt()))
+                .map(this::toDto)
                 .collect(Collectors.toList());
         UUID convId = history.get(0).getConversationId();
         return new ChatResponse(convId, msgs, UUID.randomUUID().toString());
+    }
+
+    private ChatMessageDto toDto(ChatMessageEntity entity) {
+        return new ChatMessageDto(
+                entity.getId(),
+                entity.getRole().name(),
+                entity.getContent(),
+                entity.getCreatedAt(),
+                parseSources(entity.getMetadataJson())
+        );
+    }
+
+    private List<ChatSourceDto> mapSources(List<RagService.SearchReference> references) {
+        if (references == null || references.isEmpty()) {
+            return List.of();
+        }
+        return references.stream()
+                .map(ref -> new ChatSourceDto(
+                        ref.txCode(),
+                        ref.transactionId(),
+                        ref.occurredOn(),
+                        ref.merchant(),
+                        ref.amountCents(),
+                        ref.category(),
+                        ref.score(),
+                        ref.matchedTerms(),
+                        ref.reasons()
+                ))
+                .toList();
+    }
+
+    private List<ChatSourceDto> filterSourcesForReply(String reply, List<ChatSourceDto> sources) {
+        if (reply == null || reply.isBlank() || sources == null || sources.isEmpty()) {
+            return List.of();
+        }
+        String normalizedReply = normalizeText(reply);
+        String lowerReply = reply.toLowerCase(Locale.US);
+        return sources.stream()
+                .filter(source -> sourceMentionedInReply(source, normalizedReply, lowerReply))
+                .toList();
+    }
+
+    private boolean sourceMentionedInReply(ChatSourceDto source, String normalizedReply, String lowerReply) {
+        if (source == null) {
+            return false;
+        }
+        String normalizedMerchant = normalizeText(source.merchant());
+        if (!normalizedMerchant.isBlank() && normalizedReply.contains(normalizedMerchant)) {
+            return true;
+        }
+        for (String token : normalizedMerchant.split(" ")) {
+            if (token.length() >= 5 && normalizedReply.contains(token)) {
+                return true;
+            }
+        }
+        if (source.matchedTerms() != null) {
+            for (String term : source.matchedTerms()) {
+                String normalizedTerm = normalizeText(term);
+                if (normalizedTerm.length() >= 4 && normalizedReply.contains(normalizedTerm)) {
+                    return true;
+                }
+            }
+        }
+        if (source.occurredOn() != null) {
+            String longDate = source.occurredOn().format(LONG_DATE_FORMAT).toLowerCase(Locale.US);
+            String shortDate = source.occurredOn().format(SHORT_DATE_FORMAT).toLowerCase(Locale.US);
+            return lowerReply.contains(longDate) || lowerReply.contains(shortDate);
+        }
+        return false;
+    }
+
+    private String normalizeText(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return text.toLowerCase(Locale.US)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
+    private String serializeMetadata(List<ChatSourceDto> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(new ChatMessageMetadata(sources));
+        } catch (JsonProcessingException e) {
+            log.warn("AI chat: failed to serialize message metadata", e);
+            return null;
+        }
+    }
+
+    private List<ChatSourceDto> parseSources(String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            ChatMessageMetadata metadata = objectMapper.readValue(metadataJson, ChatMessageMetadata.class);
+            return metadata.sources() != null ? metadata.sources() : List.of();
+        } catch (Exception e) {
+            log.warn("AI chat: failed to parse message metadata", e);
+            return List.of();
+        }
     }
 }

@@ -163,9 +163,23 @@ public class RagRepository {
             Integer amountMax,
             int limit
     ) {
+        return findTransactionsForEmbedding(userId, from, to, categories, amountMin, amountMax, limit, 0);
+    }
+
+    public List<TransactionSlice> findTransactionsForEmbedding(
+            UUID userId,
+            LocalDate from,
+            LocalDate to,
+            List<String> categories,
+            Integer amountMin,
+            Integer amountMax,
+            int limit,
+            int offset
+    ) {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("userId", userId)
-                .addValue("limit", limit);
+                .addValue("limit", limit)
+                .addValue("offset", Math.max(offset, 0));
         StringBuilder sql = new StringBuilder("""
                 SELECT t.id,
                        t.occurred_at,
@@ -198,9 +212,29 @@ public class RagRepository {
                         sql.append("  AND CAST(t.amount * 100 AS bigint) <= :amountMax\n");
                         params.addValue("amountMax", amountMax);
                 }
-        sql.append("ORDER BY t.occurred_at DESC, t.amount DESC\n");
+        sql.append("ORDER BY t.occurred_at DESC, t.amount DESC, t.id DESC\n");
         sql.append("LIMIT :limit");
+        sql.append("\nOFFSET :offset");
         return jdbcTemplate.query(sql.toString(), params, this::mapTransactionSlice);
+    }
+
+    public long countTransactions(UUID userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("userId", userId);
+        Long count = jdbcTemplate.queryForObject("""
+                SELECT count(*)
+                FROM transactions
+                WHERE user_id = :userId
+                """, params, Long.class);
+        return count != null ? count : 0L;
+    }
+
+    public List<UUID> findUserIdsWithTransactions() {
+        return jdbcTemplate.query("""
+                SELECT DISTINCT user_id
+                FROM transactions
+                ORDER BY user_id
+                """, (rs, rowNum) -> rs.getObject("user_id", UUID.class));
     }
 
     public List<TimelinePoint> aggregateTimeline(UUID userId, LocalDate from, LocalDate to) {

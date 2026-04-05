@@ -58,7 +58,7 @@ class RagServiceTest {
         SafepocketProperties props = new SafepocketProperties(
                 new SafepocketProperties.Cognito("https://example.com", "aud", false, "cognito.example.com", "aud", null, null, null, null),
                 new SafepocketProperties.Plaid("id", "sec", "redir", "base", "env", null, null),
-                new SafepocketProperties.Ai("openai", "model", "https://api.example.com", null, null),
+                new SafepocketProperties.Ai("openai", "model", "https://api.example.com", null, null, null),
                 new SafepocketProperties.Security("12345678901234567890123456789012"),
                 new SafepocketProperties.Rag("pgvector", "text-embedding-3-small", 20, 8)
         );
@@ -88,13 +88,15 @@ class RagServiceTest {
                 .thenReturn(List.of(new RagRepository.TransactionSlice(transactionId, LocalDate.of(2025, 9, 15), 460, "EatingOut", "Starbucks latte", merchantId, "Starbucks")));
 
         RagService.SearchResponse response = service.search(
-                new RagService.SearchRequest(null, null, null, null, null, null, 10),
+                new RagService.SearchRequest(null, null, null, null, null, null, 10, false),
                 "chat-1"
         );
 
         assertThat(response.rowsCsv()).isEqualTo("t33333333,250915,m1,460,eo");
         assertThat(response.dict().get("merchants")).containsEntry("m1", "Starbucks");
         assertThat(response.stats().count()).isEqualTo(1);
+        assertThat(response.references()).hasSize(1);
+        assertThat(response.references().getFirst().merchant()).isEqualTo("Starbucks");
         assertThat(response.chatId()).isEqualTo("chat-1");
         verify(auditLogger).record(eq("/rag/search"), eq(userId), eq("chat-1"), eq(1), anyInt());
     }
@@ -107,8 +109,8 @@ class RagServiceTest {
         when(ragRepository.fetchTransactions(eq(userId), any()))
                 .thenReturn(List.of(new RagRepository.TransactionSlice(transactionId, LocalDate.of(2025, 9, 15), 500, "EatingOut", "Coffee", merchantId, "Blue Bottle")));
 
-        service.search(new RagService.SearchRequest(null, null, null, null, null, null, 10), "chat-2");
-        RagService.SearchResponse second = service.search(new RagService.SearchRequest(null, null, null, null, null, null, 10), "chat-2");
+        service.search(new RagService.SearchRequest(null, null, null, null, null, null, 10, true), "chat-2");
+        RagService.SearchResponse second = service.search(new RagService.SearchRequest(null, null, null, null, null, null, 10, true), "chat-2");
 
         assertThat(second.rowsCsv()).isEmpty();
         assertThat(second.stats().count()).isZero();
@@ -119,10 +121,46 @@ class RagServiceTest {
         when(txEmbeddingRepository.findNearest(eq(userId), any(), any(), any(), any(), any(), any(), anyInt()))
                 .thenReturn(List.of());
 
-        RagService.SearchResponse response = service.search(new RagService.SearchRequest(null, null, null, null, null, null, 5), "chat-3");
+        RagService.SearchResponse response = service.search(new RagService.SearchRequest(null, null, null, null, null, null, 5, false), "chat-3");
         assertThat(response.rowsCsv()).isEmpty();
         assertThat(response.dict().get("merchants")).isEmpty();
+        assertThat(response.references()).isEmpty();
         assertThat(response.chatId()).isEqualTo("chat-3");
+    }
+
+    @Test
+    void searchAllowsRepeatedMatchesForChatFollowUps() {
+        YearMonth month = YearMonth.of(2025, 9);
+        when(txEmbeddingRepository.findNearest(eq(userId), any(), any(), any(), any(), any(), any(), anyInt()))
+                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embed("Coffee"), month, -1250, "Dining")));
+        when(ragRepository.fetchTransactions(eq(userId), any()))
+                .thenReturn(List.of(new RagRepository.TransactionSlice(transactionId, LocalDate.of(2025, 9, 15), -1250, "Dining", "Blue Bottle latte", merchantId, "Blue Bottle Coffee")));
+
+        RagService.SearchRequest request = new RagService.SearchRequest("coffee", null, null, null, null, null, 10, false);
+
+        RagService.SearchResponse first = service.search(request, "chat-repeat");
+        RagService.SearchResponse second = service.search(request, "chat-repeat");
+
+        assertThat(first.references()).hasSize(1);
+        assertThat(second.references()).hasSize(1);
+        assertThat(second.references().getFirst().merchant()).isEqualTo("Blue Bottle Coffee");
+    }
+
+    @Test
+    void searchExpandsDrinkQueryTermsToCoffeeSynonyms() {
+        YearMonth month = YearMonth.of(2025, 9);
+        when(txEmbeddingRepository.findNearest(eq(userId), any(), any(), any(), any(), any(), any(), anyInt()))
+                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embed("Blue Bottle Coffee latte"), month, -1250, "Dining")));
+        when(ragRepository.fetchTransactions(eq(userId), any()))
+                .thenReturn(List.of(new RagRepository.TransactionSlice(transactionId, LocalDate.of(2025, 9, 15), -1250, "Dining", "Morning latte", merchantId, "Blue Bottle Coffee")));
+
+        RagService.SearchResponse response = service.search(
+                new RagService.SearchRequest("drink", null, null, null, null, null, 10, false),
+                "chat-drink"
+        );
+
+        assertThat(response.references()).hasSize(1);
+        assertThat(response.references().getFirst().matchedTerms()).containsAnyOf("coffee", "latte");
     }
 
     @Test

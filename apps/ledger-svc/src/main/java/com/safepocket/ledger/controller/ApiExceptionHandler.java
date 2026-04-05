@@ -2,6 +2,7 @@ package com.safepocket.ledger.controller;
 
 import com.safepocket.ledger.auth.CognitoAuthService;
 import com.safepocket.ledger.controller.dto.ErrorResponseDto;
+import com.safepocket.ledger.rag.RagNotReadyException;
 import com.safepocket.ledger.security.RequestContextHolder;
 import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
@@ -41,6 +42,15 @@ public class ApiExceptionHandler {
                         "status", ex.status(),
                         "body", ex.responseBody()
                 ));
+    }
+
+    @ExceptionHandler(RagNotReadyException.class)
+    public ResponseEntity<ErrorResponseDto> handleRagNotReady(RagNotReadyException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.status());
+        if (status == null) {
+            status = HttpStatus.CONFLICT;
+        }
+        return build(status, ex.code(), ex.getMessage(), ex.details());
     }
 
     @ExceptionHandler(Exception.class)

@@ -51,13 +51,27 @@ public class RagController {
                 request.categories(),
                 request.amountMin(),
                 request.amountMax(),
-                request.topK()
+                request.topK(),
+                true
         );
         SearchResponse result = ragService.search(serviceRequest, resolvedChatId);
         RagSearchResponseDto dto = new RagSearchResponseDto(
                 result.rowsCsv(),
                 result.dict(),
                 new RagSearchResponseDto.StatsDto(result.stats().count(), result.stats().sum(), result.stats().avg()),
+                result.references().stream()
+                        .map(ref -> new RagSearchResponseDto.ReferenceDto(
+                                ref.txCode(),
+                                ref.transactionId(),
+                                ref.occurredOn(),
+                                ref.merchant(),
+                                ref.amountCents(),
+                                ref.category(),
+                                ref.score(),
+                                ref.matchedTerms(),
+                                ref.reasons()
+                        ))
+                        .toList(),
                 result.traceId(),
                 result.chatId()
         );

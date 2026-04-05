@@ -66,10 +66,29 @@ To run this project locally, you need Docker and Java 21 installed.
     # Start the application
     make up
     ```
+    `make up` automatically backfills local RAG embeddings for the seeded transactions before you use chat.
 
 3.  **Access the App**
     - Frontend: `http://localhost:3000`
     - Backend API: `http://localhost:8081`
+
+## Local Troubleshooting
+
+If `make up` fails at `:bootRun` and the backend log includes Flyway messages like `Migration checksum mismatch` or `Detected resolved migration not applied to database`, the local Docker Postgres volume is carrying an older migration history than the current repository.
+
+If you do not need to keep local dev data, reset the local volumes and start again:
+
+```bash
+make reset-db
+make setup
+make up
+```
+
+This recreates the local Postgres/Redis volumes and is the fastest fix for stale Flyway history.
+
+Warnings such as `baseline-browser-mapping` or `Browserslist: caniuse-lite is old` are frontend tooling notices. They are unrelated to the backend `bootRun` failure.
+
+If chat returns `RAG_INDEX_NOT_READY`, the backend has detected transactions without embeddings for that user. In local dev, restarting with `make up` triggers an automatic startup backfill for seeded data. Watch the backend log for `RAG startup backfill completed`.
 
 ## Documentation
 

@@ -25,6 +25,9 @@ public class ChatMessageEntity {
     @Column(name = "content", nullable = false, columnDefinition = "text")
     private String content;
 
+    @Column(name = "metadata_json", columnDefinition = "text")
+    private String metadataJson;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -44,10 +47,15 @@ public class ChatMessageEntity {
     public UUID getUserId() { return userId; }
     public Role getRole() { return role; }
     public String getContent() { return content; }
+    public String getMetadataJson() { return metadataJson; }
     public Instant getCreatedAt() { return createdAt; }
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public void setMetadataJson(String metadataJson) {
+        this.metadataJson = metadataJson;
     }
 
     public void setCreatedAt(Instant createdAt) {

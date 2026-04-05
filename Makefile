@@ -15,7 +15,7 @@ include .env
 export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env)
 endif
 
-.PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down logs clean kill-port demo
+.PHONY: help setup pnpm-install generate-types backend-build docker-up wait-for-db seed up down reset-db logs clean kill-port demo
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -46,7 +46,7 @@ seed: wait-for-db ## Apply SQL seed data to Postgres
 up: docker-up ## Start backend and frontend in dev mode (Ctrl+C to stop)
 	@echo "Launching Safepocket services..."
 	@trap 'kill 0' INT TERM EXIT; \
-	  (cd apps/ledger-svc && ./gradlew bootRun) & \
+	  (cd apps/ledger-svc && SAFEPOCKET_RAG_AUTO_BACKFILL_ON_STARTUP=true ./gradlew bootRun) & \
 	  (cd apps/web && $(PNPM) dev) & \
 	  wait
 
@@ -55,6 +55,11 @@ down: ## Stop app processes and supporting containers
 	@pkill -f "apps/ledger-svc/gradlew bootRun" 2>/dev/null || true
 	@pkill -f "pnpm dev" 2>/dev/null || true
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down
+
+reset-db: ## Recreate local Postgres/Redis volumes (destroys local dev data)
+	@echo "Resetting local Postgres/Redis volumes..."
+	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down -v
+	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d $(DockerUpTargets)
 
 logs: ## Tail docker compose logs
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f

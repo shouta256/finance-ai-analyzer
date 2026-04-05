@@ -4,6 +4,9 @@ import com.safepocket.ledger.chat.ChatService;
 import com.safepocket.ledger.security.AuthenticatedUserProvider;
 import com.safepocket.ledger.user.UserService;
 import jakarta.validation.constraints.NotBlank;
+import java.time.LocalDate;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -33,8 +36,19 @@ public class ChatController {
     }
 
     public record ChatRequest(UUID conversationId, @NotBlank String message, UUID truncateFromMessageId) {}
-    public record ChatMessageDto(UUID id, String role, String content, java.time.Instant createdAt) {}
-    public record ChatResponseDto(UUID conversationId, java.util.List<ChatMessageDto> messages, String traceId) {}
+    public record ChatSourceDto(
+            String txCode,
+            UUID transactionId,
+            LocalDate occurredOn,
+            String merchant,
+            int amountCents,
+            String category,
+            double score,
+            List<String> matchedTerms,
+            List<String> reasons
+    ) {}
+    public record ChatMessageDto(UUID id, String role, String content, Instant createdAt, List<ChatSourceDto> sources) {}
+    public record ChatResponseDto(UUID conversationId, List<ChatMessageDto> messages, String traceId) {}
 
     @GetMapping
     public ResponseEntity<ChatResponseDto> history(@RequestParam(value = "conversationId", required = false) UUID conversationId,
@@ -42,7 +56,7 @@ public class ChatController {
         UUID userId = ensureUser(auth);
         var res = chatService.getConversation(userId, conversationId);
         var dto = new ChatResponseDto(res.conversationId(),
-                res.messages().stream().map(m -> new ChatMessageDto(m.id(), m.role(), m.content(), m.createdAt())).toList(),
+                res.messages().stream().map(this::mapMessage).toList(),
                 res.traceId());
         return ResponseEntity.ok(dto);
     }
@@ -51,8 +65,30 @@ public class ChatController {
     public ResponseEntity<ChatResponseDto> chat(@RequestBody ChatRequest request, Authentication auth) {
         UUID userId = ensureUser(auth);
         var res = chatService.sendMessage(userId, request.conversationId(), request.message(), request.truncateFromMessageId());
-        var dto = new ChatResponseDto(res.conversationId(), res.messages().stream().map(m -> new ChatMessageDto(m.id(), m.role(), m.content(), m.createdAt())).toList(), res.traceId());
+        var dto = new ChatResponseDto(res.conversationId(), res.messages().stream().map(this::mapMessage).toList(), res.traceId());
         return ResponseEntity.ok(dto);
+    }
+
+    private ChatMessageDto mapMessage(ChatService.ChatMessageDto message) {
+        return new ChatMessageDto(
+                message.id(),
+                message.role(),
+                message.content(),
+                message.createdAt(),
+                message.sources().stream()
+                        .map(source -> new ChatSourceDto(
+                                source.txCode(),
+                                source.transactionId(),
+                                source.occurredOn(),
+                                source.merchant(),
+                                source.amountCents(),
+                                source.category(),
+                                source.score(),
+                                source.matchedTerms(),
+                                source.reasons()
+                        ))
+                        .toList()
+        );
     }
 
     private UUID ensureUser(Authentication auth) {

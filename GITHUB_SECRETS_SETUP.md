@@ -42,9 +42,10 @@ You can store individual variables or a JSON bundle in Secrets Manager (referenc
 
 | Name | Notes |
 |------|-------|
-| `OPENAI_API_KEY` | Enable OpenAI Responses (default provider). |
-| `GEMINI_API_KEY` | Optional alternative provider (`SAFEPOCKET_AI_PROVIDER=gemini`). |
-| `SAFEPOCKET_AI_PROVIDER`, `SAFEPOCKET_AI_MODEL`, `SAFEPOCKET_AI_MODEL_SNAPSHOT`, `SAFEPOCKET_AI_ENDPOINT` | Override defaults when deploying custom models or gateways. |
+| `GEMINI_API_KEY` | Enable Gemini chat/highlights. This is the default provider. |
+| `OPENAI_API_KEY` | Optional alternative provider when `SAFEPOCKET_AI_PROVIDER=openai`. |
+| `SAFEPOCKET_AI_KEY` | Optional generic AI key used when you prefer a provider-agnostic secret name. |
+| `SAFEPOCKET_AI_PROVIDER`, `SAFEPOCKET_AI_MODEL`, `SAFEPOCKET_AI_FALLBACK_MODEL`, `SAFEPOCKET_AI_MODEL_SNAPSHOT`, `SAFEPOCKET_AI_ENDPOINT` | Override defaults when deploying custom models or gateways. |
 | `SAFEPOCKET_KMS_DATA_KEY` | Base64-encoded 256-bit key required to encrypt Plaid access tokens. **Mandatory in production.** |
 
 ## Optional / Ops

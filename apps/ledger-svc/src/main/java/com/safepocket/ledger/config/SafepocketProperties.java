@@ -121,7 +121,7 @@ public record SafepocketProperties(
         }
     }
 
-    public record Ai(String provider, String model, String endpoint, String apiKey, String snapshot) {
+    public record Ai(String provider, String model, String endpoint, String apiKey, String snapshot, String fallbackModel) {
         public Ai {
             // provider optional; defaults to openai
             if (model == null || model.isBlank()) {
@@ -140,6 +140,10 @@ public record SafepocketProperties(
 
         public String snapshotOrDefault() {
             return (snapshot != null && !snapshot.isBlank()) ? snapshot : model;
+        }
+
+        public String fallbackModelOrNull() {
+            return (fallbackModel != null && !fallbackModel.isBlank()) ? fallbackModel : null;
         }
     }
 

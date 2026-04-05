@@ -97,6 +97,7 @@ public class TransactionSyncService {
                 transactionEmbeddingService.upsertEmbeddings(userId, txIds);
             }
         }
+        transactionEmbeddingService.backfillMissingEmbeddings(userId);
         userSyncCursor.put(userId, Instant.now());
         // If demo seeding is disabled, there is no backlog to process.
         int pending = useDemoSeed ? Math.max(0, 50 - synced) : 0;

@@ -12,11 +12,12 @@ import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,20 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RagService {
+
+    private static final Set<String> QUERY_STOP_WORDS = Set.of(
+            "about", "after", "before", "could", "from", "have", "last", "more",
+            "much", "show", "tell", "than", "that", "this", "what", "when",
+            "where", "which", "with", "your"
+    );
+    private static final Map<String, List<String>> QUERY_SYNONYMS = Map.of(
+            "drink", List.of("coffee", "latte", "tea", "beverage"),
+            "drinks", List.of("coffee", "latte", "tea", "beverage"),
+            "coffee", List.of("latte", "cafe"),
+            "latte", List.of("coffee"),
+            "beverage", List.of("coffee", "tea"),
+            "cafe", List.of("coffee", "latte")
+    );
 
     private final AuthenticatedUserProvider authenticatedUserProvider;
     private final RlsGuard rlsGuard;
@@ -89,21 +104,22 @@ public class RagService {
 
     public SearchResponse searchForUser(UUID userId, SearchRequest request, String chatId) {
         rlsGuard.setAppsecUser(userId);
-    int limit = Math.min(
-        Optional.ofNullable(request.topK()).orElse(properties.rag().maxRows()),
-        100
-    );
-    float[] queryVector = Optional.ofNullable(request.q())
-        .filter(s -> !s.isBlank())
-        .map(embeddingService::embed)
-        .orElse(null);
+        int limit = Math.min(
+                Optional.ofNullable(request.topK()).orElse(properties.rag().maxRows()),
+                100
+        );
+        float[] queryVector = Optional.ofNullable(request.q())
+                .filter(s -> !s.isBlank())
+                .map(embeddingService::embed)
+                .orElse(null);
+        List<String> queryTerms = expandQueryTerms(extractQueryTerms(request.q()));
 
-    // When a query is present, widen the candidate pool so we can score by cosine similarity properly.
-    int candidateLimit = (queryVector != null && queryVector.length > 0)
-        ? Math.min(500, Math.max(limit * 10, properties.rag().maxRows() * 10))
-        : limit;
+        // When a query is present, widen the candidate pool so we can score by cosine similarity properly.
+        int candidateLimit = (queryVector != null && queryVector.length > 0)
+                ? Math.min(500, Math.max(limit * 10, properties.rag().maxRows() * 10))
+                : limit;
 
-    List<TxEmbeddingRepository.EmbeddingMatch> matches = txEmbeddingRepository.findNearest(
+        List<TxEmbeddingRepository.EmbeddingMatch> matches = txEmbeddingRepository.findNearest(
                 userId,
                 queryVector,
                 request.from(),
@@ -111,7 +127,7 @@ public class RagService {
                 request.categories(),
                 request.amountMin(),
                 request.amountMax(),
-        candidateLimit
+                candidateLimit
         );
 
         boolean requiresReindex = matches.isEmpty() || matches.stream().anyMatch(match -> match.embedding().length == 0);
@@ -127,7 +143,7 @@ public class RagService {
             );
             if (!candidates.isEmpty()) {
                 transactionEmbeddingService.upsertEmbeddings(userId, candidates.stream().map(RagRepository.TransactionSlice::transactionId).toList());
-        matches = txEmbeddingRepository.findNearest(
+                matches = txEmbeddingRepository.findNearest(
                         userId,
                         queryVector,
                         request.from(),
@@ -135,7 +151,7 @@ public class RagService {
                         request.categories(),
                         request.amountMin(),
                         request.amountMax(),
-            candidateLimit
+                        candidateLimit
                 );
             }
         }
@@ -155,21 +171,27 @@ public class RagService {
             if (slice == null) {
                 continue;
             }
-            double score = score(match.embedding(), slice, request, today, queryVector);
-            scored.add(new ScoredCandidate(match.txId(), slice, score));
+            ScoreDetails scoreDetails = calculateScoreDetails(match.embedding(), slice, request, today, queryVector, queryTerms);
+            scored.add(new ScoredCandidate(match.txId(), slice, scoreDetails));
         }
         scored.sort((a, b) -> Double.compare(b.score(), a.score()));
 
-        List<String> txIdStrings = scored.stream()
-                .map(c -> c.slice().transactionId().toString())
-                .toList();
-        List<String> unseen = diffTracker.filterNew(chatId, txIdStrings);
-
         int maxRows = properties.rag().maxRows();
-        List<ScoredCandidate> filtered = scored.stream()
-                .filter(candidate -> unseen.contains(candidate.slice().transactionId().toString()))
-                .limit(maxRows)
-                .toList();
+        List<ScoredCandidate> filtered;
+        if (request.excludePreviouslySeen() && chatId != null && !chatId.isBlank()) {
+            List<String> txIdStrings = scored.stream()
+                    .map(c -> c.slice().transactionId().toString())
+                    .toList();
+            List<String> unseen = diffTracker.filterNew(chatId, txIdStrings);
+            filtered = scored.stream()
+                    .filter(candidate -> unseen.contains(candidate.slice().transactionId().toString()))
+                    .limit(maxRows)
+                    .toList();
+        } else {
+            filtered = scored.stream()
+                    .limit(maxRows)
+                    .toList();
+        }
 
         if (filtered.isEmpty()) {
             return emptySearchResponse(userId, chatId);
@@ -177,6 +199,7 @@ public class RagService {
 
         Dictionary dictionary = new Dictionary();
         List<TxRow> rows = new ArrayList<>();
+        List<SearchReference> references = new ArrayList<>();
         for (ScoredCandidate candidate : filtered) {
             RagRepository.TransactionSlice slice = candidate.slice();
             String txCode = "t" + slice.transactionId().toString().replace("-", "").substring(0, 8);
@@ -184,6 +207,17 @@ public class RagService {
             String categoryCode = CsvCompressor.shortCategory(slice.category());
             rows.add(new TxRow(txCode, slice.occurredOn(), merchantCode, slice.amountCents(), categoryCode));
             dictionary.registerCategory(categoryCode, slice.category());
+            references.add(new SearchReference(
+                    txCode,
+                    slice.transactionId(),
+                    slice.occurredOn(),
+                    PiiMasker.mask(slice.merchantName()),
+                    slice.amountCents(),
+                    PiiMasker.mask(slice.category()),
+                    roundScore(candidate.score()),
+                    candidate.scoreDetails().matchedTerms(),
+                    buildReasons(candidate.scoreDetails(), request)
+            ));
         }
         String csv = CsvCompressor.toCsv(rows);
         Stats stats = calculateStats(filtered);
@@ -195,13 +229,13 @@ public class RagService {
         int tokensEstimate = csv.length() / 4 + dictPayload.toString().length() / 4;
 
         auditLogger.record("/rag/search", userId, chatId, rows.size(), tokensEstimate);
-        return new SearchResponse(csv, dictPayload, stats, traceId(), chatId);
+        return new SearchResponse(csv, dictPayload, stats, references, traceId(), chatId);
     }
 
     private SearchResponse emptySearchResponse(UUID userId, String chatId) {
         auditLogger.record("/rag/search", userId, chatId, 0, 0);
         return new SearchResponse("", Map.of("merchants", Map.of(), "categories", Map.of()),
-                new Stats(0, 0, 0), traceId(), chatId);
+                new Stats(0, 0, 0), List.of(), traceId(), chatId);
     }
 
     @Transactional(readOnly = true)
@@ -296,16 +330,23 @@ public class RagService {
         return new Stats(candidates.size(), sum, avg);
     }
 
-    private double score(
+    private ScoreDetails calculateScoreDetails(
             float[] matchEmbedding,
             RagRepository.TransactionSlice slice,
             SearchRequest request,
             LocalDate today,
-            float[] queryVector
+            float[] queryVector,
+            List<String> queryTerms
     ) {
-        double vectorComponent = 0.2;
+        double vectorComponent = 0.0;
         if (queryVector != null && queryVector.length > 0 && matchEmbedding != null && matchEmbedding.length > 0) {
             vectorComponent = cosineSimilarity(queryVector, matchEmbedding);
+        }
+        List<String> matchedTerms = matchedTerms(queryTerms, slice);
+        double lexicalComponent = queryTerms.isEmpty() ? 0.0 : (double) matchedTerms.size() / queryTerms.size();
+        boolean merchantPhraseMatch = merchantPhraseMatch(request.q(), slice.merchantName());
+        if (merchantPhraseMatch) {
+            lexicalComponent = Math.max(lexicalComponent, 0.85);
         }
         long daysAgo = ChronoUnit.DAYS.between(slice.occurredOn(), today);
         double recencyComponent = 1.0 / (1 + Math.max(daysAgo, 0));
@@ -315,7 +356,14 @@ public class RagService {
             int diff = Math.abs(slice.amountCents() - mid);
             amountComponent = 1.0 / (1 + diff);
         }
-        return vectorComponent * 0.6 + recencyComponent * 0.3 + amountComponent * 0.1;
+        double score;
+        if ((queryVector == null || queryVector.length == 0) && queryTerms.isEmpty()) {
+            score = recencyComponent * 0.75 + amountComponent * 0.25;
+        } else {
+            score = vectorComponent * 0.45 + lexicalComponent * 0.30 + recencyComponent * 0.20 + amountComponent * 0.05;
+        }
+        return new ScoreDetails(score, vectorComponent, lexicalComponent, recencyComponent, amountComponent, daysAgo,
+                merchantPhraseMatch, matchedTerms);
     }
 
     private double cosineSimilarity(float[] a, float[] b) {
@@ -343,6 +391,91 @@ public class RagService {
                 .orElse(null);
     }
 
+    private double roundScore(double score) {
+        return Math.round(score * 1000d) / 1000d;
+    }
+
+    private List<String> buildReasons(ScoreDetails scoreDetails, SearchRequest request) {
+        List<String> reasons = new ArrayList<>();
+        if (scoreDetails.merchantPhraseMatch()) {
+            reasons.add("merchant phrase match");
+        }
+        if (!scoreDetails.matchedTerms().isEmpty()) {
+            reasons.add("matched terms: " + String.join(", ", scoreDetails.matchedTerms()));
+        }
+        if (scoreDetails.vectorSimilarity() >= 0.35) {
+            reasons.add("semantic similarity");
+        }
+        if (scoreDetails.daysAgo() <= 30) {
+            reasons.add("recent activity");
+        }
+        if (request.amountMin() != null || request.amountMax() != null) {
+            reasons.add("amount filter");
+        }
+        if (reasons.isEmpty()) {
+            reasons.add("ranked by recency");
+        }
+        return reasons;
+    }
+
+    private List<String> matchedTerms(List<String> queryTerms, RagRepository.TransactionSlice slice) {
+        if (queryTerms.isEmpty()) {
+            return List.of();
+        }
+        Set<String> docTerms = new LinkedHashSet<>();
+        docTerms.addAll(extractQueryTerms(slice.merchantName()));
+        docTerms.addAll(extractQueryTerms(slice.category()));
+        docTerms.addAll(extractQueryTerms(slice.description()));
+        return queryTerms.stream()
+                .filter(docTerms::contains)
+                .limit(5)
+                .toList();
+    }
+
+    private boolean merchantPhraseMatch(String query, String merchantName) {
+        String normalizedQuery = normalizeText(query);
+        String normalizedMerchant = normalizeText(merchantName);
+        if (normalizedQuery.isBlank() || normalizedMerchant.isBlank()) {
+            return false;
+        }
+        return normalizedQuery.contains(normalizedMerchant) || normalizedMerchant.contains(normalizedQuery);
+    }
+
+    private List<String> extractQueryTerms(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(normalizeText(text).split(" "))
+                .map(String::trim)
+                .filter(token -> token.length() >= 3)
+                .filter(token -> !QUERY_STOP_WORDS.contains(token))
+                .distinct()
+                .toList();
+    }
+
+    private List<String> expandQueryTerms(List<String> queryTerms) {
+        if (queryTerms.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> expanded = new LinkedHashSet<>(queryTerms);
+        for (String term : queryTerms) {
+            expanded.addAll(QUERY_SYNONYMS.getOrDefault(term, List.of()));
+        }
+        return List.copyOf(expanded);
+    }
+
+    private String normalizeText(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String withWordBoundaries = text.replaceAll("([a-z])([A-Z])", "$1 $2");
+        return withWordBoundaries
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
     public record SearchRequest(
             String q,
             LocalDate from,
@@ -350,7 +483,8 @@ public class RagService {
             List<String> categories,
             Integer amountMin,
             Integer amountMax,
-            Integer topK
+            Integer topK,
+            boolean excludePreviouslySeen
     ) {
     }
 
@@ -366,12 +500,26 @@ public class RagService {
             String rowsCsv,
             Map<String, Map<String, String>> dict,
             Stats stats,
+            List<SearchReference> references,
             String traceId,
             String chatId
     ) {
     }
 
     public record Stats(int count, long sum, long avg) {
+    }
+
+    public record SearchReference(
+            String txCode,
+            UUID transactionId,
+            LocalDate occurredOn,
+            String merchant,
+            int amountCents,
+            String category,
+            double score,
+            List<String> matchedTerms,
+            List<String> reasons
+    ) {
     }
 
     public record SummariesResponse(
@@ -433,7 +581,22 @@ public class RagService {
     private record ScoredCandidate(
             UUID id,
             RagRepository.TransactionSlice slice,
-            double score
+            ScoreDetails scoreDetails
+    ) {
+        double score() {
+            return scoreDetails.score();
+        }
+    }
+
+    private record ScoreDetails(
+            double score,
+            double vectorSimilarity,
+            double lexicalOverlap,
+            double recency,
+            double amount,
+            long daysAgo,
+            boolean merchantPhraseMatch,
+            List<String> matchedTerms
     ) {
     }
 

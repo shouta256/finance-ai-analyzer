@@ -90,10 +90,12 @@ class TransactionSyncServiceTest {
                 org.mockito.ArgumentMatchers.eq(userId),
                 org.mockito.ArgumentMatchers.anyList()
             );
+            verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
             return;
         }
         YearMonth previous = current.minusMonths(1);
         assertThat(transactionRepository.findByUserIdAndMonth(userId, previous)).isNotEmpty();
+        verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
     }
 
     @Test
@@ -116,6 +118,7 @@ class TransactionSyncServiceTest {
         assertThat(result.pendingCount()).isZero();
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
         assertThat(transactionRepository.findByUserIdAndMonth(userId, current)).isEmpty();
+        verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
     }
 
     @Test
@@ -143,6 +146,7 @@ class TransactionSyncServiceTest {
             YearMonth previous = current.minusMonths(1);
             assertThat(transactionRepository.findByUserIdAndMonth(userId, previous)).isNotEmpty();
         }
+        verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
     }
 
     @Test
@@ -171,5 +175,6 @@ class TransactionSyncServiceTest {
                 org.mockito.ArgumentMatchers.eq(userId),
                 org.mockito.ArgumentMatchers.any(LocalDate.class),
                 org.mockito.ArgumentMatchers.any(LocalDate.class));
+        verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
     }
 }

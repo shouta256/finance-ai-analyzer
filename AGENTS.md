@@ -38,14 +38,15 @@
 - **Dashboard**: `GET /analytics/summary?month=YYYY-MM`
 - **Edit category**: `PATCH /transactions/{id}`
 
-### AI Summary (OpenAI)
+### AI Summary
 - Backend reads `safepocket.ai.*` from `application.yml`.
-- To enable OpenAI-powered summary, set environment variable `OPENAI_API_KEY` before starting the backend. When not set, a deterministic fallback summary is used (no network calls).
+- To enable live AI summary/chat, set the provider-specific credential before starting the backend. Gemini is the default provider, so `GEMINI_API_KEY` is the normal local setup. When no AI credential is set, a deterministic fallback summary is used (no network calls).
 - Defaults:
-  - model: `gpt-4.1-mini`
-  - endpoint: `https://api.openai.com/v1/responses`
+  - provider: `gemini`
+  - model: `gemini-3-flash-preview`
+  - fallback model: `gemini-2.5-flash`
 - Local run example (zsh):
-  - export OPENAI_API_KEY="sk-..."
+  - export GEMINI_API_KEY="..."
   - make up
 
 ## 5) Code style (strict)
@@ -80,4 +81,3 @@
 - Architecture: `docs/architecture.md`
 - Coding standards: `docs/coding-standards.md`
 - Ops/Runbook: `docs/operations.md`
-

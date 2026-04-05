@@ -98,11 +98,12 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
 
 | Variable | Notes |
 |----------|-------|
-| `SAFEPOCKET_AI_PROVIDER` | `openai` (default) or `gemini`. Determines which credential is required. |
-| `SAFEPOCKET_AI_MODEL` | Primary model alias (defaults to `gpt-4o-mini`). |
+| `SAFEPOCKET_AI_PROVIDER` | `gemini` (default) or `openai`. Determines which credential is required. |
+| `SAFEPOCKET_AI_MODEL` | Primary model alias. Recommended Gemini setup is `gemini-3-flash-preview`. |
+| `SAFEPOCKET_AI_FALLBACK_MODEL` | Backup model used when the primary Gemini model is unavailable. Recommended value: `gemini-2.5-flash`. |
 | `SAFEPOCKET_AI_MODEL_SNAPSHOT` | Optional snapshot ID when the provider requires a dated variant. |
 | `SAFEPOCKET_AI_ENDPOINT` | Override the Responses endpoint (only needed for private gateways). |
-| `OPENAI_API_KEY` / `GEMINI_API_KEY` | Supply at least one key to enable live summaries/chat. |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` / `SAFEPOCKET_AI_KEY` | Supply the credential for the chosen provider to enable live summaries/chat. |
 | `SAFEPOCKET_AI_TIMEOUT_MS` | Increases HTTP read timeout (default 90s). |
 | `SAFEPOCKET_CHAT_RETENTION_DAYS` | Chat history retention window (default 30). |
 | `SAFEPOCKET_CHAT_CLEANUP_CRON` | Cron expression for scheduled cleanup (`0 30 3 * * *` by default). |

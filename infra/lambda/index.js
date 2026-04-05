@@ -1251,7 +1251,9 @@ function hasOpenAiHighlightCredentials() {
 async function generateAiHighlightForSummary(summary, transactions, traceId) {
   const fallback = buildDeterministicHighlight(summary?.totals, summary?.byCategory, summary?.topMerchants);
   const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
-  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
+  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-3-flash-preview" : "gpt-4.1-mini");
+  const fallbackModel =
+    provider === "gemini" ? process.env.SAFEPOCKET_AI_FALLBACK_MODEL || "gemini-2.5-flash" : null;
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
   const hasSafepocketKey = Boolean(process.env.SAFEPOCKET_AI_KEY);
   console.log("[generateAiHighlight] provider:", provider, "model:", model, "hasGeminiKey:", hasGeminiKey, "hasSafepocketKey:", hasSafepocketKey);
@@ -1266,6 +1268,10 @@ async function generateAiHighlightForSummary(summary, transactions, traceId) {
       }
       console.log("[generateAiHighlight] Calling Gemini API...");
       raw = await callGeminiHighlight(model, prompt, HIGHLIGHT_MAX_TOKENS, traceId);
+      if (!raw && fallbackModel && fallbackModel !== model) {
+        console.warn("[analytics] Falling back to Gemini backup model", { primaryModel: model, fallbackModel, traceId });
+        raw = await callGeminiHighlight(fallbackModel, prompt, HIGHLIGHT_MAX_TOKENS, traceId);
+      }
       console.log("[generateAiHighlight] Gemini response received:", raw ? "yes" : "no");
     } else {
       if (!hasOpenAiHighlightCredentials()) {
@@ -1965,7 +1971,9 @@ async function callOpenAi(model, contextText, history, userMessage, maxTokens, t
 
 async function callAiAssistant(history, userMessage, context, traceId) {
   const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
-  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
+  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-3-flash-preview" : "gpt-4.1-mini");
+  const fallbackModel =
+    provider === "gemini" ? process.env.SAFEPOCKET_AI_FALLBACK_MODEL || "gemini-2.5-flash" : null;
   const maxTokens = CHAT_DEFAULT_MAX_TOKENS;
   const contextJson = JSON.stringify(context, null, 2);
   const contextText =
@@ -1974,7 +1982,12 @@ async function callAiAssistant(history, userMessage, context, traceId) {
       : contextJson;
   const formattedHistory = formatHistoryForProvider(history);
   if (provider === "gemini") {
-    return callGemini(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
+    const primary = await callGemini(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
+    if (primary || !fallbackModel || fallbackModel === model) {
+      return primary;
+    }
+    console.warn("[chat] Falling back to Gemini backup model", { primaryModel: model, fallbackModel, traceId });
+    return callGemini(fallbackModel, contextText, formattedHistory, userMessage, maxTokens, traceId);
   }
   return callOpenAi(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
 }

@@ -18,6 +18,15 @@ function formatHistoryForProvider(history) {
   }));
 }
 
+function resolvePrimaryModel(provider) {
+  return process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-3-flash-preview" : "gpt-4.1-mini");
+}
+
+function resolveFallbackModel(provider) {
+  if (provider !== "gemini") return null;
+  return process.env.SAFEPOCKET_AI_FALLBACK_MODEL || "gemini-2.5-flash";
+}
+
 /**
  * Call Gemini API for chat
  */
@@ -166,7 +175,8 @@ async function callOpenAi(model, contextText, history, userMessage, maxTokens, t
  */
 async function callAiAssistant(history, userMessage, context, traceId) {
   const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
-  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
+  const model = resolvePrimaryModel(provider);
+  const fallbackModel = resolveFallbackModel(provider);
   const maxTokens = CHAT_DEFAULT_MAX_TOKENS;
   
   const contextJson = JSON.stringify(context, null, 2);
@@ -177,7 +187,10 @@ async function callAiAssistant(history, userMessage, context, traceId) {
   const formattedHistory = formatHistoryForProvider(history);
   
   if (provider === "gemini") {
-    return callGemini(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
+    const primary = await callGemini(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
+    if (primary || !fallbackModel || fallbackModel === model) return primary;
+    console.warn("[chat] Falling back to Gemini backup model", { primaryModel: model, fallbackModel, traceId });
+    return callGemini(fallbackModel, contextText, formattedHistory, userMessage, maxTokens, traceId);
   }
   return callOpenAi(model, contextText, formattedHistory, userMessage, maxTokens, traceId);
 }

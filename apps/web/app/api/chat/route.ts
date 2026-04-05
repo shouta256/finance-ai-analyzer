@@ -50,13 +50,21 @@ function mapError(error: unknown): NextResponse {
   }
 
   const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 500;
-  const payload = (error as { payload?: unknown })?.payload as { error?: { code?: string; message?: string; traceId?: string } } | undefined;
-  const code = payload?.error?.code ?? "CHAT_PROXY_FAILED";
-  const message = payload?.error?.message ?? (error instanceof Error ? error.message : "Chat proxy failed");
-  const traceId = payload?.error?.traceId;
+  const payload = (error as { payload?: unknown })?.payload as {
+    error?: { code?: string; message?: string; traceId?: string; details?: unknown };
+    code?: string;
+    message?: string;
+    traceId?: string;
+    details?: unknown;
+  } | undefined;
+  const backendError = payload?.error;
+  const code = backendError?.code ?? payload?.code ?? "CHAT_PROXY_FAILED";
+  const message = backendError?.message ?? payload?.message ?? (error instanceof Error ? error.message : "Chat proxy failed");
+  const traceId = backendError?.traceId ?? payload?.traceId;
+  const details = backendError?.details ?? payload?.details;
 
   if (process.env.NODE_ENV !== "test") {
-    console.error("[api/chat] proxy error", { status, code, message, traceId });
+    console.error("[api/chat] proxy error", { status, code, message, traceId, details });
   }
 
   return NextResponse.json(
@@ -65,6 +73,7 @@ function mapError(error: unknown): NextResponse {
         code,
         message,
         traceId,
+        details,
       },
     },
     { status },

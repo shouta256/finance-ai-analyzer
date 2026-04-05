@@ -7,8 +7,26 @@ import { Copy, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const enableChatLogs = process.env.NODE_ENV !== "production";
+const MAX_VISIBLE_SOURCES = 3;
+const usdFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
 const logChatError = (...args: unknown[]) => {
   if (enableChatLogs) console.error(...args);
+};
+
+const formatAmountCents = (amountCents: number) => usdFormatter.format(amountCents / 100);
+
+const formatOccurredOn = (occurredOn: string) => {
+  const parsed = new Date(`${occurredOn}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return occurredOn;
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 };
 
 export default function ChatPage() {
@@ -87,6 +105,7 @@ const copyToClipboard = async (content: string) => {
           role: "USER",
           content: msg,
           createdAt: new Date().toISOString(),
+          sources: [],
         } as ChatMessage;
         setMessages((current) => [...current, userMsg]);
       }
@@ -195,6 +214,7 @@ async function handleSubmitEdit(event: React.FormEvent) {
             const isUser = m.role === "USER";
             const isEditingTarget = editingMessageId === m.id;
             const bubbleTone = isUser ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-800";
+            const visibleSources = m.sources.slice(0, MAX_VISIBLE_SOURCES);
             return (
               <div key={m.id} className={`group ${isUser ? "text-right" : "text-left"}`}>
                 {isEditingTarget ? (
@@ -246,6 +266,40 @@ async function handleSubmitEdit(event: React.FormEvent) {
                         </ReactMarkdown>
                       )}
                     </div>
+                    {!isUser && visibleSources.length > 0 && (
+                      <div className="mt-1.5 max-w-xl rounded-md border border-slate-200/80 bg-slate-50/80 px-2.5 py-2 text-left shadow-none">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                          References
+                        </p>
+                        <div className="space-y-1.5">
+                          {visibleSources.map((source) => (
+                            <div key={`${m.id}-${source.txCode}`} className="rounded border border-slate-200/70 bg-white/80 px-2 py-1.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-xs font-medium text-slate-700">{source.merchant}</p>
+                                  <p className="text-[11px] text-slate-500">
+                                    {formatOccurredOn(source.occurredOn)} · {source.category}
+                                  </p>
+                                </div>
+                                <div className="text-xs font-semibold text-slate-600">
+                                  {formatAmountCents(source.amountCents)}
+                                </div>
+                              </div>
+                              {source.reasons.length > 0 && (
+                                <p className="mt-1 text-[11px] leading-4 text-slate-400">
+                                  {source.reasons.join(" · ")}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {m.sources.length > visibleSources.length && (
+                          <p className="mt-1.5 text-[11px] text-slate-400">
+                            +{m.sources.length - visibleSources.length} more references
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {isUser && !loading && !initializing && (
                       <div className="mt-1 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                         <button

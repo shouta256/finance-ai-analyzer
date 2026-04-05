@@ -129,4 +129,35 @@ describe("/api/chat route", () => {
       error: { code: "FORBIDDEN", message: "Forbidden request", traceId: "trace123" },
     });
   });
+
+  it("maps top-level backend error payloads and preserves details", async () => {
+    const err = Object.assign(new Error("Unexpected error"), {
+      status: 500,
+      payload: {
+        code: "INTERNAL_ERROR",
+        message: "Unexpected error",
+        traceId: "trace500",
+        details: { reason: 'relation "tx_embeddings" does not exist' },
+      },
+    });
+    mockedLedgerFetch.mockRejectedValue(err);
+
+    const request = {
+      headers: new Headers({ authorization: "Bearer token" }),
+      url: "https://example.com/api/chat",
+      json: async () => ({ message: "hello" }),
+      cookies: new Map() as any,
+    } as any;
+
+    const res = await POST(request);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Unexpected error",
+        traceId: "trace500",
+        details: { reason: 'relation "tx_embeddings" does not exist' },
+      },
+    });
+  });
 });

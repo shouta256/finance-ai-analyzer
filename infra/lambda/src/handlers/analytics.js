@@ -5,11 +5,17 @@ const { authenticate } = require("../services/auth");
 const { respond } = require("../utils/response");
 const { parseRange } = require("../utils/helpers");
 const { queryTransactions } = require("../services/transactions");
+const { generateDemoTransactions } = require("../services/demo");
 const {
   summarise,
   generateAiHighlight,
   shouldGenerateAiHighlight,
 } = require("../services/analytics");
+const { DEV_USER_ID } = require("../utils/constants");
+
+function isDemoUser(userId) {
+  return userId === DEV_USER_ID;
+}
 
 /**
  * Handle GET /analytics/summary
@@ -22,7 +28,9 @@ async function handleAnalyticsSummary(event) {
   const generateAi = shouldGenerateAiHighlight(query);
   
   try {
-    const transactions = await queryTransactions(payload.sub, fromDate, toDate);
+    const transactions = isDemoUser(payload.sub)
+      ? generateDemoTransactions(fromDate, toDate, payload.sub)
+      : await queryTransactions(payload.sub, fromDate, toDate);
     const summary = summarise(transactions, fromDate, toDate, monthLabel, traceId);
     
     if (generateAi) {

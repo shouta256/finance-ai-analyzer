@@ -180,7 +180,21 @@ function buildStubAccounts(userId) {
   ];
 }
 
+function generateDemoTransactions(startDate, endDate, userId) {
+  return buildStubTransactions(userId).filter((tx) => {
+    const occurredAt = tx?.occurredAt ? new Date(tx.occurredAt) : null;
+    if (!occurredAt || Number.isNaN(occurredAt.getTime())) return false;
+    return occurredAt >= startDate && occurredAt < endDate;
+  });
+}
+
+function generateDemoAccounts(userId) {
+  return buildStubAccounts(userId);
+}
+
 module.exports = {
   buildStubTransactions,
   buildStubAccounts,
+  generateDemoTransactions,
+  generateDemoAccounts,
 };

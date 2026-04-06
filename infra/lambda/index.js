@@ -2388,6 +2388,14 @@ function buildTransactionsAggregates(transactions) {
   };
 }
 
+function generateDemoTransactions(startDate, endDate, userId) {
+  return buildStubTransactions(userId).filter((tx) => {
+    const occurredAt = tx?.occurredAt ? new Date(tx.occurredAt) : null;
+    if (!occurredAt || Number.isNaN(occurredAt.getTime())) return false;
+    return occurredAt >= startDate && occurredAt < endDate;
+  });
+}
+
 async function handleAnalyticsSummary(event, query) {
   const payload = await authenticate(event);
   const { fromDate, toDate, monthLabel } = parseRange(query);
@@ -2395,7 +2403,9 @@ async function handleAnalyticsSummary(event, query) {
   const generateAi = shouldGenerateAiHighlight(query);
   console.log("[handleAnalyticsSummary] generateAi:", generateAi, "query.generateAi:", query?.generateAi);
   try {
-    const transactions = await queryTransactions(payload.sub, fromDate, toDate);
+    const transactions = isDemoUser(payload.sub)
+      ? generateDemoTransactions(fromDate, toDate, payload.sub)
+      : await queryTransactions(payload.sub, fromDate, toDate);
     const summary = summarise(transactions, fromDate, toDate, monthLabel, traceId);
     if (generateAi) {
       console.log("[handleAnalyticsSummary] Generating AI highlight...");
@@ -2430,7 +2440,9 @@ async function handleTransactions(event, query) {
   console.log("[handleTransactions] Parsed range:", { fromDate: fromDate?.toISOString(), toDate: toDate?.toISOString(), monthLabel });
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
   try {
-    const transactions = await queryTransactions(payload.sub, fromDate, toDate);
+    const transactions = isDemoUser(payload.sub)
+      ? generateDemoTransactions(fromDate, toDate, payload.sub)
+      : await queryTransactions(payload.sub, fromDate, toDate);
     const page = Math.max(parseInt(query.page || "0", 10), 0);
     const pageSize = Math.min(Math.max(parseInt(query.pageSize || "15", 10), 1), 100);
     const start = page * pageSize;
@@ -2461,6 +2473,9 @@ async function handleAccounts(event) {
   const payload = await authenticate(event);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
   try {
+    if (isDemoUser(payload.sub)) {
+      return respond(event, 200, { accounts: buildStubAccounts(payload.sub), traceId, isDemo: true });
+    }
     const accounts = await withUserClient(payload.sub, async (client) => {
       const res = await client.query(
         `SELECT a.id,

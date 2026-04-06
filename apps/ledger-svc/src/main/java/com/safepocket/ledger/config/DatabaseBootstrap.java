@@ -18,7 +18,7 @@ import java.sql.Statement;
 import java.util.stream.Collectors;
 
 /**
- * Optional bootstrap that applies the seed schema/data (idempotent) when the database
+ * Optional bootstrap that applies the seed schema (idempotent) when the database
  * has not yet been initialized (transactions table missing) and the feature flag is enabled.
  * This is a temporary operational convenience until Flyway/Liquibase is introduced.
  * Enable with environment variable SAFEPOCKET_DB_BOOTSTRAP=true
@@ -47,7 +47,7 @@ public class DatabaseBootstrap {
                 log.info("DB bootstrap skipped: schema already present (transactions table exists)");
                 return;
             }
-            log.warn("DB bootstrap starting: applying seed schema/data (one-time)");
+            log.warn("DB bootstrap starting: applying seed schema (one-time)");
             String sql = loadSeedSql();
             int applied = 0;
             for (String stmt : splitStatements(sql)) {

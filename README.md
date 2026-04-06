@@ -25,7 +25,7 @@ Since this app handles financial data, security was my top priority.
 ### 3. Advanced AI & FinTech Features
 This is not just a simple CRUD app. It includes complex logic and AI.
 - **AI Assistant:** You can chat with the app to ask questions like "How much did I spend on coffee last month?".
-- **Vector Search (RAG):** I used `pgvector` to allow the AI to search through transaction history intelligently.
+- **Vector Search (RAG):** The richer Java-backed profile supports local `pgvector`-backed retrieval for semantic transaction search and explainable references.
 - **Bank Integration:** Integrated with Plaid API to sync real bank transactions securely.
 
 ## Technology Stack
@@ -35,8 +35,8 @@ This is not just a simple CRUD app. It includes complex logic and AI.
 | **Frontend** | Next.js 14, TypeScript, Tailwind CSS, Radix UI |
 | **Backend** | Java 21, Spring Boot 3.2, Spring Security |
 | **Database** | PostgreSQL 15 (Neon), Redis |
-| **AI** | OpenAI / Gemini API, pgvector (RAG) |
-| **DevOps** | AWS (ECS, Lambda), Docker, GitHub Actions, Terraform |
+| **AI** | OpenAI / Gemini API, local pgvector-backed RAG profile |
+| **DevOps** | AWS Lambda, Docker, GitHub Actions, Terraform |
 
 ## Architecture Overview
 
@@ -80,7 +80,8 @@ To run this project locally, you need Docker and Java 21 installed.
     # Start the application
     make up
     ```
-    `make up` automatically backfills local RAG embeddings for the seeded transactions before you use chat.
+    `make up` automatically enables the local `pgvector` profile, prepares vector search on `tx_embeddings`, and backfills local RAG embeddings for the seeded transactions before you use chat.
+    Demo data is generated from a shared profile relative to the current date, so the sample dashboard stays fresh over time instead of freezing around one fixed month.
 
 3.  **Access the App**
     - Frontend: `http://localhost:3000`

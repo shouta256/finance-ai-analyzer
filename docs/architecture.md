@@ -5,7 +5,7 @@ Safepocket follows a thin-frontend/BFF topology, but it supports two runtime pro
 - **Java-backed profile**: Next.js forwards domain APIs to Spring Boot `ledger-svc`.
 - **Serverless profile**: Vercel/Next.js forwards to API Gateway + Lambda, and Lambda serves the core domain routes directly.
 
-PostgreSQL runs on Neon (managed over TLS). Native/partner integrations use the same contract via the BFF or the Lambda facade. The Spring Boot service remains the richer backend implementation for local development and the full RAG stack.
+PostgreSQL runs on Neon (managed over TLS). Native/partner integrations use the same contract via the BFF or the Lambda facade. The Spring Boot service remains the richer backend implementation for local development and the full RAG stack, including the local `pgvector` profile used for semantic retrieval experiments.
 
 ## Logical View
 
@@ -24,6 +24,7 @@ The BFF handles Cognito flows, cookie/session management, and request shaping be
 - `apps/ledger-svc`
   - Source of truth for the Java-backed profile.
   - Owns the richer transaction, analytics, Plaid, chat, and full RAG implementation.
+  - In local development it can opt into `pgvector`-backed nearest-neighbour search without changing the production serverless profile.
 - `infra/lambda/index.js`
   - Current deployed Lambda entrypoint.
   - Thin compatibility shim that delegates to `infra/lambda/src/router.js`.
@@ -63,7 +64,8 @@ This split exists because the project moved from a richer Java/ECS-oriented back
 
 - PostgreSQL 15 with Row Level Security driven by `SET LOCAL appsec.user_id` per request.
 - Core tables: `users`, `accounts`, `transactions`, `merchants`, `plaid_items`, `chat_messages`, `ai_monthly_highlights`.
-- Optional/feature-flagged tables (created when enabling pgvector migrations): `tx_embeddings`.
+- Core RAG table: `tx_embeddings`.
+- Local `pgvector` profile adds `embedding_vector` plus an IVFFlat index at startup when `SAFEPOCKET_RAG_PGVECTOR_LOCAL_ENABLED=true`.
 - Monetary values use `numeric(12,2)`; timestamps use `timestamptz` (UTC).
 - idempotent bootstrap (`safepocket.db.bootstrap-enabled=true`) creates baseline schema and demo rows when Flyway history is empty.
 
@@ -81,7 +83,7 @@ This split exists because the project moved from a richer Java/ECS-oriented back
 
 - **Java-backed deployment**: `next-web` (Next.js) and `ledger-svc` (Spring Boot) can run behind the same ALB or equivalent private networking. Lambda acts as a public/native/auth facade and compatibility proxy.
 - **Serverless deployment**: `next-web` runs on Vercel (or equivalent) and points domain APIs at API Gateway/Lambda. Lambda handles accounts, transactions, analytics, Plaid, and chat directly to remove ECS fixed cost.
-- **Neon (PostgreSQL)**: primary data store (serverless Postgres) with pgvector enabled for semantic search.
+- **Neon (PostgreSQL)**: primary data store (serverless Postgres). The local Java-backed profile can additionally enable `pgvector` for semantic search experiments.
 - **ElastiCache (Redis)**: caching and lightweight coordination (pending rate-limiter support).
 - **Secrets Manager / Parameter Store**: Plaid and Cognito bundles referenced by ECS/Lambda; `SAFEPOCKET_KMS_DATA_KEY` seeded here.
 - **CI/CD**: GitHub Actions runs lint/test/build for web + backend, packages Lambda, publishes Docker layers, and deploys via OIDC.

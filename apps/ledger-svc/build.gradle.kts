@@ -20,6 +20,12 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    named("main") {
+        resources.srcDir("../../shared")
+    }
+}
+
 val flywayMigration by configurations.creating {
     isCanBeResolved = true
     isVisible = false

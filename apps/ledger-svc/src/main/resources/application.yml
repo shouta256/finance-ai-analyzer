@@ -88,6 +88,7 @@ safepocket:
     embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}
     max-rows: ${RAG_MAX_ROWS:20}
     embed-dimension: ${RAG_EMBED_DIM:1536}
+    local-pgvector-enabled: ${SAFEPOCKET_RAG_PGVECTOR_LOCAL_ENABLED:false}
     auto-backfill-on-startup: ${SAFEPOCKET_RAG_AUTO_BACKFILL_ON_STARTUP:false}
   db:
     bootstrap-enabled: ${SAFEPOCKET_DB_BOOTSTRAP:false}

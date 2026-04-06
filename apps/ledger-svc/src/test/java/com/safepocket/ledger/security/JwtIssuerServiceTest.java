@@ -17,7 +17,7 @@ public class JwtIssuerServiceTest {
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null, null),
                 new SafepocketProperties.Security(secret),
-                new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536)
+                new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536, false)
         );
         return new JwtIssuerService(props);
     }
@@ -44,7 +44,7 @@ public class JwtIssuerServiceTest {
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null, null),
                 new SafepocketProperties.Security("12345678901234567890123456789012"),
-                new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536)
+                new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536, false)
         );
         JwtIssuerService issuer = new JwtIssuerService(props);
         String token = issuer.issue(UUID.fromString("0f08d2b9-28b3-4b28-bd33-41a36161e9ab"), 60);

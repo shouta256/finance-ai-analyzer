@@ -100,9 +100,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/lambda
+          mkdir -p dist/lambda/shared
           cp infra/lambda/index.js dist/lambda/
           cp -R infra/lambda/src dist/lambda/
           cp -R infra/lambda/certs dist/lambda/
+          cp -R shared/demo dist/lambda/shared/
           # Create package.json and install dependencies inside the target directory
           (cd dist/lambda && \
             npm init -y && \

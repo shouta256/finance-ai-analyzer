@@ -6,6 +6,7 @@ GRADLEW := ./apps/ledger-svc/gradlew
 
 export SAFEPOCKET_DEV_JWT_SECRET ?= local-dev-shared-secret-change-me-32
 export SAFEPOCKET_USE_COGNITO ?= false
+export SAFEPOCKET_RAG_PGVECTOR_LOCAL_ENABLED ?= true
 COMPOSE_FILE ?= infra/compose/docker-compose.yml
 DOCKER_COMPOSE ?= docker compose
 

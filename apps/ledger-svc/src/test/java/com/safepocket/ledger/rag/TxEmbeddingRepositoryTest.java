@@ -2,8 +2,11 @@ package com.safepocket.ledger.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.sql.SQLException;
@@ -33,7 +36,7 @@ class TxEmbeddingRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        repository = new TxEmbeddingRepository(jdbcTemplate, embeddingService);
+        repository = new TxEmbeddingRepository(jdbcTemplate, embeddingService, false);
     }
 
     @Test
@@ -83,5 +86,57 @@ class TxEmbeddingRepositoryTest {
                         new float[] {0.1f}
                 )
         ))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void findNearestUsesPgvectorOrderingWhenLocalPgvectorIsEnabled() {
+        repository = new TxEmbeddingRepository(jdbcTemplate, embeddingService, true);
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Boolean.class)))
+                .thenReturn(true);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+
+        repository.findNearest(
+                UUID.randomUUID(),
+                new float[] {0.1f, 0.2f},
+                LocalDate.now().minusDays(30),
+                LocalDate.now(),
+                null,
+                null,
+                null,
+                20
+        );
+
+        verify(jdbcTemplate).query(
+                argThat(sql -> sql.contains("embedding_vector <=> CAST(:queryVector AS vector)")),
+                any(MapSqlParameterSource.class),
+                any(RowMapper.class)
+        );
+    }
+
+    @Test
+    void upsertBatchWritesEmbeddingVectorWhenLocalPgvectorIsEnabled() {
+        repository = new TxEmbeddingRepository(jdbcTemplate, embeddingService, true);
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Boolean.class)))
+                .thenReturn(true);
+        when(embeddingService.formatForSql(any())).thenReturn("[0.1]");
+
+        repository.upsertBatch(List.of(
+                new TxEmbeddingRepository.EmbeddingRecord(
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        java.time.YearMonth.now(),
+                        "Dining",
+                        1200,
+                        UUID.randomUUID(),
+                        "starbucks",
+                        new float[] {0.1f}
+                )
+        ));
+
+        verify(jdbcTemplate).batchUpdate(
+                argThat(sql -> sql.contains("embedding_vector")),
+                any(MapSqlParameterSource[].class)
+        );
     }
 }

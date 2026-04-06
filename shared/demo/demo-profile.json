@@ -1,0 +1,342 @@
+{
+  "user": {
+    "id": "0f08d2b9-28b3-4b28-bd33-41a36161e9ab",
+    "email": "demo@safepocket.app",
+    "fullName": "Demo User"
+  },
+  "accounts": [
+    {
+      "key": "checking",
+      "name": "Primary Checking",
+      "institution": "Chase Bank",
+      "balance": 8542.67,
+      "currency": "USD"
+    },
+    {
+      "key": "credit",
+      "name": "Rewards Credit Card",
+      "institution": "American Express",
+      "balance": -1847.23,
+      "currency": "USD"
+    },
+    {
+      "key": "savings",
+      "name": "High-Yield Savings",
+      "institution": "Ally Bank",
+      "balance": 15230.0,
+      "currency": "USD"
+    }
+  ],
+  "transactions": [
+    {
+      "key": "payroll",
+      "accountKey": "checking",
+      "merchantName": "Stripe Payroll",
+      "amount": 4200.0,
+      "category": "Income",
+      "description": "Bi-weekly payroll deposit",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [1, 15]
+    },
+    {
+      "key": "rent",
+      "accountKey": "checking",
+      "merchantName": "Local Rent Co",
+      "amount": -1850.0,
+      "category": "Housing",
+      "description": "Monthly rent payment",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [3]
+    },
+    {
+      "key": "electricity",
+      "accountKey": "checking",
+      "merchantName": "Utility Power Co",
+      "amount": -138.45,
+      "category": "Utilities",
+      "description": "Electric bill",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [8]
+    },
+    {
+      "key": "internet",
+      "accountKey": "checking",
+      "merchantName": "Comcast Xfinity",
+      "amount": -89.99,
+      "category": "Utilities",
+      "description": "Internet service",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [10]
+    },
+    {
+      "key": "water",
+      "accountKey": "checking",
+      "merchantName": "Water Company",
+      "amount": -45.0,
+      "category": "Utilities",
+      "description": "Water bill",
+      "monthOffsets": [1, 2, 3],
+      "days": [12]
+    },
+    {
+      "key": "whole-foods",
+      "accountKey": "checking",
+      "merchantName": "Whole Foods Market",
+      "amount": -142.35,
+      "category": "Groceries",
+      "description": "Weekly grocery run",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [5, 12, 19]
+    },
+    {
+      "key": "trader-joes",
+      "accountKey": "checking",
+      "merchantName": "Trader Joes",
+      "amount": -76.8,
+      "category": "Groceries",
+      "description": "Pantry restock",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [9, 24]
+    },
+    {
+      "key": "blue-bottle",
+      "accountKey": "checking",
+      "merchantName": "Blue Bottle Coffee",
+      "amount": -12.5,
+      "category": "Dining",
+      "description": "Coffee and pastry",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [2, 6, 12]
+    },
+    {
+      "key": "starbucks",
+      "accountKey": "credit",
+      "merchantName": "Starbucks",
+      "amount": -8.75,
+      "category": "Dining",
+      "description": "Coffee run",
+      "monthOffsets": [1, 2],
+      "days": [19]
+    },
+    {
+      "key": "uber",
+      "accountKey": "checking",
+      "merchantName": "Uber Technologies",
+      "amount": -24.5,
+      "category": "Transport",
+      "description": "Ride share",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [4, 11, 18]
+    },
+    {
+      "key": "lyft",
+      "accountKey": "checking",
+      "merchantName": "Lyft",
+      "amount": -22.5,
+      "category": "Transport",
+      "description": "Ride share",
+      "monthOffsets": [1, 3],
+      "days": [17]
+    },
+    {
+      "key": "shell",
+      "accountKey": "checking",
+      "merchantName": "Shell Gas Station",
+      "amount": -54.2,
+      "category": "Transport",
+      "description": "Gas fill-up",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [7, 21]
+    },
+    {
+      "key": "netflix",
+      "accountKey": "credit",
+      "merchantName": "Netflix",
+      "amount": -15.99,
+      "category": "Entertainment",
+      "description": "Monthly subscription",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [2]
+    },
+    {
+      "key": "spotify",
+      "accountKey": "credit",
+      "merchantName": "Spotify",
+      "amount": -10.99,
+      "category": "Entertainment",
+      "description": "Premium subscription",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [3]
+    },
+    {
+      "key": "amazon",
+      "accountKey": "credit",
+      "merchantName": "Amazon",
+      "amount": -145.99,
+      "category": "Shopping",
+      "description": "Household and office items",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [8, 14]
+    },
+    {
+      "key": "target",
+      "accountKey": "credit",
+      "merchantName": "Target",
+      "amount": -89.32,
+      "category": "Shopping",
+      "description": "Home essentials",
+      "monthOffsets": [0, 1],
+      "days": [6]
+    },
+    {
+      "key": "best-buy",
+      "accountKey": "credit",
+      "merchantName": "Best Buy",
+      "amount": -299.99,
+      "category": "Shopping",
+      "description": "Headphones",
+      "monthOffsets": [1],
+      "days": [20]
+    },
+    {
+      "key": "apple-store",
+      "accountKey": "credit",
+      "merchantName": "Apple Store",
+      "amount": -129.0,
+      "category": "Shopping",
+      "description": "Phone accessories",
+      "monthOffsets": [2],
+      "days": [18]
+    },
+    {
+      "key": "delta",
+      "accountKey": "credit",
+      "merchantName": "Delta Airlines",
+      "amount": -425.0,
+      "category": "Travel",
+      "description": "Flight to NYC",
+      "monthOffsets": [2],
+      "days": [10]
+    },
+    {
+      "key": "airbnb",
+      "accountKey": "credit",
+      "merchantName": "Airbnb",
+      "amount": -320.0,
+      "category": "Travel",
+      "description": "Weekend getaway",
+      "monthOffsets": [2],
+      "days": [14]
+    },
+    {
+      "key": "auto-transfer",
+      "accountKey": "savings",
+      "merchantName": "Auto Transfer",
+      "amount": -500.0,
+      "category": "Transfer",
+      "description": "Monthly savings transfer",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [2]
+    },
+    {
+      "key": "savings-interest",
+      "accountKey": "savings",
+      "merchantName": "Savings Interest",
+      "amount": 6.25,
+      "category": "Income",
+      "description": "Monthly interest payout",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [26]
+    },
+    {
+      "key": "gym",
+      "accountKey": "checking",
+      "merchantName": "Gym Membership",
+      "amount": -49.99,
+      "category": "Health",
+      "description": "Monthly membership",
+      "monthOffsets": [0, 1, 2, 3],
+      "days": [1]
+    },
+    {
+      "key": "cvs",
+      "accountKey": "credit",
+      "merchantName": "CVS Pharmacy",
+      "amount": -32.45,
+      "category": "Health",
+      "description": "Prescriptions",
+      "monthOffsets": [0],
+      "days": [7]
+    },
+    {
+      "key": "designer-furniture",
+      "accountKey": "checking",
+      "merchantName": "Designer Furniture Warehouse",
+      "amount": -4999.0,
+      "category": "Shopping",
+      "description": "Intentional anomaly: large one-time purchase",
+      "monthOffsets": [0],
+      "days": [5]
+    },
+    {
+      "key": "hospital-bill",
+      "accountKey": "checking",
+      "merchantName": "Emergency Hospital Bill",
+      "amount": -3200.0,
+      "category": "Healthcare",
+      "description": "Intentional anomaly: unusually large expense",
+      "monthOffsets": [0],
+      "days": [6]
+    },
+    {
+      "key": "sushi-palace",
+      "accountKey": "credit",
+      "merchantName": "Sushi Palace",
+      "amount": -65.8,
+      "category": "Dining",
+      "description": "Dinner with friends",
+      "monthOffsets": [1],
+      "days": [21]
+    },
+    {
+      "key": "freelance",
+      "accountKey": "checking",
+      "merchantName": "Freelance Project",
+      "amount": 850.0,
+      "category": "Income",
+      "description": "Side project payment",
+      "monthOffsets": [2],
+      "days": [22]
+    },
+    {
+      "key": "ikea",
+      "accountKey": "credit",
+      "merchantName": "IKEA",
+      "amount": -456.78,
+      "category": "Shopping",
+      "description": "Furniture upgrade",
+      "monthOffsets": [3],
+      "days": [12]
+    },
+    {
+      "key": "concert",
+      "accountKey": "credit",
+      "merchantName": "Concert Tickets",
+      "amount": -150.0,
+      "category": "Entertainment",
+      "description": "Live show",
+      "monthOffsets": [3],
+      "days": [20]
+    },
+    {
+      "key": "doctor",
+      "accountKey": "credit",
+      "merchantName": "Doctor Visit",
+      "amount": -150.0,
+      "category": "Health",
+      "description": "Annual checkup copay",
+      "monthOffsets": [3],
+      "days": [16]
+    }
+  ]
+}

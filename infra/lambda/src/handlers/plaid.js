@@ -19,11 +19,10 @@ const {
   toIsoDate,
   coerceBoolean,
   parseMonth,
-  hashToUuid,
   isAuthOptional,
 } = require("../utils/helpers");
 const { withUserClient } = require("../db/pool");
-const { DAY_MS, ANON_USER_ID } = require("../utils/constants");
+const { ANON_USER_ID } = require("../utils/constants");
 
 /**
  * Handle POST /plaid/link-token
@@ -157,57 +156,10 @@ async function handleTransactionsSync(event) {
 
         const stubTransactions = buildStubTransactions(auth.sub);
         const stubAccounts = buildStubAccounts(auth.sub);
-        
-        // Add extra demo transactions
-        const alternateAccountId = crypto.randomUUID();
-        const demoNow = new Date();
-        const demoAnchor = Date.UTC(demoNow.getUTCFullYear(), demoNow.getUTCMonth(), 1);
-        stubTransactions.push(
-          {
-            id: hashToUuid(`demo:rent:${fromIso}`),
-            userId: auth.sub,
-            accountId: alternateAccountId,
-            merchantName: "City Apartments",
-            amount: -1450.0,
-            currency: "USD",
-            occurredAt: new Date(demoAnchor + 4 * DAY_MS).toISOString(),
-            authorizedAt: new Date(demoAnchor + 4 * DAY_MS + 90 * 60 * 1000).toISOString(),
-            pending: false,
-            category: "Housing",
-            description: "Monthly rent payment",
-          },
-          {
-            id: hashToUuid(`demo:bonus:${fromIso}`),
-            userId: auth.sub,
-            accountId: alternateAccountId,
-            merchantName: "Employer Bonus",
-            amount: 500.0,
-            currency: "USD",
-            occurredAt: new Date(demoAnchor + 10 * DAY_MS).toISOString(),
-            authorizedAt: new Date(demoAnchor + 10 * DAY_MS).toISOString(),
-            pending: false,
-            category: "Income",
-            description: "Performance bonus",
-          },
-        );
-
-        // Build account map
-        const accountIterator = stubAccounts[Symbol.iterator]();
-        const accountMap = new Map();
-        for (const tx of stubTransactions) {
-          if (!accountMap.has(tx.accountId)) {
-            const template = accountIterator.next().value || {
-              name: "Demo Checking",
-              institution: "Safepocket Demo Bank",
-              createdAt: new Date().toISOString(),
-            };
-            accountMap.set(tx.accountId, template);
-          }
-        }
 
         // Upsert accounts
-        for (const [accountId, template] of accountMap.entries()) {
-          await upsertAccount(client, accountId, template.name, template.institution);
+        for (const account of stubAccounts) {
+          await upsertAccount(client, account.id, account.name, account.institution);
         }
 
         // Upsert transactions

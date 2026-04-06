@@ -42,7 +42,9 @@ Checklist:
 ### Local Development Tips
 
 - `docker compose -f infra/compose/docker-compose.yml down -v && make setup` recreates the local Postgres/Redis stack and applies demo data.
+- Local demo data is generated from `shared/demo/demo-profile.json` relative to the current UTC date so the sample timeline stays fresh as months pass.
 - Enable the built-in bootstrapper by setting `SAFEPOCKET_DB_BOOTSTRAP=true` (or exporting it in `.env`). The bootstrapper applies `db/bootstrap/seed.sql` only when core tables are missing.
+- Local `make up` now enables `SAFEPOCKET_RAG_PGVECTOR_LOCAL_ENABLED=true` by default and uses a pgvector-capable Postgres image. If you were already using an older local Postgres volume, run `make reset-db` once so Docker recreates the database with the pgvector image.
 
 ### Flyway Maintenance (local)
 
@@ -111,6 +113,7 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
   - The AWS Lambda function still enters through `infra/lambda/index.js`.
   - `infra/lambda/index.js` is now only a thin shim; `infra/lambda/src/router.js` is the single Lambda runtime implementation.
 - RAG endpoints (`/rag/*`) remain proxy-only. In standalone Lambda mode they return `501 RAG_STANDALONE_UNAVAILABLE`.
+- The Java-backed local profile can enable real pgvector nearest-neighbour search with `SAFEPOCKET_RAG_PGVECTOR_LOCAL_ENABLED=true`. This is intentionally local-only so the production serverless profile keeps its lower operating cost.
 
 ## AI & Chat Configuration
 

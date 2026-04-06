@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.safepocket.ledger.demo.DemoDataFactory;
 import com.safepocket.ledger.entity.AccountEntity;
 import com.safepocket.ledger.repository.InMemoryTransactionRepository;
 import com.safepocket.ledger.repository.JpaAccountRepository;
@@ -15,6 +17,7 @@ import com.safepocket.ledger.plaid.PlaidService;
 import com.safepocket.ledger.user.UserService;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Clock;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.util.List;
@@ -24,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.core.io.ClassPathResource;
 
 class TransactionSyncServiceTest {
 
@@ -46,6 +50,7 @@ class TransactionSyncServiceTest {
     private UserService userService;
 
     private TransactionRepository transactionRepository;
+    private DemoDataFactory demoDataFactory;
 
     private TransactionSyncService transactionSyncService;
 
@@ -55,6 +60,11 @@ class TransactionSyncServiceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         transactionRepository = new InMemoryTransactionRepository();
+        demoDataFactory = new DemoDataFactory(
+                new ObjectMapper(),
+                new ClassPathResource("demo/demo-profile.json"),
+                Clock.fixed(Instant.parse("2026-04-06T12:00:00Z"), ZoneOffset.UTC)
+        );
     // Prepare mock accounts for the user so syncing uses real account IDs
     List<AccountEntity> accounts = List.of(
         new AccountEntity(UUID.randomUUID(), userId, "Primary Checking", "Plaid Sandbox", Instant.now()),
@@ -71,6 +81,7 @@ class TransactionSyncServiceTest {
             plaidService,
             userService,
             transactionEmbeddingService,
+            demoDataFactory,
             true
         );
     }
@@ -80,8 +91,8 @@ class TransactionSyncServiceTest {
         when(authenticatedUserProvider.requireCurrentUserId()).thenReturn(userId);
         var result = transactionSyncService.triggerSync(false, false, Optional.empty(), "trace-1");
 
-        assertThat(result.syncedCount()).isGreaterThan(0);
-        YearMonth current = YearMonth.now(ZoneOffset.UTC);
+        assertThat(result.syncedCount()).isGreaterThan(80);
+        YearMonth current = YearMonth.of(2026, 4);
         var currentMonthTransactions = transactionRepository.findByUserIdAndMonth(userId, current);
         if (!currentMonthTransactions.isEmpty()) {
             assertThat(currentMonthTransactions).isNotEmpty();
@@ -109,6 +120,7 @@ class TransactionSyncServiceTest {
             plaidService,
             userService,
             transactionEmbeddingService,
+            demoDataFactory,
             false
         );
 
@@ -116,7 +128,7 @@ class TransactionSyncServiceTest {
         var result = transactionSyncService.triggerSync(false, false, Optional.empty(), "trace-2");
         assertThat(result.syncedCount()).isZero();
         assertThat(result.pendingCount()).isZero();
-        YearMonth current = YearMonth.now(ZoneOffset.UTC);
+        YearMonth current = YearMonth.of(2026, 4);
         assertThat(transactionRepository.findByUserIdAndMonth(userId, current)).isEmpty();
         verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
     }
@@ -131,6 +143,7 @@ class TransactionSyncServiceTest {
             plaidService,
             userService,
             transactionEmbeddingService,
+            demoDataFactory,
             false
         );
 
@@ -138,7 +151,7 @@ class TransactionSyncServiceTest {
         var result = transactionSyncService.triggerSync(false, true, Optional.empty(), "trace-3");
 
         assertThat(result.syncedCount()).isGreaterThan(0);
-        YearMonth current = YearMonth.now(ZoneOffset.UTC);
+        YearMonth current = YearMonth.of(2026, 4);
         var seeded = transactionRepository.findByUserIdAndMonth(userId, current);
         if (!seeded.isEmpty()) {
             assertThat(seeded).isNotEmpty();
@@ -159,6 +172,7 @@ class TransactionSyncServiceTest {
             plaidService,
             userService,
             transactionEmbeddingService,
+            demoDataFactory,
             false
         );
 

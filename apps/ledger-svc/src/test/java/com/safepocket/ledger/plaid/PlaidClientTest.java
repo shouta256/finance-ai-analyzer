@@ -60,7 +60,7 @@ public class PlaidClientTest {
         new SafepocketProperties.Plaid("cid","secret","https://redirect","http://localhost:" + port, "sandbox", null, null),
         new SafepocketProperties.Ai("openai","model","endpoint", null,null, null),
         new SafepocketProperties.Security(null),
-        new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536)
+        new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536, false)
     );
         return new PlaidClient(props);
     }

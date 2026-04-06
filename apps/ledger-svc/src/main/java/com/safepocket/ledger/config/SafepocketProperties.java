@@ -157,7 +157,7 @@ public record SafepocketProperties(
         }
     }
 
-    public record Rag(String vectorProvider, String embeddingModel, Integer maxRows, Integer embedDimension) {
+    public record Rag(String vectorProvider, String embeddingModel, Integer maxRows, Integer embedDimension, Boolean localPgvectorEnabled) {
         public Rag {
             if (vectorProvider == null || vectorProvider.isBlank()) {
                 throw new IllegalArgumentException("vectorProvider must be provided");
@@ -171,6 +171,13 @@ public record SafepocketProperties(
             if (embedDimension == null || embedDimension <= 0) {
                 throw new IllegalArgumentException("embedDimension must be positive");
             }
+            if (localPgvectorEnabled == null) {
+                localPgvectorEnabled = false;
+            }
+        }
+
+        public boolean localPgvectorEnabledFlag() {
+            return Boolean.TRUE.equals(localPgvectorEnabled);
         }
     }
 }

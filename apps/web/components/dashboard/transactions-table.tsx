@@ -86,15 +86,15 @@ export function TransactionsTable({ transactions, page, pageSize, total, onPageC
       </div>
       <div className="flow-root rounded-2xl border border-slate-100">
         <div className="max-w-full overflow-x-auto">
-        <table className="min-w-[640px] text-sm">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="text-left">
             <tr>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-slate-500">Transaction</th>
-              <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-slate-500">Category</th>
+              <th className="w-[42%] px-4 py-3 text-xs font-medium uppercase tracking-wider text-slate-500">Transaction</th>
+              <th className="w-[26%] px-4 py-3 text-xs font-medium uppercase tracking-wider text-slate-500">Category</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
                 Amount
               </th>
-              <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-slate-500">
+              <th className="w-[14%] px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-slate-500">
                 Status
               </th>
             </tr>

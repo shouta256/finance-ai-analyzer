@@ -7,7 +7,7 @@ import { Copy, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 const enableChatLogs = process.env.NODE_ENV !== "production";
-const MAX_VISIBLE_SOURCES = 3;
+const MAX_VISIBLE_SOURCES = 2;
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -267,26 +267,26 @@ async function handleSubmitEdit(event: React.FormEvent) {
                       )}
                     </div>
                     {!isUser && visibleSources.length > 0 && (
-                      <div className="mt-1.5 max-w-xl rounded-md border border-slate-200/80 bg-slate-50/80 px-2.5 py-2 text-left shadow-none">
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          References
+                      <div className="mt-1.5 w-fit max-w-[22rem] rounded-md border border-slate-200/70 bg-slate-50/70 px-2 py-1.5 text-left shadow-none">
+                        <p className="mb-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          Sources
                         </p>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {visibleSources.map((source) => (
-                            <div key={`${m.id}-${source.txCode}`} className="rounded border border-slate-200/70 bg-white/80 px-2 py-1.5">
+                            <div key={`${m.id}-${source.txCode}`} className="rounded border border-slate-200/60 bg-white/75 px-1.5 py-1">
                               <div className="flex items-start justify-between gap-2">
                                 <div>
-                                  <p className="text-xs font-medium text-slate-700">{source.merchant}</p>
-                                  <p className="text-[11px] text-slate-500">
+                                  <p className="text-[11px] font-medium leading-4 text-slate-700">{source.merchant}</p>
+                                  <p className="text-[10px] leading-4 text-slate-500">
                                     {formatOccurredOn(source.occurredOn)} · {source.category}
                                   </p>
                                 </div>
-                                <div className="text-xs font-semibold text-slate-600">
+                                <div className="text-[11px] font-semibold leading-4 text-slate-600">
                                   {formatAmountCents(source.amountCents)}
                                 </div>
                               </div>
                               {source.reasons.length > 0 && (
-                                <p className="mt-1 text-[11px] leading-4 text-slate-400">
+                                <p className="mt-0.5 text-[10px] leading-4 text-slate-400">
                                   {source.reasons.join(" · ")}
                                 </p>
                               )}
@@ -294,8 +294,8 @@ async function handleSubmitEdit(event: React.FormEvent) {
                           ))}
                         </div>
                         {m.sources.length > visibleSources.length && (
-                          <p className="mt-1.5 text-[11px] text-slate-400">
-                            +{m.sources.length - visibleSources.length} more references
+                          <p className="mt-1 text-[10px] text-slate-400">
+                            +{m.sources.length - visibleSources.length} more
                           </p>
                         )}
                       </div>

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { analyticsSummarySchema, plaidExchangeSchema, plaidLinkTokenSchema, transactionsListSchema, ragAggregateResponseSchema, ragSearchResponseSchema, ragSummariesResponseSchema, transactionsResetResponseSchema } from "./schemas";
 import { getStoredAccessToken } from "./auth-storage";
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") ||
+  process.env.SAFEPOCKET_API_BASE?.replace(/\/+$/, "") ||
+  "";
 
 function redirectToLogin() {
   if (typeof window === "undefined") return;

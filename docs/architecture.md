@@ -1,25 +1,33 @@
 # Architecture
 
-Safepocket follows a thin-frontend/BFF topology. Next.js exposes the only public web surface, while the Spring Boot ledger service and supporting infrastructure live in a private VPC. PostgreSQL now runs on Neon (managed over TLS), and native/partner integrations interact with the same contract via the BFF or an AWS Lambda facade that proxies domain APIs to the ledger service.
+Safepocket follows a thin-frontend/BFF topology, but it supports two runtime profiles:
+
+- **Java-backed profile**: Next.js forwards domain APIs to Spring Boot `ledger-svc`.
+- **Serverless profile**: Vercel/Next.js forwards to API Gateway + Lambda, and Lambda serves the core domain routes directly.
+
+PostgreSQL runs on Neon (managed over TLS). Native/partner integrations use the same contract via the BFF or the Lambda facade. The Spring Boot service remains the richer backend implementation for local development and the full RAG stack.
 
 ## Logical View
 
-- Client (web, native)  
-  → CloudFront / Application Load Balancer  
-  → Next.js App Router (BFF + UI) and edge Lambda  
-  → Spring Boot `ledger-svc` (private ECS service)  
-  → Postgres (Neon) with pgvector + Redis (ElastiCache) + Secrets Manager / KMS  
-  ↔ Plaid Sandbox (webhooks terminate at `/webhook/plaid`)  
+- Client (web, native)
+  → Vercel / CloudFront / API Gateway
+  → Next.js App Router (BFF + UI) and Lambda facade
+  → Spring Boot `ledger-svc` or standalone Lambda handlers
+  → Postgres (Neon) with pgvector + Redis (optional) + Secrets Manager / KMS
+  ↔ Plaid Sandbox (webhooks terminate at `/webhook/plaid`)
   ↔ OpenAI Responses API / Google Gemini for AI highlights and chat
 
-The BFF handles Cognito flows, cookie/session management, and request shaping before forwarding calls to the ledger service. Lambda (deployed from `infra/lambda`) remains a thin public facade for native/mobile/admin use cases and proxies domain routes to the Java service instead of owning duplicate business logic.
+The BFF handles Cognito flows, cookie/session management, and request shaping before forwarding calls upstream. In Java-backed deployments, Lambda proxies domain routes to `ledger-svc`. In serverless deployments, Lambda serves the same product surface directly for accounts, transactions, analytics, Plaid flows, and chat.
 
 ## API Boundary
 
 - Source of truth: `contracts/openapi.yaml` (types generated via `pnpm -C apps/web generate:api`).
-- Public paths served by Next.js `/api/*` proxy to ledger-svc roots without the `/api` prefix.
-- Domain ownership lives in `apps/ledger-svc` for accounts, transactions, Plaid, analytics, chat, and RAG.
-- Lambda keeps first-party implementations only for auth and maintenance endpoints; domain routes are compatibility proxies to `ledger-svc`.
+- Public paths served by Next.js `/api/*` proxy to upstream roots without the `/api` prefix.
+- `apps/ledger-svc` remains the richer backend implementation for accounts, transactions, Plaid, analytics, chat, and RAG.
+- `infra/lambda` supports two modes:
+  - **Proxy mode** when `LEDGER_SERVICE_URL` or `LEDGER_SERVICE_INTERNAL_URL` is configured.
+  - **Standalone mode** when those proxy variables are absent. In this mode Lambda owns accounts, transactions, analytics, Plaid, and chat directly.
+- RAG endpoints (`/rag/*`) remain Java-backed only. Standalone Lambda mode returns an explicit `501 RAG_STANDALONE_UNAVAILABLE`.
 - Phase 1 endpoints:
   - Authentication: `POST /auth/token`, `GET /auth/callback` (lambda facade), `/login` dev helpers
   - Plaid: `POST /plaid/link-token`, `POST /plaid/exchange`, `POST /transactions/sync`, `POST /transactions/reset`
@@ -42,16 +50,16 @@ The BFF handles Cognito flows, cookie/session management, and request shaping be
 
 1. Cognito Hosted UI (Authorization Code + optional PKCE) returns to Next.js `/auth/callback`.
 2. Next.js exchanges the code with the auth endpoint, sets httpOnly cookies (`sp_token`, `sp_at`, `sp_rt`), and redirects to the dashboard.
-3. Middleware and `CookieBearerTokenFilter` translate cookies into `Authorization: Bearer` headers for API requests.
-4. Spring Security validates JWTs using Cognito JWKS. When Cognito is disabled (local dev) a signed HMAC token is accepted via `SAFEPOCKET_DEV_JWT_SECRET`.
-5. `AuthenticatedUserFilter` resolves the UUID principal and `RlsGuard` issues `SET LOCAL appsec.user_id = '<uuid>'` on the connection before any SQL executes.
-6. Sensitive columns (Plaid access tokens) are encrypted using `SAFEPOCKET_KMS_DATA_KEY` (AES-256 envelope key). Missing keys cause production startup to fail fast.
+3. Middleware and backend adapters translate cookies into `Authorization: Bearer` headers for API requests.
+4. The active backend validates JWTs using Cognito JWKS. In local/dev fallback mode a signed HMAC token is accepted via `SAFEPOCKET_DEV_JWT_SECRET`.
+5. The active backend resolves the UUID principal and enforces per-user data isolation before SQL executes.
+6. Sensitive columns (Plaid access tokens) are encrypted using `SAFEPOCKET_KMS_DATA_KEY` (AES-256 envelope key).
 7. Incoming Plaid webhooks require signature verification (`Plaid-Verification` JWT) unless running in a non-prod profile.
 
 ## Deployment Topology
 
-- **ECS Fargate**: `next-web` (Next.js) and `ledger-svc` (Spring Boot) behind a shared ALB.
-- **Lambda**: `hello-http` function acts as a public/native/auth facade and maintenance surface. Domain routes are proxied through to `ledger-svc`.
+- **Java-backed deployment**: `next-web` (Next.js) and `ledger-svc` (Spring Boot) can run behind the same ALB or equivalent private networking. Lambda acts as a public/native/auth facade and compatibility proxy.
+- **Serverless deployment**: `next-web` runs on Vercel (or equivalent) and points domain APIs at API Gateway/Lambda. Lambda handles accounts, transactions, analytics, Plaid, and chat directly to remove ECS fixed cost.
 - **Neon (PostgreSQL)**: primary data store (serverless Postgres) with pgvector enabled for semantic search.
 - **ElastiCache (Redis)**: caching and lightweight coordination (pending rate-limiter support).
 - **Secrets Manager / Parameter Store**: Plaid and Cognito bundles referenced by ECS/Lambda; `SAFEPOCKET_KMS_DATA_KEY` seeded here.
@@ -61,7 +69,7 @@ The BFF handles Cognito flows, cookie/session management, and request shaping be
 
 1. `POST /plaid/link-token` generates a token scoped to the authenticated user (optionally includes redirect URI and webhook URL).
 2. Client opens Plaid Link; upon success the BFF calls `POST /plaid/exchange` with the `public_token`.
-3. The ledger service encrypts and stores the Plaid access token in `plaid_items`.
+3. The active backend profile encrypts and stores the Plaid access token in `plaid_items`.
 4. `/transactions/sync` pulls transactions, normalises merchants/categories, computes anomalies, and updates analytics aggregates.
 5. Dashboard pulls `GET /analytics/summary` and `GET /transactions` for the selected month. New highlights are generated when `generateAi=true`.
 6. Settings actions allow unlinking (drops `plaid_items`), re-linking, demo seeding, and full resets through `/transactions/reset`.

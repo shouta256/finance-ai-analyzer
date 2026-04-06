@@ -10,11 +10,11 @@ I built this project to demonstrate my skills in full-stack development, cloud s
 
 This project shows my ability to build professional-grade software. Here are the key strengths:
 
-### 1. Modern & Robust Tech Stack
-I used the latest industry standards to build a scalable application.
+### 1. Modern & Pragmatic Tech Stack
+I used current production patterns and adjusted the deployment profile to fit personal-project cost constraints.
 - **Frontend:** Next.js 14 (App Router) for a fast and responsive user interface.
 - **Backend:** Spring Boot 3 (Java 21) for a secure and powerful API.
-- **Infrastructure:** AWS (ECS, Lambda) and Docker for modern cloud deployment.
+- **Infrastructure:** AWS Lambda / API Gateway for the cost-optimized runtime profile, plus Spring Boot for the richer backend profile used in local development and full RAG flows.
 
 ### 2. High-Level Security
 Since this app handles financial data, security was my top priority.
@@ -40,12 +40,14 @@ This is not just a simple CRUD app. It includes complex logic and AI.
 
 ## Architecture Overview
 
-Safepocket follows a "Backend for Frontend" (BFF) pattern.
-1.  **User Interface:** The Next.js app handles the UI and securely manages user sessions.
-2.  **API Service:** The Spring Boot service handles the business logic, bank connections, and AI processing.
-3.  **Data Layer:** PostgreSQL stores the data, while Redis handles caching for speed.
+Safepocket follows a "Backend for Frontend" (BFF) pattern and supports two backend profiles.
+1. **User Interface:** The Next.js app handles the UI and securely manages user sessions.
+2. **Backend Profiles:**
+   - **Java-backed profile:** Spring Boot handles domain logic and the full RAG implementation.
+   - **Serverless profile:** API Gateway + Lambda handle the same product surface with lower fixed cost.
+3. **Data Layer:** PostgreSQL stores the data, while Redis is available for caching/coordination where needed.
 
-This design ensures the backend remains secure and isolated from the public internet.
+This let me balance engineering quality with personal-project operating cost. The tradeoff itself is part of the project story.
 
 ## Getting Started
 

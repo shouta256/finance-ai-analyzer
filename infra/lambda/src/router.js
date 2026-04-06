@@ -30,18 +30,81 @@ const {
   handleDevAuthLogout,
   handleDiagnosticsAuth,
 } = require("./handlers/auth");
-const { handleDiagnosticsPlaidConfig } = require("./handlers/plaid");
+const {
+  handlePlaidLinkToken,
+  handlePlaidExchange,
+  handleTransactionsSync,
+  handleTransactionsReset,
+  handleDiagnosticsPlaidConfig,
+} = require("./handlers/plaid");
+const { handleAnalyticsSummary } = require("./handlers/analytics");
+const { handleChat } = require("./handlers/chat");
+const { handleTransactions, handleAccounts } = require("./handlers/transactions");
 const {
   handleDnsDiagnostics,
   handleDiagnosticsDbMaintenance,
   handleDiagnosticsPlaidItems,
   handleAdminEnsureConstraints,
 } = require("./handlers/diagnostics");
-const { proxyLedgerRequest } = require("./handlers/proxy");
+const { isLedgerProxyConfigured, proxyLedgerRequest } = require("./handlers/proxy");
 
 // Import utils
 const { respond } = require("./utils/response");
 const { SchemaNotMigratedError } = require("./bootstrap/schemaGuard");
+
+let legacyLedgerFallbackWarned = false;
+
+function logLegacyLedgerFallback(path) {
+  if (legacyLedgerFallbackWarned) return;
+  legacyLedgerFallbackWarned = true;
+  console.warn("[lambda] ledger proxy env missing; using legacy Lambda handlers for domain routes", {
+    path,
+  });
+}
+
+function buildPatchedTransactionEvent(event, path) {
+  const transactionId = path.split("/")[2];
+  let parsedBody = {};
+
+  if (event.body) {
+    try {
+      const rawBody = event.isBase64Encoded
+        ? Buffer.from(event.body, "base64").toString("utf8")
+        : event.body;
+      parsedBody = rawBody ? JSON.parse(rawBody) : {};
+    } catch {
+      parsedBody = {};
+    }
+  }
+
+  return {
+    ...event,
+    rawPath: "/transactions",
+    path: "/transactions",
+    body: JSON.stringify({ ...parsedBody, transactionId }),
+    isBase64Encoded: false,
+  };
+}
+
+async function proxyOrFallback(event, normalizedPath, fallback, options = {}) {
+  if (isLedgerProxyConfigured()) {
+    return proxyLedgerRequest(event, normalizedPath, options);
+  }
+  logLegacyLedgerFallback(normalizedPath);
+  return fallback();
+}
+
+async function proxyOnly(event, normalizedPath, code = "LEDGER_PROXY_NOT_CONFIGURED", message = "This route requires a configured ledger service upstream.") {
+  if (isLedgerProxyConfigured()) {
+    return proxyLedgerRequest(event, normalizedPath);
+  }
+  return respond(event, 501, {
+    error: {
+      code,
+      message,
+    },
+  });
+}
 
 /**
  * Main Lambda handler
@@ -91,50 +154,55 @@ exports.handler = async (event) => {
       return await handleDevAuthLogout(event);
     }
 
-    // === Java-backed domain routes via proxy ===
+    // === Domain routes (proxy mode or standalone fallback) ===
     if (path === "/chat" || path === "/api/chat" || path === "/ai/chat") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleChat(event));
     }
 
     if (method === "GET" && path === "/analytics/summary") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleAnalyticsSummary(event));
     }
 
     if (method === "GET" && path === "/transactions") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleTransactions(event));
     }
     if (method === "PATCH" && path === "/transactions") {
-      return await proxyLedgerRequest(event, path, { compatibilityMode: "transaction-patch" });
+      return await proxyOrFallback(
+        event,
+        path,
+        () => handleTransactions(event),
+        { compatibilityMode: "transaction-patch" },
+      );
     }
     if (method === "PATCH" && /^\/transactions\/[0-9a-fA-F-]{36}$/.test(path)) {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleTransactions(buildPatchedTransactionEvent(event, path)));
     }
     if (method === "POST" && path === "/transactions/sync") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleTransactionsSync(event));
     }
     if (method === "POST" && path === "/transactions/reset") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleTransactionsReset(event));
     }
 
     if (method === "GET" && path === "/accounts") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handleAccounts(event));
     }
 
     if (method === "POST" && path === "/plaid/link-token") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handlePlaidLinkToken(event));
     }
     if (method === "POST" && path === "/plaid/exchange") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOrFallback(event, path, () => handlePlaidExchange(event));
     }
 
     if (method === "POST" && path === "/rag/search") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOnly(event, path, "RAG_STANDALONE_UNAVAILABLE", "RAG endpoints require ledger-svc in proxy mode. Standalone Lambda mode uses built-in chat retrieval only.");
     }
     if (method === "GET" && path === "/rag/summaries") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOnly(event, path, "RAG_STANDALONE_UNAVAILABLE", "RAG endpoints require ledger-svc in proxy mode. Standalone Lambda mode uses built-in chat retrieval only.");
     }
     if (method === "POST" && path === "/rag/aggregate") {
-      return await proxyLedgerRequest(event, path);
+      return await proxyOnly(event, path, "RAG_STANDALONE_UNAVAILABLE", "RAG endpoints require ledger-svc in proxy mode. Standalone Lambda mode uses built-in chat retrieval only.");
     }
 
     // === Diagnostics routes ===

@@ -45,7 +45,12 @@ const raw = schema.parse({
   NEXT_PUBLIC_ENV: process.env.NEXT_PUBLIC_ENV,
 });
 
-const resolvedLedgerUrl = normalizeUrl(raw.LEDGER_SERVICE_URL ?? raw.NEXT_PUBLIC_API_BASE ?? "http://localhost:8081");
+const resolvedLedgerUrl = normalizeUrl(
+  raw.LEDGER_SERVICE_URL ??
+  raw.SAFEPOCKET_API_BASE ??
+  raw.NEXT_PUBLIC_API_BASE ??
+  "http://localhost:8081",
+);
 const resolvedPathPrefix = normalizePrefix(raw.LEDGER_SERVICE_PATH_PREFIX);
 const resolvedInternalUrl = raw.LEDGER_SERVICE_INTERNAL_URL ? normalizeUrl(raw.LEDGER_SERVICE_INTERNAL_URL) : undefined;
 const resolvedPublicApi = raw.NEXT_PUBLIC_API_BASE ? normalizeUrl(raw.NEXT_PUBLIC_API_BASE) : undefined;

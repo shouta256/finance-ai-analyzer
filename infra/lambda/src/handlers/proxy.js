@@ -43,6 +43,14 @@ function resolveLedgerBaseUrl() {
   return stripTrailingSlash(base);
 }
 
+function isLedgerProxyConfigured() {
+  return Boolean(
+    process.env.LEDGER_SERVICE_INTERNAL_URL ||
+    process.env.LEDGER_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_LEDGER_BASE,
+  );
+}
+
 function buildLedgerUrl(pathWithQuery) {
   const base = resolveLedgerBaseUrl();
   const prefix = normalisePrefix(process.env.LEDGER_SERVICE_PATH_PREFIX);
@@ -222,5 +230,6 @@ async function proxyLedgerRequest(event, normalizedPath, options = {}) {
 }
 
 module.exports = {
+  isLedgerProxyConfigured,
   proxyLedgerRequest,
 };

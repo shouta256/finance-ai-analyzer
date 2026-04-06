@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { env } from "@/src/lib/env";
 
 async function cleanupDemoData(token: string): Promise<void> {
-  const backend = process.env.LEDGER_SERVICE_URL ?? 'http://localhost:8081';
+  const backend = env.LEDGER_SERVICE_URL;
   try {
     await fetch(`${backend}/dev/auth/logout`, {
       method: 'POST',

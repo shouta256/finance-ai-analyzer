@@ -96,13 +96,18 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
 
 ## Upstream Routing
 
-- `next-web` should treat `ledger-svc` as the single upstream for domain APIs. Set:
-  - `LEDGER_SERVICE_URL` to the Java ledger service URL.
-  - `LEDGER_SERVICE_INTERNAL_URL` when the public URL resolves back to the frontend host and an internal service URL is needed.
-  - `LEDGER_SERVICE_PATH_PREFIX` only when the upstream is mounted behind an additional path segment.
-- Lambda should remain thin:
-  - Keep first-party implementations for `/auth/token`, `/auth/callback`, and maintenance/admin routes.
-  - Forward domain routes such as `/accounts`, `/transactions*`, `/plaid/*`, `/analytics/summary`, `/ai/chat`, and `/rag/*` to `ledger-svc`.
+- `next-web` supports two domain upstream modes:
+  - **Java-backed mode**
+    - Set `LEDGER_SERVICE_URL` to the Java ledger service URL.
+    - Set `LEDGER_SERVICE_INTERNAL_URL` only when `LEDGER_SERVICE_URL` resolves back to the frontend host and an internal hop is required.
+    - Set `LEDGER_SERVICE_PATH_PREFIX` only when the ledger service is mounted behind an extra path segment.
+  - **Serverless mode**
+    - Set `SAFEPOCKET_API_BASE` to the API Gateway base URL.
+    - `LEDGER_SERVICE_URL` may be omitted; the web app falls back to `SAFEPOCKET_API_BASE` for domain API routing.
+- Lambda also supports two modes:
+  - **Proxy mode** when `LEDGER_SERVICE_INTERNAL_URL` or `LEDGER_SERVICE_URL` is configured. Domain routes are forwarded to `ledger-svc`.
+  - **Standalone mode** when those proxy variables are absent. Lambda serves `/accounts`, `/transactions*`, `/plaid/*`, `/analytics/summary`, and `/ai/chat` directly.
+- RAG endpoints (`/rag/*`) remain proxy-only. In standalone Lambda mode they return `501 RAG_STANDALONE_UNAVAILABLE`.
 
 ## AI & Chat Configuration
 

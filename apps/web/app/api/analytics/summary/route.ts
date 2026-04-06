@@ -7,7 +7,16 @@ import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 const querySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), generateAi: z.string().optional() });
 
 export async function GET(request: NextRequest) {
-  const authorization = request.headers.get("authorization") ?? undefined;
+  const headerToken = request.headers.get("authorization")?.trim();
+  const cookieToken = request.cookies.get("sp_token")?.value?.trim();
+  const authorization =
+    headerToken?.startsWith("Bearer ")
+      ? headerToken
+      : headerToken
+        ? `Bearer ${headerToken}`
+        : cookieToken
+          ? `Bearer ${cookieToken}`
+          : undefined;
   const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
   if (errorResponse) return errorResponse;
   const { searchParams } = new URL(request.url);
@@ -18,12 +27,15 @@ export async function GET(request: NextRequest) {
   const url = new URL(`/analytics/summary`, "http://local-proxy");
   url.searchParams.set("month", query.month);
   if (query.generateAi) url.searchParams.set("generateAi", query.generateAi);
+  if (!authorization) {
+    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } }, { status: 401 });
+  }
   try {
-    const headers: Record<string, string> = {};
-    if (authorization) {
-      headers.authorization = authorization;
-    }
-    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, { method: "GET", headers, baseUrlOverride });
+    const result = await ledgerFetch<unknown>(`${url.pathname}${url.search}`, {
+      method: "GET",
+      headers: { authorization },
+      baseUrlOverride,
+    });
     const body = analyticsSummarySchema.parse(result);
     return NextResponse.json(body);
   } catch (e) {

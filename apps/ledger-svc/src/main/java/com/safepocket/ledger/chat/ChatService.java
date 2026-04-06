@@ -1,6 +1,7 @@
 package com.safepocket.ledger.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.safepocket.ledger.ai.OpenAiResponsesClient;
 import com.safepocket.ledger.rag.RagService;
@@ -205,7 +206,11 @@ public class ChatService {
             Optional<String> aiReply = openAiClient.generateText(messages, 1200);
 
             if (aiReply.isPresent()) {
-                List<ChatSourceDto> citedSources = filterSourcesForReply(aiReply.get(), mapSources(contextBundle.sources()));
+                List<ChatSourceDto> citedSources = filterSourcesForReply(
+                        aiReply.get(),
+                        mapSources(contextBundle.sources()),
+                        extractIntent(contextBundle.contextJson())
+                );
                 return new GeneratedAssistantReply(aiReply.get(), citedSources);
             }
             log.warn("AI chat: model did not return content, using fallback");
@@ -292,15 +297,19 @@ public class ChatService {
                 .toList();
     }
 
-    private List<ChatSourceDto> filterSourcesForReply(String reply, List<ChatSourceDto> sources) {
+    private List<ChatSourceDto> filterSourcesForReply(String reply, List<ChatSourceDto> sources, String intent) {
         if (reply == null || reply.isBlank() || sources == null || sources.isEmpty()) {
+            return List.of();
+        }
+        if (intent != null && !"TRANSACTION_LOOKUP".equals(intent)) {
             return List.of();
         }
         String normalizedReply = normalizeText(reply);
         String lowerReply = reply.toLowerCase(Locale.US);
-        return sources.stream()
+        List<ChatSourceDto> filtered = sources.stream()
                 .filter(source -> sourceMentionedInReply(source, normalizedReply, lowerReply))
                 .toList();
+        return filtered.isEmpty() ? sources.stream().limit(3).toList() : filtered;
     }
 
     private boolean sourceMentionedInReply(ChatSourceDto source, String normalizedReply, String lowerReply) {
@@ -340,6 +349,20 @@ public class ChatService {
                 .replaceAll("[^a-z0-9]+", " ")
                 .trim()
                 .replaceAll("\\s+", " ");
+    }
+
+    private String extractIntent(String contextJson) {
+        if (contextJson == null || contextJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(contextJson);
+            JsonNode intent = root.get("intent");
+            return intent != null && intent.isTextual() ? intent.asText() : null;
+        } catch (JsonProcessingException e) {
+            log.warn("AI chat: failed to parse context intent", e);
+            return null;
+        }
     }
 
     private String serializeMetadata(List<ChatSourceDto> sources) {

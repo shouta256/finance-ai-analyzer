@@ -182,6 +182,59 @@ class ChatServiceTest {
     }
 
     @Test
+    void sendMessageKeepsTopSourcesForTransactionLookupWhenReplyIsAbstract() {
+        UUID userId = UUID.randomUUID();
+        List<ChatMessageEntity> saved = new ArrayList<>();
+        when(retentionManager.currentCutoff()).thenReturn(Instant.EPOCH);
+        when(repository.save(any(ChatMessageEntity.class))).thenAnswer(invocation -> {
+            ChatMessageEntity entity = invocation.getArgument(0);
+            saved.add(entity);
+            return entity;
+        });
+        when(repository.findByConversationIdAndUserIdOrderByCreatedAtAsc(any(UUID.class), any(UUID.class)))
+                .thenAnswer(invocation -> new ArrayList<>(saved));
+        when(openAiClient.hasCredentials()).thenReturn(true);
+        when(openAiClient.generateText(anyList(), anyInt()))
+                .thenReturn(Optional.of("Your coffee spending totaled $40.00."));
+        when(chatContextService.buildContextBundle(any(UUID.class), any(UUID.class), anyString()))
+                .thenReturn(new ChatContextService.ChatContextBundle(
+                        "{\"intent\":\"TRANSACTION_LOOKUP\"}",
+                        List.of(
+                                new RagService.SearchReference(
+                                        "t33333333",
+                                        UUID.fromString("33333333-3333-3333-3333-333333333333"),
+                                        LocalDate.of(2025, 9, 15),
+                                        "Starbucks",
+                                        875,
+                                        "Dining",
+                                        0.812,
+                                        List.of("coffee"),
+                                        List.of("semantic similarity")
+                                ),
+                                new RagService.SearchReference(
+                                        "t44444444",
+                                        UUID.fromString("44444444-4444-4444-4444-444444444444"),
+                                        LocalDate.of(2025, 9, 16),
+                                        "Blue Bottle Coffee",
+                                        1250,
+                                        "Dining",
+                                        0.791,
+                                        List.of("coffee"),
+                                        List.of("merchant phrase match")
+                                )
+                        ),
+                        new RagService.Stats(2, 2125, 1062),
+                        "chat-1"
+                ));
+
+        ChatService.ChatResponse response = chatService.sendMessage(userId, null, "How much did I spend on coffee?", null);
+
+        ChatService.ChatMessageDto assistant = response.messages().getLast();
+        assertThat(assistant.sources()).hasSize(2);
+        assertThat(assistant.sources().getFirst().merchant()).isEqualTo("Starbucks");
+    }
+
+    @Test
     void deleteConversationDeletesScopedConversationWhenConversationIdProvided() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();

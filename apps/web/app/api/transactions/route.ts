@@ -384,8 +384,7 @@ export async function GET(request: NextRequest) {
   const endpoint = new URL("/transactions", "http://localhost");
   const normalizedFrom = query.from ? query.from.slice(0, 7) : undefined;
   const normalizedTo = query.to ? query.to.slice(0, 7) : undefined;
-  // If from/to are provided, use custom range mode and don't send month
-  // Lambda's parseRange prioritizes month over from/to
+  // If from/to are provided, use custom range mode and don't send month.
   if (normalizedFrom && normalizedTo) {
     endpoint.searchParams.set("from", normalizedFrom);
     endpoint.searchParams.set("to", normalizedTo);
@@ -395,8 +394,7 @@ export async function GET(request: NextRequest) {
   if (query.accountId) endpoint.searchParams.set("accountId", query.accountId);
   endpoint.searchParams.set("page", String(query.page ?? 0));
   endpoint.searchParams.set("pageSize", String(query.pageSize ?? 15));
-  
-  console.log("[api/transactions GET] Calling Lambda with URL:", endpoint.pathname + endpoint.search);
+  console.log("[api/transactions GET] Proxying to ledger-svc URL:", endpoint.pathname + endpoint.search);
 
   const result = await ledgerFetch<unknown>(endpoint.pathname + endpoint.search, {
     method: "GET",

@@ -4,16 +4,6 @@ import { ledgerFetch } from "@/src/lib/api-client";
 import { transactionsSyncSchema } from "@/src/lib/schemas";
 import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
-const BASE = process.env.LEDGER_SERVICE_URL?.replace(/\/+$/, "") || null;
-const PFX = process.env.LEDGER_SERVICE_PATH_PREFIX?.replace(/^\/+|\/+$/g, "") || "";
-
-function buildUrl(path: string): string {
-  if (!BASE) throw new Error("LEDGER_SERVICE_URL is not configured");
-  const prefix = PFX ? `/${PFX}` : "";
-  const suffix = path.startsWith("/") ? path : `/${path}`;
-  return `${BASE}${prefix}${suffix}`;
-}
-
 function authHeaders(request: NextRequest): Record<string, string> {
   const headerToken = request.headers.get("authorization")?.trim();
   const cookieToken = request.cookies.get("sp_token")?.value?.trim();
@@ -56,33 +46,16 @@ export async function POST(request: NextRequest) {
       ? undefined
       : requestSchema.parse(await request.json());
     const body = rawBody ? normalizeSyncRequest(rawBody) : undefined;
-    if (!BASE) {
-      const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
-      if (errorResponse) return errorResponse;
-      const result = await ledgerFetch<unknown>("/transactions/sync", {
-        method: "POST",
-        headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
-        baseUrlOverride,
-      });
-      const response = transactionsSyncSchema.parse(result);
-      return NextResponse.json(response, { status: 202 });
-    }
-    const res = await fetch(buildUrl("/transactions/sync"), {
+    const { baseUrlOverride, errorResponse } = resolveLedgerBaseOverride(request);
+    if (errorResponse) return errorResponse;
+    const result = await ledgerFetch<unknown>("/transactions/sync", {
       method: "POST",
-      headers: {
-        ...headers,
-        ...(body ? { "content-type": "application/json" } : {}),
-      },
+      headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
+      baseUrlOverride,
     });
-    const text = await res.text();
-    const json = text ? JSON.parse(text) : {};
-    if (!res.ok) {
-      return NextResponse.json({ error: json.error ?? { code: "TRANSACTIONS_SYNC_FAILED", message: res.statusText } }, { status: res.status });
-    }
-    const response = transactionsSyncSchema.parse(json);
-    return NextResponse.json(response, { status: res.status });
+    const response = transactionsSyncSchema.parse(result);
+    return NextResponse.json(response, { status: 202 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: { code: "INVALID_REQUEST", message: error.message } }, { status: 400 });

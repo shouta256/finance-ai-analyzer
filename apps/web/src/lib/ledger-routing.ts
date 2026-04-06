@@ -15,7 +15,6 @@ export function resolveLedgerBaseOverride(request: NextRequest): {
   }
 
   const ledgerBase = strip(env.LEDGER_SERVICE_URL);
-    const pathPrefix = (env as any).LEDGER_SERVICE_PATH_PREFIX || "";
   if (!ledgerBase) {
     return { baseUrlOverride: undefined };
   }
@@ -41,10 +40,10 @@ export function resolveLedgerBaseOverride(request: NextRequest): {
   }
 
   const requestOrigin = strip(`${proto}://${host}`);
-    if (
-      requestOrigin &&
-      requestOrigin.toLowerCase() === ledgerBase.toLowerCase()
-    ) {
+  if (
+    requestOrigin &&
+    requestOrigin.toLowerCase() === ledgerBase.toLowerCase()
+  ) {
     const internal = strip(env.LEDGER_SERVICE_INTERNAL_URL);
     if (!internal) {
       return {

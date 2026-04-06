@@ -993,6 +993,7 @@ function parseMonth(value) {
 }
 
 function parseRange(query) {
+  query = query || {};
   console.log("[parseRange] Input query:", JSON.stringify({ month: query.month, from: query.from, to: query.to }));
   if (query.from && query.to) {
     const fromDate = parseMonth(query.from);
@@ -2396,7 +2397,7 @@ function generateDemoTransactions(startDate, endDate, userId) {
   });
 }
 
-async function handleAnalyticsSummary(event, query) {
+async function handleAnalyticsSummary(event, query = event.queryStringParameters || {}) {
   const payload = await authenticate(event);
   const { fromDate, toDate, monthLabel } = parseRange(query);
   const traceId = event.requestContext?.requestId || crypto.randomUUID();
@@ -2433,7 +2434,7 @@ async function handleAnalyticsSummary(event, query) {
   }
 }
 
-async function handleTransactions(event, query) {
+async function handleTransactions(event, query = event.queryStringParameters || {}) {
   console.log("[handleTransactions] Received query:", JSON.stringify(query));
   const payload = await authenticate(event);
   const { fromDate, toDate, monthLabel } = parseRange(query);
@@ -4167,16 +4168,22 @@ exports.handler = async (event) => {
       return await proxyOrFallback(event, path, () => handleChat(event));
     }
     if (method === "GET" && path === "/analytics/summary") {
-      return await proxyOrFallback(event, path, () => handleAnalyticsSummary(event));
+      return await proxyOrFallback(event, path, () => handleAnalyticsSummary(event, event.queryStringParameters || {}));
     }
     if (method === "GET" && path === "/transactions") {
-      return await proxyOrFallback(event, path, () => handleTransactions(event));
+      return await proxyOrFallback(event, path, () => handleTransactions(event, event.queryStringParameters || {}));
     }
     if (method === "PATCH" && path === "/transactions") {
-      return await proxyOrFallback(event, path, () => handleTransactions(event), { compatibilityMode: "transaction-patch" });
+      return await proxyOrFallback(event, path, () => handleTransactions(event, event.queryStringParameters || {}), {
+        compatibilityMode: "transaction-patch",
+      });
     }
     if (method === "PATCH" && /^\/transactions\/[0-9a-fA-F-]{36}$/.test(path)) {
-      return await proxyOrFallback(event, path, () => handleTransactions(buildPatchedTransactionEvent(event, path)));
+      return await proxyOrFallback(
+        event,
+        path,
+        () => handleTransactions(buildPatchedTransactionEvent(event, path), event.queryStringParameters || {}),
+      );
     }
     if (method === "POST" && path === "/transactions/sync") {
       return await proxyOrFallback(event, path, () => handleTransactionsSync(event));

@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SignJWT } from 'jose';
+import { ledgerFetch } from "@/src/lib/api-client";
+import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 export const runtime = 'nodejs';
 
@@ -7,10 +9,9 @@ const DEV_USER_ID = '0f08d2b9-28b3-4b28-bd33-41a36161e9ab';
 const PRIMARY_COOKIE = 'sp_token';
 const ONE_HOUR_SECONDS = 60 * 60;
 
-async function triggerDemoSync(token: string): Promise<void> {
-  const backend = process.env.LEDGER_SERVICE_URL ?? 'http://localhost:8081';
+async function triggerDemoSync(token: string, baseUrlOverride?: string): Promise<void> {
   try {
-    await fetch(`${backend}/transactions/sync`, {
+    await ledgerFetch("/transactions/sync", {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -18,9 +19,14 @@ async function triggerDemoSync(token: string): Promise<void> {
       },
       body: JSON.stringify({ demoSeed: true }),
       cache: 'no-store',
+      baseUrlOverride,
     });
-  } catch {
-    // Sync is best-effort; ignore errors
+  } catch (error) {
+    if (process.env.NODE_ENV !== "test") {
+      const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : undefined;
+      const payload = (error as { payload?: unknown })?.payload;
+      console.error("[/api/dev/login] demo sync failed", { status, payload });
+    }
   }
 }
 
@@ -54,6 +60,8 @@ function devLoginEnabled(): boolean {
 }
 
 export async function GET(req: NextRequest) {
+  const { baseUrlOverride } = resolveLedgerBaseOverride(req);
+
   if (!devLoginEnabled()) {
     return NextResponse.json(
       {
@@ -67,41 +75,42 @@ export async function GET(req: NextRequest) {
   }
 
   // Prefer backend-minted token to ensure signature matches backend decoder
-  const backend = process.env.LEDGER_SERVICE_URL ?? 'http://localhost:8081';
   try {
-    const res = await fetch(`${backend}/dev/auth/login`, {
+    const json = await ledgerFetch<{ token?: string; expiresInSeconds?: number }>("/dev/auth/login", {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ userId: DEV_USER_ID }),
-      // Do not forward cookies; this is a server-to-server call
       cache: 'no-store',
+      baseUrlOverride,
     });
-    if (res.ok) {
-      const json: any = await res.json();
-      const token: string | undefined = json?.token;
-      const ttl: number = Number(json?.expiresInSeconds ?? ONE_HOUR_SECONDS);
-      if (token && typeof token === 'string') {
-        // Trigger sync to populate demo data in the database
-        await triggerDemoSync(token);
+    const token: string | undefined = json?.token;
+    const ttl: number = Number(json?.expiresInSeconds ?? ONE_HOUR_SECONDS);
+    if (token && typeof token === 'string') {
+      // Trigger sync to populate demo data in the database
+      await triggerDemoSync(token, baseUrlOverride);
 
-        const redirect = req.nextUrl.searchParams.get('redirect');
-        const response = redirect
-          ? NextResponse.redirect(new URL(redirect, req.nextUrl.origin), { status: 303 })
-          : NextResponse.json({ ok: true, mode: 'backend' });
-        const cookieInit = {
-          httpOnly: true,
-          secure: shouldUseSecureCookie(req),
-          path: '/',
-          sameSite: 'lax' as const,
-          maxAge: ttl,
-        };
-        response.cookies.set(PRIMARY_COOKIE, token, cookieInit);
-        // Set visible cookie for client-side demo detection
-        response.cookies.set('sp_demo_mode', '1', { ...cookieInit, httpOnly: false });
-        return response;
-      }
+      const redirect = req.nextUrl.searchParams.get('redirect');
+      const response = redirect
+        ? NextResponse.redirect(new URL(redirect, req.nextUrl.origin), { status: 303 })
+        : NextResponse.json({ ok: true, mode: 'backend' });
+      const cookieInit = {
+        httpOnly: true,
+        secure: shouldUseSecureCookie(req),
+        path: '/',
+        sameSite: 'lax' as const,
+        maxAge: ttl,
+      };
+      response.cookies.set(PRIMARY_COOKIE, token, cookieInit);
+      // Set visible cookie for client-side demo detection
+      response.cookies.set('sp_demo_mode', '1', { ...cookieInit, httpOnly: false });
+      return response;
     }
-  } catch {
+  } catch (error) {
+    if (process.env.NODE_ENV !== "test") {
+      const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : undefined;
+      const payload = (error as { payload?: unknown })?.payload;
+      console.warn("[/api/dev/login] backend dev login failed; falling back to local token mint", { status, payload });
+    }
     // fall through to local mint
   }
 
@@ -129,7 +138,7 @@ export async function GET(req: NextRequest) {
     .sign(new TextEncoder().encode(secret));
 
   // Trigger sync to populate demo data in the database
-  await triggerDemoSync(token);
+  await triggerDemoSync(token, baseUrlOverride);
 
   const redirect = req.nextUrl.searchParams.get('redirect');
   const response = redirect

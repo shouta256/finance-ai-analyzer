@@ -19,6 +19,24 @@ PostgreSQL runs on Neon (managed over TLS). Native/partner integrations use the 
 
 The BFF handles Cognito flows, cookie/session management, and request shaping before forwarding calls upstream. In Java-backed deployments, Lambda proxies domain routes to `ledger-svc`. In serverless deployments, Lambda serves the same product surface directly for accounts, transactions, analytics, Plaid flows, and chat.
 
+## Runtime Ownership
+
+- `apps/ledger-svc`
+  - Source of truth for the Java-backed profile.
+  - Owns the richer transaction, analytics, Plaid, chat, and full RAG implementation.
+- `infra/lambda/index.js`
+  - Current deployed Lambda entrypoint.
+  - Thin compatibility shim that delegates to `infra/lambda/src/router.js`.
+- `infra/lambda/src/router.js`
+  - Single Lambda runtime implementation.
+  - Owns route dispatch for the serverless profile.
+- `infra/lambda/src/handlers/*`
+  - HTTP-layer handlers grouped by route area.
+- `infra/lambda/src/services/*`
+  - Shared business logic, integration logic, and data access helpers.
+
+This split exists because the project moved from a richer Java/ECS-oriented backend shape to a lower-cost serverless production shape. The cost decision was intentional, but it temporarily created duplication inside Lambda. That duplication is now resolved by keeping `index.js` as the deployed shim and treating `src/router.js` as the single runtime implementation.
+
 ## API Boundary
 
 - Source of truth: `contracts/openapi.yaml` (types generated via `pnpm -C apps/web generate:api`).
@@ -27,6 +45,9 @@ The BFF handles Cognito flows, cookie/session management, and request shaping be
 - `infra/lambda` supports two modes:
   - **Proxy mode** when `LEDGER_SERVICE_URL` or `LEDGER_SERVICE_INTERNAL_URL` is configured.
   - **Standalone mode** when those proxy variables are absent. In this mode Lambda owns accounts, transactions, analytics, Plaid, and chat directly.
+- Inside Lambda:
+  - `infra/lambda/index.js` preserves the deployed `index.handler` entrypoint.
+  - `infra/lambda/src/*` contains the single implementation used by that entrypoint.
 - RAG endpoints (`/rag/*`) remain Java-backed only. Standalone Lambda mode returns an explicit `501 RAG_STANDALONE_UNAVAILABLE`.
 - Phase 1 endpoints:
   - Authentication: `POST /auth/token`, `GET /auth/callback` (lambda facade), `/login` dev helpers

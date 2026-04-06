@@ -93,6 +93,7 @@ function parseMonth(value) {
  * Parse date range from query parameters
  */
 function parseRange(query) {
+  query = query || {};
   if (query.from && query.to) {
     const fromDate = parseMonth(query.from);
     const endDate = parseMonth(query.to);

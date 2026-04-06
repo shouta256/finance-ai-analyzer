@@ -3,8 +3,12 @@
 /**
  * Safepocket Lambda Router
  * 
- * Clean modular router that delegates all business logic to specialized handlers.
- * This file should remain slim - only routing logic.
+ * Single Lambda runtime implementation.
+ *
+ * Production still enters via `infra/lambda/index.js`, but that file is now a
+ * thin shim. This router is the single runtime implementation and should remain slim:
+ * routing only, with HTTP logic in `src/handlers/*` and business logic in
+ * `src/services/*`.
  */
 
 require("./bootstrap/fetch-debug");

@@ -85,6 +85,13 @@ async function callGemini(model, contextText, history, userMessage, maxTokens, t
         if (textPart?.text) return textPart.text.trim();
       }
     }
+    if (Array.isArray(data.contents) && data.contents.length > 0) {
+      const first = data.contents[0];
+      if (first?.parts?.length) {
+        const textPart = first.parts.find((part) => typeof part.text === "string");
+        if (textPart?.text) return textPart.text.trim();
+      }
+    }
     return null;
   } catch (error) {
     console.warn("[chat] Gemini call failed", { message: error?.message, traceId });

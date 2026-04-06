@@ -1,19 +1,19 @@
 "use strict";
 
 const crypto = require("crypto");
-const { authenticate, optionalAuthenticate } = require("../services/auth");
+const { authenticate } = require("../services/auth");
 const {
   queryTransactionsWithClient,
   queryAccountsWithClient,
   updateTransactionCategory,
   ensureUserRow,
-  syncFromPlaid,
 } = require("../services/transactions");
 const { respond } = require("../utils/response");
-const { parseJsonBody, createHttpError } = require("../utils/helpers");
+const { parseJsonBody, parseRange, toIsoDate } = require("../utils/helpers");
 const { withUserClient } = require("../db/pool");
 const { UUID_REGEX, DEV_USER_ID } = require("../utils/constants");
 const { generateDemoAccounts, generateDemoTransactions } = require("../services/demo");
+const { buildTransactionsAggregates } = require("../services/analytics");
 
 /**
  * Check if user is demo user
@@ -33,55 +33,33 @@ async function handleTransactions(event) {
 
   // GET - List transactions
   if (method === "GET") {
-    const qs = event.queryStringParameters || {};
-
-    // Parse date range
-    let start, end;
-    if (qs.start && qs.end) {
-      start = new Date(qs.start);
-      end = new Date(qs.end);
-    } else {
-      const rawMonth = qs.month || new Date().toISOString().slice(0, 7);
-      const [yyyy, mm] = rawMonth.split("-").map(Number);
-      start = new Date(Date.UTC(yyyy, mm - 1, 1));
-      end = new Date(Date.UTC(yyyy, mm, 1));
-    }
-
-    // Validate dates
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return respond(event, 400, {
-        error: { code: "INVALID_DATE_RANGE", message: "Invalid date range parameters", traceId },
-      });
-    }
-
-    // Demo user - return generated demo data
-    if (isDemo) {
-      try {
-        const demoTransactions = generateDemoTransactions(start, end, payload.sub);
-        return respond(event, 200, { 
-          transactions: demoTransactions, 
-          traceId,
-          isDemo: true 
-        });
-      } catch (error) {
-        console.error("[transactions] demo generation failed", { message: error?.message });
-        return respond(event, 500, {
-          error: { code: "DEMO_GENERATION_FAILED", message: "Failed to generate demo data", traceId },
-        });
-      }
-    }
-
-    // Regular user - fetch from DB
     try {
-      const transactions = await withUserClient(payload.sub, async (client) => {
-        await ensureUserRow(client, payload);
-        return queryTransactionsWithClient(client, start, end);
+      const query = event.queryStringParameters || {};
+      const { fromDate, toDate, monthLabel } = parseRange(query);
+      const transactions = isDemo
+        ? generateDemoTransactions(fromDate, toDate, payload.sub)
+        : await withUserClient(payload.sub, async (client) => {
+            await ensureUserRow(client, payload);
+            return queryTransactionsWithClient(client, fromDate, toDate);
+          });
+      const page = Math.max(parseInt(query.page || "0", 10), 0);
+      const pageSize = Math.min(Math.max(parseInt(query.pageSize || "15", 10), 1), 100);
+      const start = page * pageSize;
+      const paged = transactions.slice(start, start + pageSize);
+      return respond(event, 200, {
+        transactions: paged,
+        period: {
+          month: monthLabel,
+          from: monthLabel ? null : toIsoDate(fromDate),
+          to: monthLabel ? null : toIsoDate(new Date(toDate.getTime() - 1)),
+        },
+        aggregates: buildTransactionsAggregates(transactions),
+        traceId,
       });
-      return respond(event, 200, { transactions, traceId });
     } catch (error) {
-      console.error("[transactions] fetch failed", { message: error?.message });
-      return respond(event, 500, {
-        error: { code: "FETCH_FAILED", message: "Failed to fetch transactions", traceId },
+      const status = error?.statusCode || error?.status || 500;
+      return respond(event, status, {
+        error: { code: "TRANSACTIONS_FETCH_FAILED", message: error?.message || "Failed to load transactions", traceId },
       });
     }
   }
@@ -177,7 +155,7 @@ async function handleAccounts(event) {
   } catch (error) {
     console.error("[accounts] fetch failed", { message: error?.message });
     return respond(event, 500, {
-      error: { code: "FETCH_FAILED", message: "Failed to fetch accounts", traceId },
+      error: { code: "ACCOUNTS_FETCH_FAILED", message: "Failed to load accounts", traceId },
     });
   }
 }

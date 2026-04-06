@@ -107,6 +107,9 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
 - Lambda also supports two modes:
   - **Proxy mode** when `LEDGER_SERVICE_INTERNAL_URL` or `LEDGER_SERVICE_URL` is configured. Domain routes are forwarded to `ledger-svc`.
   - **Standalone mode** when those proxy variables are absent. Lambda serves `/accounts`, `/transactions*`, `/plaid/*`, `/analytics/summary`, and `/ai/chat` directly.
+- Current deployment note:
+  - The AWS Lambda function still enters through `infra/lambda/index.js`.
+  - `infra/lambda/index.js` is now only a thin shim; `infra/lambda/src/router.js` is the single Lambda runtime implementation.
 - RAG endpoints (`/rag/*`) remain proxy-only. In standalone Lambda mode they return `501 RAG_STANDALONE_UNAVAILABLE`.
 
 ## AI & Chat Configuration
@@ -134,7 +137,7 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
   - **Reset data** – `POST /api/transactions/reset` (optionally `{ "unlinkPlaid": true }`)
   - **Clear chat** – `DELETE /api/chat` (alias for `/ai/chat`)
   - **Unlink/Re-link** – `POST /api/transactions/reset` with `unlinkPlaid` followed by the Plaid Link flow
-- Lambda exposes maintenance endpoints (see `infra/lambda/index.js`) such as `/maint/bootstrap` and `/auth/token` for native clients. Keep these protected via IAM/headers (`ADMIN_SQL_TOKEN`) where applicable.
+- Lambda exposes maintenance and diagnostics endpoints through the unified runtime in `infra/lambda/src/router.js`. Keep admin routes protected via IAM/headers (`ADMIN_SQL_TOKEN`) where applicable.
 
 ## Monitoring & Alerting
 

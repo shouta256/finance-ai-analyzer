@@ -49,6 +49,18 @@ Safepocket follows a "Backend for Frontend" (BFF) pattern and supports two backe
 
 This let me balance engineering quality with personal-project operating cost. The tradeoff itself is part of the project story.
 
+### Backend Ownership Today
+
+- `apps/ledger-svc` is the richer Java backend profile and owns the full RAG implementation.
+- `infra/lambda/index.js` is the deployed Lambda entrypoint, but it is now only a thin shim.
+- `infra/lambda/src/router.js` plus `src/handlers/*` and `src/services/*` are the single Lambda implementation for the serverless profile.
+
+I keep both backend profiles intentionally because they tell an important engineering story:
+- the Java profile shows backend design depth, stronger domain modeling, and the full AI/RAG stack
+- the serverless profile shows cost-aware production tradeoffs for a personal project
+
+The cleanup goal here is not “remove one backend,” but “keep ownership explicit and avoid drift.”
+
 ## Getting Started
 
 To run this project locally, you need Docker and Java 21 installed.

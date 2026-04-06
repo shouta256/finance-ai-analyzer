@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,6 +37,7 @@ public class ChatController {
     }
 
     public record ChatRequest(UUID conversationId, @NotBlank String message, UUID truncateFromMessageId) {}
+    public record ChatDeleteResponseDto(String status, String traceId) {}
     public record ChatSourceDto(
             String txCode,
             UUID transactionId,
@@ -67,6 +69,16 @@ public class ChatController {
         var res = chatService.sendMessage(userId, request.conversationId(), request.message(), request.truncateFromMessageId());
         var dto = new ChatResponseDto(res.conversationId(), res.messages().stream().map(this::mapMessage).toList(), res.traceId());
         return ResponseEntity.ok(dto);
+    }
+
+    @DeleteMapping
+    public ResponseEntity<ChatDeleteResponseDto> delete(
+            @RequestParam(value = "conversationId", required = false) UUID conversationId,
+            Authentication auth
+    ) {
+        UUID userId = ensureUser(auth);
+        var response = chatService.deleteConversation(userId, conversationId);
+        return ResponseEntity.ok(new ChatDeleteResponseDto(response.status(), response.traceId()));
     }
 
     private ChatMessageDto mapMessage(ChatService.ChatMessageDto message) {

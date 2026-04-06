@@ -67,6 +67,7 @@ public class ChatService {
     }
 
     public record ChatResponse(UUID conversationId, List<ChatMessageDto> messages, String traceId) {}
+    public record ChatDeleteResponse(String status, String traceId) {}
     public record ChatMessageDto(UUID id, String role, String content, Instant createdAt, List<ChatSourceDto> sources) {}
     public record ChatSourceDto(
             String txCode,
@@ -249,6 +250,17 @@ public class ChatService {
                 .collect(Collectors.toList());
         UUID convId = history.get(0).getConversationId();
         return new ChatResponse(convId, msgs, UUID.randomUUID().toString());
+    }
+
+    @Transactional
+    public ChatDeleteResponse deleteConversation(UUID userId, UUID conversationId) {
+        retentionManager.purgeExpiredMessagesNow();
+        if (conversationId != null) {
+            repository.deleteByConversationIdAndUserId(conversationId, userId);
+        } else {
+            repository.deleteByUserId(userId);
+        }
+        return new ChatDeleteResponse("DELETED", UUID.randomUUID().toString());
     }
 
     private ChatMessageDto toDto(ChatMessageEntity entity) {

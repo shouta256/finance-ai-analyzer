@@ -367,6 +367,28 @@ paths:
                 $ref: '#/components/schemas/AiChatResponse'
         default:
           $ref: '#/components/responses/ErrorResponse'
+    delete:
+      summary: Delete chat history for the authenticated user
+      operationId: deleteAiChatHistory
+      tags:
+        - AI
+      parameters:
+        - in: query
+          name: conversationId
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Existing conversation identifier to delete. When omitted, all chat messages for the user are removed.
+      responses:
+        '200':
+          description: Chat history deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiChatDeleteResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -1164,6 +1186,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AiChatMessage'
+        traceId:
+          type: string
+    AiChatDeleteResponse:
+      type: object
+      required:
+        - status
+        - traceId
+      properties:
+        status:
+          type: string
+          enum:
+            - DELETED
         traceId:
           type: string
     RagSearchRequest:

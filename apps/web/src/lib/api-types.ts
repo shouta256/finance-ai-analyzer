@@ -62,6 +62,8 @@ export interface paths {
     get: operations["getAiChatHistory"];
     /** Send a chat message to AI assistant */
     post: operations["sendAiChatMessage"];
+    /** Delete chat history for the authenticated user */
+    delete: operations["deleteAiChatHistory"];
   };
 }
 
@@ -553,6 +555,11 @@ export interface components {
       messages: components["schemas"]["AiChatMessage"][];
       traceId: string;
     };
+    AiChatDeleteResponse: {
+      /** @enum {string} */
+      status: "DELETED";
+      traceId: string;
+    };
     RagSearchRequest: {
       /** @description Natural language query for semantic embedding search */
       q?: string;
@@ -1020,6 +1027,24 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["AiChatResponse"];
+        };
+      };
+      default: components["responses"]["ErrorResponse"];
+    };
+  };
+  /** Delete chat history for the authenticated user */
+  deleteAiChatHistory: {
+    parameters: {
+      query?: {
+        /** @description Existing conversation identifier to delete. When omitted, all chat messages for the user are removed. */
+        conversationId?: string;
+      };
+    };
+    responses: {
+      /** @description Chat history deleted */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AiChatDeleteResponse"];
         };
       };
       default: components["responses"]["ErrorResponse"];

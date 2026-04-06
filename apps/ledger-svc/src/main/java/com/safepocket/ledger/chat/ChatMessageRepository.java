@@ -28,6 +28,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
     int deleteConversationTail(@Param("conversationId") UUID conversationId, @Param("cutoff") Instant cutoff);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ChatMessageEntity m where m.conversationId = :conversationId and m.userId = :userId")
+    int deleteByConversationIdAndUserId(@Param("conversationId") UUID conversationId, @Param("userId") UUID userId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from ChatMessageEntity m where m.userId = :userId")
     int deleteByUserId(@Param("userId") UUID userId);
 }

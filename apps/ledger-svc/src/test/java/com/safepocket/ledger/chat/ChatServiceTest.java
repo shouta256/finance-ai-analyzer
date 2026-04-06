@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -178,5 +179,28 @@ class ChatServiceTest {
         assertThat(response.messages()).hasSize(2);
         ChatService.ChatMessageDto assistant = response.messages().getLast();
         assertThat(assistant.sources()).isEmpty();
+    }
+
+    @Test
+    void deleteConversationDeletesScopedConversationWhenConversationIdProvided() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+
+        ChatService.ChatDeleteResponse response = chatService.deleteConversation(userId, conversationId);
+
+        verify(retentionManager).purgeExpiredMessagesNow();
+        verify(repository).deleteByConversationIdAndUserId(conversationId, userId);
+        assertThat(response.status()).isEqualTo("DELETED");
+    }
+
+    @Test
+    void deleteConversationDeletesAllUserMessagesWhenConversationIdMissing() {
+        UUID userId = UUID.randomUUID();
+
+        ChatService.ChatDeleteResponse response = chatService.deleteConversation(userId, null);
+
+        verify(retentionManager).purgeExpiredMessagesNow();
+        verify(repository).deleteByUserId(userId);
+        assertThat(response.status()).isEqualTo("DELETED");
     }
 }

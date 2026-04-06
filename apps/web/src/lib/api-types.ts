@@ -54,7 +54,7 @@ export interface paths {
     post: operations["ragAggregate"];
   };
   "/users/{userId}": {
-    /** Delete user and purge associated data */
+    /** Delete user and purge associated data (admin only) */
     delete: operations["deleteUser"];
   };
   "/ai/chat": {
@@ -980,9 +980,13 @@ export interface operations {
       default: components["responses"]["ErrorResponse"];
     };
   };
-  /** Delete user and purge associated data */
+  /** Delete user and purge associated data (admin only) */
   deleteUser: {
     parameters: {
+      header: {
+        /** @description Maintenance/admin token required to delete a user. */
+        "X-Admin-Token": string;
+      };
       path: {
         userId: string;
       };

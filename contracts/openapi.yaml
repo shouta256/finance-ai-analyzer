@@ -304,7 +304,7 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
   /users/{userId}:
     delete:
-      summary: Delete user and purge associated data
+      summary: Delete user and purge associated data (admin only)
       operationId: deleteUser
       tags:
         - Users
@@ -315,6 +315,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - in: header
+          name: X-Admin-Token
+          required: true
+          schema:
+            type: string
+          description: Maintenance/admin token required to delete a user.
       responses:
         '204':
           description: User deleted

@@ -83,6 +83,7 @@ safepocket:
   security:
     # Must match frontend middleware fallback (ensure consistent default for local dev)
     dev-jwt-secret: ${SAFEPOCKET_DEV_JWT_SECRET:dev-secret-key-for-local-development-only}
+    admin-token: ${ADMIN_SQL_TOKEN:}
   rag:
     vector-provider: ${VECTOR_PROVIDER:pgvector}
     embedding-model: ${EMBEDDING_MODEL:text-embedding-3-small}

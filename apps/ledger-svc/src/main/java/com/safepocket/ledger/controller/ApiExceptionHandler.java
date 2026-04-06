@@ -8,6 +8,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.BadSqlGrammarException;
@@ -51,6 +52,11 @@ public class ApiExceptionHandler {
             status = HttpStatus.CONFLICT;
         }
         return build(status, ex.code(), ex.getMessage(), ex.details());
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponseDto> handleAccessDenied(AccessDeniedException ex) {
+        return build(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage(), Map.of());
     }
 
     @ExceptionHandler(Exception.class)

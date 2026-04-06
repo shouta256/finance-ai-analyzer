@@ -16,7 +16,7 @@ public class JwtIssuerServiceTest {
         new SafepocketProperties.Cognito("https://example.com/issuer","aud", false, "cognito.example.com", "aud", null, null, null, null),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null, null),
-                new SafepocketProperties.Security(secret),
+                new SafepocketProperties.Security(secret, null),
                 new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536, false)
         );
         return new JwtIssuerService(props);
@@ -43,7 +43,7 @@ public class JwtIssuerServiceTest {
         new SafepocketProperties.Cognito("https://example.com/issuer","aud", false, "cognito.example.com", "aud", null, null, null, null),
                 new SafepocketProperties.Plaid("id","sec","redir","base","env",null,null),
                 new SafepocketProperties.Ai("openai","model","https://api.example.com",null,null, null),
-                new SafepocketProperties.Security("12345678901234567890123456789012"),
+                new SafepocketProperties.Security("12345678901234567890123456789012", null),
                 new SafepocketProperties.Rag("pgvector","text-embedding-3-small",20,1536, false)
         );
         JwtIssuerService issuer = new JwtIssuerService(props);

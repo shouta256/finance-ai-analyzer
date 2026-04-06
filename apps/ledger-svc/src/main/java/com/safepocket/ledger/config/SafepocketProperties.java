@@ -148,12 +148,16 @@ public record SafepocketProperties(
     }
 
     public Security security() {
-        return security != null ? security : new Security(null);
+        return security != null ? security : new Security(null, null);
     }
 
-    public record Security(String devJwtSecret) {
+    public record Security(String devJwtSecret, String adminToken) {
         public boolean hasDevJwtSecret() {
             return devJwtSecret != null && !devJwtSecret.isBlank();
+        }
+
+        public boolean hasAdminToken() {
+            return adminToken != null && !adminToken.isBlank();
         }
     }
 

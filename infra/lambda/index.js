@@ -53,12 +53,115 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 const ALLOW_ANY_ORIGIN = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes("*");
 const NORMALISED_ALLOWED_ORIGINS = ALLOWED_ORIGINS.map((origin) => normaliseOriginUrl(origin)).filter(Boolean);
 const CHAT_SYSTEM_PROMPT =
-  "You are Safepocket's financial helper. Use the provided context to answer. Context JSON includes 'summary' (month totals, top categories/merchants) and 'recentTransactions' (latest activity). Provide amounts in US dollars with sign-aware formatting, cite exact dates, and do not invent data beyond the supplied context.";
+  "You are Safepocket's financial helper. Use the provided context to answer. Context JSON includes 'intent', 'assistantScope', and may include 'summary', 'recentTransactions', and 'retrievedReferences'. If intent is GREETING, answer briefly and invite the user to ask about spending, income, categories, or merchants. If intent is OUT_OF_SCOPE, explain that you can only help with the user's own financial data and do not mention account totals or transactions. If intent is TRANSACTION_LOOKUP, answer from 'retrievedReferences' first and mention exact merchants and dates when available. Provide amounts in US dollars with sign-aware formatting, and do not invent data beyond the supplied context.";
 const CHAT_MAX_HISTORY_MESSAGES = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_HISTORY_LIMIT || "3", 10), 0);
 const CHAT_HISTORY_CHAR_LIMIT = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_HISTORY_CHAR_LIMIT || "1200", 10), 200);
 const CHAT_CONTEXT_CHAR_LIMIT = Math.max(Number.parseInt(process.env.SAFEPOCKET_CHAT_CONTEXT_LIMIT || "8000", 10), 2000);
 const CHAT_DEFAULT_MAX_TOKENS = Math.max(Number.parseInt(process.env.SAFEPOCKET_AI_MAX_TOKENS || "1200", 10), 200);
 let chatTablesEnsured = false;
+const GREETING_PHRASES = new Set([
+  "hello",
+  "hi",
+  "hey",
+  "good morning",
+  "good afternoon",
+  "good evening",
+  "what can you do",
+]);
+const FINANCE_KEYWORDS = new Set([
+  "account",
+  "accounts",
+  "amount",
+  "balance",
+  "budget",
+  "cash",
+  "category",
+  "categories",
+  "coffee",
+  "dining",
+  "drink",
+  "drinks",
+  "expense",
+  "expenses",
+  "finance",
+  "financial",
+  "groceries",
+  "income",
+  "merchant",
+  "merchants",
+  "money",
+  "net",
+  "payment",
+  "payments",
+  "rent",
+  "salary",
+  "saving",
+  "savings",
+  "spend",
+  "spent",
+  "spending",
+  "summary",
+  "transaction",
+  "transactions",
+  "travel",
+]);
+const SUMMARY_PATTERNS = [
+  "summary",
+  "overview",
+  "income",
+  "expenses",
+  "net",
+  "budget",
+  "safe to spend",
+  "top spending",
+  "top categories",
+  "top merchants",
+  "how much money do i have",
+];
+const TRANSACTION_PATTERNS = [
+  "how much did i spend on",
+  "how much did i spend for",
+  "how much have i spent on",
+  "where did i spend",
+  "which transactions",
+  "show transactions",
+  "list transactions",
+  "what did i spend on",
+  "merchant",
+  "category",
+];
+const QUERY_STOP_WORDS = new Set([
+  "about",
+  "after",
+  "before",
+  "could",
+  "from",
+  "have",
+  "last",
+  "more",
+  "much",
+  "show",
+  "tell",
+  "than",
+  "that",
+  "this",
+  "what",
+  "when",
+  "where",
+  "which",
+  "with",
+  "your",
+]);
+const QUERY_SYNONYMS = {
+  drink: ["coffee", "latte", "tea", "beverage"],
+  drinks: ["coffee", "latte", "tea", "beverage"],
+  coffee: ["latte", "cafe"],
+  latte: ["coffee"],
+  beverage: ["coffee", "tea"],
+  cafe: ["coffee", "latte"],
+};
+const ASSISTANT_SCOPE =
+  "You can answer only about the user's own finances, transactions, income, expenses, merchants, categories, and monthly summaries.";
 
 const HIGHLIGHT_SYSTEM_PROMPT =
   "You are Safepocket's monthly finance analyst. Review the provided spending data and craft a short highlight. Respond with compact JSON that matches {\"title\": string, \"summary\": string, \"sentiment\": \"POSITIVE\"|\"NEUTRAL\"|\"NEGATIVE\", \"recommendations\": string[]}. Mention net cash flow, notable categories or merchants, and give 2-4 actionable, empathetic tips.";
@@ -1000,6 +1103,7 @@ async function ensureChatTables(client) {
            ON chat_messages(conversation_id, created_at)`,
       );
     }
+    await client.query(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS metadata_json text`);
     chatTablesEnsured = true;
   } catch (error) {
     console.warn("[chat] failed to ensure chat tables", { message: error?.message });
@@ -1562,7 +1666,217 @@ function mapChatRow(row) {
     role: row.role,
     content: row.content,
     createdAt,
+    sources: parseSources(row.metadata_json),
   };
+}
+
+function parseSources(metadataJson) {
+  if (!metadataJson) return [];
+  try {
+    const parsed = typeof metadataJson === "string" ? JSON.parse(metadataJson) : metadataJson;
+    return Array.isArray(parsed?.sources) ? parsed.sources : [];
+  } catch (error) {
+    console.warn("[chat] failed to parse metadata_json", { message: error?.message });
+    return [];
+  }
+}
+
+function serializeSources(sources) {
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  return JSON.stringify({ sources });
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string" || value.trim().length === 0) return "";
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function containsAnyPattern(normalized, patterns) {
+  return patterns.some((pattern) => normalized.includes(pattern));
+}
+
+function isGreeting(normalized) {
+  if (GREETING_PHRASES.has(normalized)) return true;
+  const words = normalized.split(" ").filter(Boolean);
+  return words.length <= 4 && Array.from(GREETING_PHRASES).some((phrase) => normalized.startsWith(phrase));
+}
+
+function isExplicitlyOutOfScope(normalized) {
+  if (normalized.includes("elon musk")) return true;
+  if (normalized.includes("compare me to")) return true;
+  if (normalized.includes("compared to ") && !normalized.includes("last month") && !normalized.includes("previous month")) {
+    return true;
+  }
+  return normalized.includes("how much do i weigh");
+}
+
+function containsFinanceSignal(normalized) {
+  for (const keyword of FINANCE_KEYWORDS) {
+    if (normalized.includes(keyword)) return true;
+  }
+  return (
+    normalized.includes("how much did i spend") ||
+    normalized.includes("how much have i spent") ||
+    normalized.includes("expenses") ||
+    normalized.includes("income")
+  );
+}
+
+function classifyIntent(rawQuestion) {
+  const normalized = normalizeText(rawQuestion);
+  if (!normalized) return "GREETING";
+  if (isGreeting(normalized)) return "GREETING";
+  if (isExplicitlyOutOfScope(normalized)) return "OUT_OF_SCOPE";
+  if (!containsFinanceSignal(normalized)) return "OUT_OF_SCOPE";
+  if (
+    containsAnyPattern(normalized, TRANSACTION_PATTERNS) ||
+    normalized.includes(" spent on ") ||
+    normalized.includes(" spent for ") ||
+    normalized.includes(" spend on ") ||
+    normalized.includes(" spend for ")
+  ) {
+    return "TRANSACTION_LOOKUP";
+  }
+  if (containsAnyPattern(normalized, SUMMARY_PATTERNS)) return "SUMMARY_ONLY";
+  return "SUMMARY_ONLY";
+}
+
+function extractQueryTerms(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  return Array.from(
+    new Set(
+      normalized
+        .split(" ")
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 3 && !QUERY_STOP_WORDS.has(token)),
+    ),
+  );
+}
+
+function expandQueryTerms(queryTerms) {
+  const expanded = new Set(queryTerms);
+  queryTerms.forEach((term) => {
+    for (const synonym of QUERY_SYNONYMS[term] || []) {
+      expanded.add(synonym);
+    }
+  });
+  return Array.from(expanded);
+}
+
+function toOccurredOn(occurredAt) {
+  if (typeof occurredAt !== "string" || occurredAt.length < 10) return "";
+  return occurredAt.slice(0, 10);
+}
+
+function toAmountCents(amount) {
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.round(numeric * 100);
+}
+
+function toDateLabel(occurredOn, format) {
+  if (!occurredOn) return "";
+  const parsed = new Date(`${occurredOn}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", { ...format, timeZone: "UTC" }).toLowerCase();
+}
+
+function matchedTerms(queryTerms, transaction) {
+  if (queryTerms.length === 0) return [];
+  const docTerms = new Set([
+    ...extractQueryTerms(transaction.merchantName),
+    ...extractQueryTerms(transaction.category),
+    ...extractQueryTerms(transaction.description),
+  ]);
+  return queryTerms.filter((term) => docTerms.has(term)).slice(0, 5);
+}
+
+function buildReferenceReasons({ merchantMatch, matchedTerms: hits, daysAgo }) {
+  const reasons = [];
+  if (merchantMatch) reasons.push("merchant phrase match");
+  if (hits.length > 0) reasons.push(`matched terms: ${hits.join(", ")}`);
+  if (daysAgo <= 30) reasons.push("recent activity");
+  if (reasons.length === 0) reasons.push("ranked by recency");
+  return reasons;
+}
+
+function buildRetrievedSources(transactions, userMessage) {
+  const queryTerms = expandQueryTerms(extractQueryTerms(userMessage));
+  const normalizedQuery = normalizeText(userMessage);
+  if (!Array.isArray(transactions) || transactions.length === 0 || (!normalizedQuery && queryTerms.length === 0)) {
+    return [];
+  }
+
+  const now = Date.now();
+  return transactions
+    .map((transaction) => {
+      const normalizedMerchant = normalizeText(transaction.merchantName);
+      const merchantMatch =
+        normalizedQuery &&
+        normalizedMerchant &&
+        (normalizedQuery.includes(normalizedMerchant) || normalizedMerchant.includes(normalizedQuery));
+      const hits = matchedTerms(queryTerms, transaction);
+      const lexical = queryTerms.length > 0 ? hits.length / queryTerms.length : 0;
+      const boostedLexical = merchantMatch ? Math.max(lexical, 0.85) : lexical;
+      const occurredOn = toOccurredOn(transaction.occurredAt);
+      const occurredAtMs = occurredOn ? Date.parse(`${occurredOn}T00:00:00Z`) : Date.parse(transaction.occurredAt);
+      const daysAgo = Number.isFinite(occurredAtMs) ? Math.max(Math.floor((now - occurredAtMs) / (24 * 60 * 60 * 1000)), 0) : 365;
+      const recency = 1 / (1 + daysAgo);
+      const score = queryTerms.length > 0 || merchantMatch ? boostedLexical * 0.75 + recency * 0.25 : recency;
+      return {
+        transaction,
+        matchedTerms: hits,
+        merchantMatch,
+        daysAgo,
+        score,
+      };
+    })
+    .filter((candidate) => candidate.merchantMatch || candidate.matchedTerms.length > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((candidate) => {
+      const tx = candidate.transaction;
+      return {
+        txCode: `t${String(tx.id || "").replace(/-/g, "").slice(0, 8)}`,
+        transactionId: tx.id,
+        occurredOn: toOccurredOn(tx.occurredAt),
+        merchant: tx.merchantName,
+        amountCents: toAmountCents(tx.amount),
+        category: tx.category || "General",
+        score: Number(candidate.score.toFixed(3)),
+        matchedTerms: candidate.matchedTerms,
+        reasons: buildReferenceReasons(candidate),
+      };
+    });
+}
+
+function sourceMentionedInReply(source, reply) {
+  if (!source || typeof reply !== "string" || reply.trim().length === 0) return false;
+  const normalizedReply = normalizeText(reply);
+  const lowerReply = reply.toLowerCase();
+  const normalizedMerchant = normalizeText(source.merchant);
+  if (normalizedMerchant && normalizedReply.includes(normalizedMerchant)) return true;
+  for (const token of normalizedMerchant.split(" ")) {
+    if (token.length >= 5 && normalizedReply.includes(token)) return true;
+  }
+  for (const term of source.matchedTerms || []) {
+    const normalizedTerm = normalizeText(term);
+    if (normalizedTerm.length >= 4 && normalizedReply.includes(normalizedTerm)) return true;
+  }
+  const longDate = toDateLabel(source.occurredOn, { month: "long", day: "numeric", year: "numeric" });
+  const shortDate = toDateLabel(source.occurredOn, { month: "short", day: "numeric", year: "numeric" });
+  return Boolean((longDate && lowerReply.includes(longDate)) || (shortDate && lowerReply.includes(shortDate)));
+}
+
+function filterSourcesForReply(reply, sources, intent) {
+  if (intent !== "TRANSACTION_LOOKUP" || !Array.isArray(sources) || sources.length === 0) return [];
+  const filtered = sources.filter((source) => sourceMentionedInReply(source, reply));
+  return filtered.length > 0 ? filtered : sources.slice(0, 3);
 }
 
 function truncateText(value, limit) {
@@ -1576,7 +1890,7 @@ async function getConversationForClient(client, requestedConversationId) {
   let rows = [];
   if (conversationId) {
     const res = await client.query(
-      `SELECT id, conversation_id, role, content, created_at
+      `SELECT id, conversation_id, role, content, metadata_json, created_at
        FROM chat_messages
        WHERE conversation_id = $1
          AND user_id = current_setting('appsec.user_id', true)::uuid
@@ -1595,7 +1909,7 @@ async function getConversationForClient(client, requestedConversationId) {
     if (latest.rowCount > 0) {
       conversationId = latest.rows[0].conversation_id;
       const res = await client.query(
-        `SELECT id, conversation_id, role, content, created_at
+        `SELECT id, conversation_id, role, content, metadata_json, created_at
          FROM chat_messages
          WHERE conversation_id = $1
            AND user_id = current_setting('appsec.user_id', true)::uuid
@@ -1644,7 +1958,7 @@ function selectHistoryForAi(messages) {
   return trimmed.slice(start);
 }
 
-async function gatherChatContext(client, userId) {
+async function gatherChatContext(client, userId, userMessage) {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1));
   let transactions = [];
@@ -1685,7 +1999,28 @@ async function gatherChatContext(client, userId) {
     category: tx.category,
     pending: tx.pending,
   }));
-  return { summary: cleanSummary, recentTransactions };
+
+  const intent = classifyIntent(userMessage);
+  const context = {
+    intent,
+    question: userMessage || "",
+    assistantScope: ASSISTANT_SCOPE,
+  };
+
+  if (intent === "GREETING" || intent === "OUT_OF_SCOPE") {
+    context.capabilities = [
+      "monthly summaries",
+      "spending by merchant or category",
+      "income and expense questions",
+    ];
+    context.retrievedReferences = [];
+    return context;
+  }
+
+  context.summary = cleanSummary;
+  context.recentTransactions = recentTransactions;
+  context.retrievedReferences = intent === "TRANSACTION_LOOKUP" ? buildRetrievedSources(transactions, userMessage) : [];
+  return context;
 }
 
 function formatHistoryForProvider(history) {
@@ -2015,12 +2350,15 @@ function buildFallbackReply(context) {
 }
 
 async function generateAssistantReplyForLambda(client, userId, conversationId, userMessage, priorMessages, traceId) {
-  const context = await gatherChatContext(client, userId);
+  const context = await gatherChatContext(client, userId, userMessage);
   const aiReply = await callAiAssistant(priorMessages, userMessage, context, traceId);
   if (aiReply && aiReply.trim()) {
-    return aiReply.trim();
+    return {
+      content: aiReply.trim(),
+      sources: filterSourcesForReply(aiReply, context.retrievedReferences || [], context.intent),
+    };
   }
-  return buildFallbackReply(context);
+  return { content: buildFallbackReply(context), sources: [] };
 }
 
 function buildTransactionsAggregates(transactions) {
@@ -2312,6 +2650,197 @@ function resolveLedgerBaseUrl() {
     throw createHttpError(500, "Ledger service base URL is not configured");
   }
   return base.replace(/\/+$/, "");
+}
+
+function normaliseLedgerPathPrefix(value) {
+  if (!value) return "";
+  const trimmed = String(value).trim();
+  if (!trimmed) return "";
+  const stripped = trimmed.replace(/^\/+|\/+$/g, "");
+  return stripped ? `/${stripped}` : "";
+}
+
+function buildLedgerProxyUrl(pathWithQuery) {
+  const base = resolveLedgerBaseUrl();
+  const prefix = normaliseLedgerPathPrefix(process.env.LEDGER_SERVICE_PATH_PREFIX);
+  const [pathPart, queryPart] = pathWithQuery.split("?");
+  const normalizedPath = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
+  try {
+    const url = new URL(base);
+    const basePath = url.pathname.replace(/\/+$/g, "");
+    const prefixPath = prefix.replace(/\/+$/g, "");
+    const needsPrefix = prefixPath && !basePath.endsWith(prefixPath);
+    const finalPrefix = needsPrefix ? prefix : "";
+    url.pathname = `${basePath}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+    url.search = queryPart ? `?${queryPart}` : "";
+    return url.toString();
+  } catch {
+    const needsPrefix = prefix && !base.endsWith(prefix);
+    const finalPrefix = needsPrefix ? prefix : "";
+    const fullPath = `${base}${finalPrefix}${normalizedPath}`.replace(/\/{2,}/g, "/");
+    return queryPart ? `${fullPath}?${queryPart}` : fullPath;
+  }
+}
+
+function buildLedgerProxyQueryString(event) {
+  if (typeof event.rawQueryString === "string" && event.rawQueryString.length > 0) {
+    return event.rawQueryString;
+  }
+  const params = event.queryStringParameters || {};
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null) continue;
+    search.append(key, String(value));
+  }
+  return search.toString();
+}
+
+const LEDGER_PROXY_REQUEST_HEADER_BLOCKLIST = new Set([
+  "accept-encoding",
+  "connection",
+  "content-length",
+  "host",
+  "transfer-encoding",
+  "x-amzn-trace-id",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-port",
+  "x-forwarded-proto",
+]);
+
+const LEDGER_PROXY_RESPONSE_HEADER_ALLOWLIST = new Set([
+  "content-type",
+  "cache-control",
+  "x-chat-id",
+  "x-request-trace",
+]);
+
+function buildLedgerProxyHeaders(event) {
+  const headers = new Headers();
+  const sourceHeaders = event.headers || {};
+  for (const [name, value] of Object.entries(sourceHeaders)) {
+    if (value == null) continue;
+    const normalizedName = name.toLowerCase();
+    if (LEDGER_PROXY_REQUEST_HEADER_BLOCKLIST.has(normalizedName)) continue;
+    headers.set(normalizedName, String(value));
+  }
+  if (!headers.has("x-request-trace")) {
+    const traceId = event.requestContext?.requestId;
+    if (traceId) {
+      headers.set("x-request-trace", traceId);
+    }
+  }
+  return headers;
+}
+
+function extractLedgerProxyBody(event, overrideBody) {
+  if (overrideBody !== undefined) {
+    return overrideBody;
+  }
+  if (!event.body) {
+    return undefined;
+  }
+  return event.isBase64Encoded ? Buffer.from(event.body, "base64") : event.body;
+}
+
+function collectLedgerProxyResponseHeaders(response) {
+  const headers = {};
+  for (const [name, value] of response.headers.entries()) {
+    if (LEDGER_PROXY_RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) {
+      headers[name] = value;
+    }
+  }
+  return headers;
+}
+
+function buildLedgerProxyPath(event, normalizedPath, overridePath) {
+  const targetPath = overridePath || normalizedPath;
+  const query = buildLedgerProxyQueryString(event);
+  return query ? `${targetPath}?${query}` : targetPath;
+}
+
+function rewriteLegacyTransactionPatch(event, normalizedPath) {
+  if (normalizedPath !== "/transactions") {
+    return { targetPath: normalizedPath, body: undefined };
+  }
+  const body = parseJsonBody(event);
+  const transactionId = typeof body.transactionId === "string" ? body.transactionId : "";
+  if (!UUID_REGEX.test(transactionId)) {
+    throw createHttpError(400, "transactionId is required for PATCH /transactions compatibility");
+  }
+  const { transactionId: _ignored, ...payload } = body;
+  return {
+    targetPath: `/transactions/${transactionId}`,
+    body: JSON.stringify(payload),
+  };
+}
+
+async function proxyLedgerRequest(event, normalizedPath, options = {}) {
+  const method = (event.requestContext?.http?.method || event.httpMethod || "GET").toUpperCase();
+  const corsOrigin = resolveCorsOrigin(event);
+
+  let targetPath = options.targetPath || normalizedPath;
+  let bodyOverride = options.body;
+
+  try {
+    if (options.compatibilityMode === "transaction-patch") {
+      const rewritten = rewriteLegacyTransactionPatch(event, normalizedPath);
+      targetPath = rewritten.targetPath;
+      bodyOverride = rewritten.body;
+    }
+
+    const targetUrl = buildLedgerProxyUrl(buildLedgerProxyPath(event, normalizedPath, targetPath));
+    const headers = buildLedgerProxyHeaders(event);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LEDGER_TIMEOUT_MS);
+    try {
+      const response = await fetch(targetUrl, {
+        method,
+        headers,
+        body: extractLedgerProxyBody(event, bodyOverride),
+        signal: controller.signal,
+      });
+      const textBody = await response.text();
+      let payload;
+      if (textBody) {
+        try {
+          payload = JSON.parse(textBody);
+        } catch {
+          payload = { message: textBody };
+        }
+      }
+      return buildResponse(response.status, payload, {
+        headers: collectLedgerProxyResponseHeaders(response),
+        corsOrigin,
+      });
+    } catch (error) {
+      if (error && typeof error === "object" && error.name === "AbortError") {
+        return buildResponse(504, {
+          error: {
+            code: "LEDGER_TIMEOUT",
+            message: "Ledger upstream request timed out",
+          },
+        }, { corsOrigin });
+      }
+      return buildResponse(502, {
+        error: {
+          code: "LEDGER_PROXY_FAILED",
+          message: error?.message || "Ledger upstream request failed",
+        },
+      }, { corsOrigin });
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  } catch (error) {
+    const status = error?.statusCode || error?.status || 500;
+    return buildResponse(status, {
+      error: {
+        code: status === 400 ? "INVALID_REQUEST" : "LEDGER_PROXY_FAILED",
+        message: error?.message || "Ledger upstream request failed",
+      },
+    }, { corsOrigin });
+  }
 }
 
 async function fetchLedgerJson(path, options = {}) {
@@ -2800,7 +3329,7 @@ async function handleChat(event) {
           const nowIso = new Date().toISOString();
           
           // Get context for AI without saving to DB
-          const assistantContent = await generateAssistantReplyForLambda(
+          const assistantReply = await generateAssistantReplyForLambda(
             client,
             payload.sub,
             conversationId,
@@ -2822,12 +3351,14 @@ async function handleChat(event) {
                 role: "USER",
                 content: rawMessage,
                 createdAt: nowIso,
+                sources: [],
               },
               {
                 id: assistantId,
                 role: "ASSISTANT",
-                content: assistantContent,
+                content: assistantReply.content,
                 createdAt: assistantCreatedAt,
+                sources: assistantReply.sources,
               },
             ],
             isDemo: true,
@@ -2869,7 +3400,7 @@ async function handleChat(event) {
         const messages = conversation.messages;
         const latestUserMessage = messages[messages.length - 1];
         const priorMessages = selectHistoryForAi(messages);
-        const assistantContent = await generateAssistantReplyForLambda(
+        const assistantReply = await generateAssistantReplyForLambda(
           client,
           payload.sub,
           conversationId,
@@ -2881,17 +3412,18 @@ async function handleChat(event) {
         const assistantId = crypto.randomUUID();
         const assistantCreatedAt = new Date().toISOString();
         await client.query(
-          `INSERT INTO chat_messages (id, conversation_id, user_id, role, content, created_at)
-           VALUES ($1, $2, current_setting('appsec.user_id', true)::uuid, 'ASSISTANT', $3, $4)`,
-          [assistantId, conversationId, assistantContent, assistantCreatedAt],
+          `INSERT INTO chat_messages (id, conversation_id, user_id, role, content, metadata_json, created_at)
+           VALUES ($1, $2, current_setting('appsec.user_id', true)::uuid, 'ASSISTANT', $3, $4, $5)`,
+          [assistantId, conversationId, assistantReply.content, serializeSources(assistantReply.sources), assistantCreatedAt],
         );
 
         const updatedMessages = messages.concat([
           {
             id: assistantId,
             role: "ASSISTANT",
-            content: assistantContent,
+            content: assistantReply.content,
             createdAt: assistantCreatedAt,
+            sources: assistantReply.sources,
           },
         ]);
 
@@ -3537,7 +4069,6 @@ exports.handler = async (event) => {
       rawPath = rawPath.slice(stage.length) || "/";
     }
     const path = rawPath.replace(/\/+/g, "/");
-    const query = event.queryStringParameters || {};
 
     if (method === "GET" && (path === "/" || path === "")) {
       return respond(event, 200, { status: "ok" });
@@ -3558,31 +4089,43 @@ exports.handler = async (event) => {
       return await handleDevAuthLogout(event);
     }
     if (path === "/chat" || path === "/api/chat" || path === "/ai/chat") {
-      if (method === "GET" || method === "POST") {
-        return await handleChat(event);
-      }
-      return respond(event, 405, { error: { code: "METHOD_NOT_ALLOWED", message: "Unsupported chat method" } });
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "GET" && path === "/analytics/summary") {
-      return await handleAnalyticsSummary(event, query);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "GET" && path === "/transactions") {
-      return await handleTransactions(event, query);
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "PATCH" && path === "/transactions") {
+      return await proxyLedgerRequest(event, path, { compatibilityMode: "transaction-patch" });
+    }
+    if (method === "PATCH" && /^\/transactions\/[0-9a-fA-F-]{36}$/.test(path)) {
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/transactions/sync") {
-      return await handleTransactionsSync(event);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/transactions/reset") {
-      return await handleTransactionsReset(event);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "GET" && path === "/accounts") {
-      return await handleAccounts(event);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/plaid/link-token") {
-      return await handlePlaidLinkToken(event);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/plaid/exchange") {
-      return await handlePlaidExchange(event);
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "POST" && path === "/rag/search") {
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "GET" && path === "/rag/summaries") {
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "POST" && path === "/rag/aggregate") {
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "GET" && path === "/diagnostics/dns") {
       return await handleDnsDiagnostics(event);

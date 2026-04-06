@@ -20,6 +20,109 @@ const {
 
 // Chat tables check cache
 let chatTablesEnsured = false;
+const GREETING_PHRASES = new Set([
+  "hello",
+  "hi",
+  "hey",
+  "good morning",
+  "good afternoon",
+  "good evening",
+  "what can you do",
+]);
+const FINANCE_KEYWORDS = new Set([
+  "account",
+  "accounts",
+  "amount",
+  "balance",
+  "budget",
+  "cash",
+  "category",
+  "categories",
+  "coffee",
+  "dining",
+  "drink",
+  "drinks",
+  "expense",
+  "expenses",
+  "finance",
+  "financial",
+  "groceries",
+  "income",
+  "merchant",
+  "merchants",
+  "money",
+  "net",
+  "payment",
+  "payments",
+  "rent",
+  "salary",
+  "saving",
+  "savings",
+  "spend",
+  "spent",
+  "spending",
+  "summary",
+  "transaction",
+  "transactions",
+  "travel",
+]);
+const SUMMARY_PATTERNS = [
+  "summary",
+  "overview",
+  "income",
+  "expenses",
+  "net",
+  "budget",
+  "safe to spend",
+  "top spending",
+  "top categories",
+  "top merchants",
+  "how much money do i have",
+];
+const TRANSACTION_PATTERNS = [
+  "how much did i spend on",
+  "how much did i spend for",
+  "how much have i spent on",
+  "where did i spend",
+  "which transactions",
+  "show transactions",
+  "list transactions",
+  "what did i spend on",
+  "merchant",
+  "category",
+];
+const QUERY_STOP_WORDS = new Set([
+  "about",
+  "after",
+  "before",
+  "could",
+  "from",
+  "have",
+  "last",
+  "more",
+  "much",
+  "show",
+  "tell",
+  "than",
+  "that",
+  "this",
+  "what",
+  "when",
+  "where",
+  "which",
+  "with",
+  "your",
+]);
+const QUERY_SYNONYMS = {
+  drink: ["coffee", "latte", "tea", "beverage"],
+  drinks: ["coffee", "latte", "tea", "beverage"],
+  coffee: ["latte", "cafe"],
+  latte: ["coffee"],
+  beverage: ["coffee", "tea"],
+  cafe: ["coffee", "latte"],
+};
+const ASSISTANT_SCOPE =
+  "You can answer only about the user's own finances, transactions, income, expenses, merchants, categories, and monthly summaries.";
 
 /**
  * Check if user is demo user
@@ -56,6 +159,7 @@ async function ensureChatTables(client) {
            ON chat_messages(conversation_id, created_at)`,
       );
     }
+    await client.query(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS metadata_json text`);
     chatTablesEnsured = true;
   } catch (error) {
     console.warn("[chat] failed to ensure chat tables", { message: error?.message });
@@ -76,7 +180,219 @@ function mapChatRow(row) {
     role: row.role,
     content: row.content,
     createdAt,
+    sources: parseSources(row.metadata_json),
   };
+}
+
+function parseSources(metadataJson) {
+  if (!metadataJson) return [];
+  try {
+    const parsed = typeof metadataJson === "string" ? JSON.parse(metadataJson) : metadataJson;
+    return Array.isArray(parsed?.sources) ? parsed.sources : [];
+  } catch (error) {
+    console.warn("[chat] failed to parse metadata_json", { message: error?.message });
+    return [];
+  }
+}
+
+function serializeSources(sources) {
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  return JSON.stringify({ sources });
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string" || value.trim().length === 0) return "";
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function containsAnyPattern(normalized, patterns) {
+  return patterns.some((pattern) => normalized.includes(pattern));
+}
+
+function isGreeting(normalized) {
+  if (GREETING_PHRASES.has(normalized)) return true;
+  const words = normalized.split(" ").filter(Boolean);
+  return words.length <= 4 && Array.from(GREETING_PHRASES).some((phrase) => normalized.startsWith(phrase));
+}
+
+function isExplicitlyOutOfScope(normalized) {
+  if (normalized.includes("elon musk")) return true;
+  if (normalized.includes("compare me to")) return true;
+  if (normalized.includes("compared to ") && !normalized.includes("last month") && !normalized.includes("previous month")) {
+    return true;
+  }
+  return normalized.includes("how much do i weigh");
+}
+
+function containsFinanceSignal(normalized) {
+  for (const keyword of FINANCE_KEYWORDS) {
+    if (normalized.includes(keyword)) return true;
+  }
+  return (
+    normalized.includes("how much did i spend") ||
+    normalized.includes("how much have i spent") ||
+    normalized.includes("expenses") ||
+    normalized.includes("income")
+  );
+}
+
+function classifyIntent(rawQuestion) {
+  const normalized = normalizeText(rawQuestion);
+  if (!normalized) return "GREETING";
+  if (isGreeting(normalized)) return "GREETING";
+  if (isExplicitlyOutOfScope(normalized)) return "OUT_OF_SCOPE";
+  if (!containsFinanceSignal(normalized)) return "OUT_OF_SCOPE";
+  if (
+    containsAnyPattern(normalized, TRANSACTION_PATTERNS) ||
+    normalized.includes(" spent on ") ||
+    normalized.includes(" spent for ") ||
+    normalized.includes(" spend on ") ||
+    normalized.includes(" spend for ")
+  ) {
+    return "TRANSACTION_LOOKUP";
+  }
+  if (containsAnyPattern(normalized, SUMMARY_PATTERNS)) return "SUMMARY_ONLY";
+  return "SUMMARY_ONLY";
+}
+
+function extractQueryTerms(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  return Array.from(
+    new Set(
+      normalized
+        .split(" ")
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 3 && !QUERY_STOP_WORDS.has(token)),
+    ),
+  );
+}
+
+function expandQueryTerms(queryTerms) {
+  const expanded = new Set(queryTerms);
+  queryTerms.forEach((term) => {
+    for (const synonym of QUERY_SYNONYMS[term] || []) {
+      expanded.add(synonym);
+    }
+  });
+  return Array.from(expanded);
+}
+
+function toOccurredOn(occurredAt) {
+  if (typeof occurredAt !== "string" || occurredAt.length < 10) return "";
+  return occurredAt.slice(0, 10);
+}
+
+function toAmountCents(amount) {
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.round(numeric * 100);
+}
+
+function toDateLabel(occurredOn, format) {
+  if (!occurredOn) return "";
+  const parsed = new Date(`${occurredOn}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", { ...format, timeZone: "UTC" }).toLowerCase();
+}
+
+function matchedTerms(queryTerms, transaction) {
+  if (queryTerms.length === 0) return [];
+  const docTerms = new Set([
+    ...extractQueryTerms(transaction.merchantName),
+    ...extractQueryTerms(transaction.category),
+    ...extractQueryTerms(transaction.description),
+  ]);
+  return queryTerms.filter((term) => docTerms.has(term)).slice(0, 5);
+}
+
+function buildReferenceReasons({ merchantMatch, matchedTerms: hits, daysAgo }) {
+  const reasons = [];
+  if (merchantMatch) reasons.push("merchant phrase match");
+  if (hits.length > 0) reasons.push(`matched terms: ${hits.join(", ")}`);
+  if (daysAgo <= 30) reasons.push("recent activity");
+  if (reasons.length === 0) reasons.push("ranked by recency");
+  return reasons;
+}
+
+function buildRetrievedSources(transactions, userMessage) {
+  const queryTerms = expandQueryTerms(extractQueryTerms(userMessage));
+  const normalizedQuery = normalizeText(userMessage);
+  if (!Array.isArray(transactions) || transactions.length === 0 || (!normalizedQuery && queryTerms.length === 0)) {
+    return [];
+  }
+
+  const now = Date.now();
+  const candidates = transactions
+    .map((transaction) => {
+      const normalizedMerchant = normalizeText(transaction.merchantName);
+      const merchantMatch =
+        normalizedQuery &&
+        normalizedMerchant &&
+        (normalizedQuery.includes(normalizedMerchant) || normalizedMerchant.includes(normalizedQuery));
+      const hits = matchedTerms(queryTerms, transaction);
+      const lexical = queryTerms.length > 0 ? hits.length / queryTerms.length : 0;
+      const boostedLexical = merchantMatch ? Math.max(lexical, 0.85) : lexical;
+      const occurredOn = toOccurredOn(transaction.occurredAt);
+      const occurredAtMs = occurredOn ? Date.parse(`${occurredOn}T00:00:00Z`) : Date.parse(transaction.occurredAt);
+      const daysAgo = Number.isFinite(occurredAtMs) ? Math.max(Math.floor((now - occurredAtMs) / (24 * 60 * 60 * 1000)), 0) : 365;
+      const recency = 1 / (1 + daysAgo);
+      const score = queryTerms.length > 0 || merchantMatch ? boostedLexical * 0.75 + recency * 0.25 : recency;
+      return {
+        transaction,
+        matchedTerms: hits,
+        merchantMatch,
+        daysAgo,
+        score,
+      };
+    })
+    .filter((candidate) => candidate.merchantMatch || candidate.matchedTerms.length > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((candidate) => {
+      const tx = candidate.transaction;
+      return {
+        txCode: `t${String(tx.id || "").replace(/-/g, "").slice(0, 8)}`,
+        transactionId: tx.id,
+        occurredOn: toOccurredOn(tx.occurredAt),
+        merchant: tx.merchantName,
+        amountCents: toAmountCents(tx.amount),
+        category: tx.category || "General",
+        score: Number(candidate.score.toFixed(3)),
+        matchedTerms: candidate.matchedTerms,
+        reasons: buildReferenceReasons(candidate),
+      };
+    });
+
+  return candidates;
+}
+
+function sourceMentionedInReply(source, reply) {
+  if (!source || typeof reply !== "string" || reply.trim().length === 0) return false;
+  const normalizedReply = normalizeText(reply);
+  const lowerReply = reply.toLowerCase();
+  const normalizedMerchant = normalizeText(source.merchant);
+  if (normalizedMerchant && normalizedReply.includes(normalizedMerchant)) return true;
+  for (const token of normalizedMerchant.split(" ")) {
+    if (token.length >= 5 && normalizedReply.includes(token)) return true;
+  }
+  for (const term of source.matchedTerms || []) {
+    const normalizedTerm = normalizeText(term);
+    if (normalizedTerm.length >= 4 && normalizedReply.includes(normalizedTerm)) return true;
+  }
+  const longDate = toDateLabel(source.occurredOn, { month: "long", day: "numeric", year: "numeric" });
+  const shortDate = toDateLabel(source.occurredOn, { month: "short", day: "numeric", year: "numeric" });
+  return Boolean((longDate && lowerReply.includes(longDate)) || (shortDate && lowerReply.includes(shortDate)));
+}
+
+function filterSourcesForReply(reply, sources, intent) {
+  if (intent !== "TRANSACTION_LOOKUP" || !Array.isArray(sources) || sources.length === 0) return [];
+  const filtered = sources.filter((source) => sourceMentionedInReply(source, reply));
+  return filtered.length > 0 ? filtered : sources.slice(0, 3);
 }
 
 /**
@@ -88,7 +404,7 @@ async function getConversationForClient(client, requestedConversationId) {
   
   if (conversationId) {
     const res = await client.query(
-      `SELECT id, conversation_id, role, content, created_at
+      `SELECT id, conversation_id, role, content, metadata_json, created_at
        FROM chat_messages
        WHERE conversation_id = $1
          AND user_id = current_setting('appsec.user_id', true)::uuid
@@ -107,7 +423,7 @@ async function getConversationForClient(client, requestedConversationId) {
     if (latest.rowCount > 0) {
       conversationId = latest.rows[0].conversation_id;
       const res = await client.query(
-        `SELECT id, conversation_id, role, content, created_at
+        `SELECT id, conversation_id, role, content, metadata_json, created_at
          FROM chat_messages
          WHERE conversation_id = $1
            AND user_id = current_setting('appsec.user_id', true)::uuid
@@ -164,7 +480,7 @@ function selectHistoryForAi(messages) {
 /**
  * Gather chat context for AI
  */
-async function gatherChatContext(client, userId) {
+async function gatherChatContext(client, userId, userMessage) {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1));
   let transactions = [];
@@ -206,8 +522,28 @@ async function gatherChatContext(client, userId) {
     category: tx.category,
     pending: tx.pending,
   }));
-  
-  return { summary: cleanSummary, recentTransactions };
+
+  const intent = classifyIntent(userMessage);
+  const context = {
+    intent,
+    question: userMessage || "",
+    assistantScope: ASSISTANT_SCOPE,
+  };
+
+  if (intent === "GREETING" || intent === "OUT_OF_SCOPE") {
+    context.capabilities = [
+      "monthly summaries",
+      "spending by merchant or category",
+      "income and expense questions",
+    ];
+    context.retrievedReferences = [];
+    return context;
+  }
+
+  context.summary = cleanSummary;
+  context.recentTransactions = recentTransactions;
+  context.retrievedReferences = intent === "TRANSACTION_LOOKUP" ? buildRetrievedSources(transactions, userMessage) : [];
+  return context;
 }
 
 /**
@@ -239,7 +575,7 @@ function buildFallbackReply(context) {
  * Generate assistant reply
  */
 async function generateAssistantReply(client, userId, conversationId, userMessage, priorMessages, traceId) {
-  const context = await gatherChatContext(client, userId);
+  const context = await gatherChatContext(client, userId, userMessage);
   const historyForAi = priorMessages.map((msg) => ({
     role: msg.role,
     content: truncateText(msg.content || "", CHAT_HISTORY_CHAR_LIMIT),
@@ -247,9 +583,12 @@ async function generateAssistantReply(client, userId, conversationId, userMessag
   
   const aiReply = await callAiAssistant(historyForAi, userMessage, context, traceId);
   if (aiReply && aiReply.trim()) {
-    return aiReply.trim();
+    return {
+      content: aiReply.trim(),
+      sources: filterSourcesForReply(aiReply, context.retrievedReferences || [], context.intent),
+    };
   }
-  return buildFallbackReply(context);
+  return { content: buildFallbackReply(context), sources: [] };
 }
 
 /**
@@ -328,7 +667,7 @@ async function handleChat(event) {
           const conversationId = rawConversationId || crypto.randomUUID();
           const nowIso = new Date().toISOString();
           
-          const assistantContent = await generateAssistantReply(
+          const assistantReply = await generateAssistantReply(
             client,
             payload.sub,
             conversationId,
@@ -340,8 +679,14 @@ async function handleChat(event) {
           return {
             conversationId,
             messages: [
-              { id: crypto.randomUUID(), role: "USER", content: rawMessage, createdAt: nowIso },
-              { id: crypto.randomUUID(), role: "ASSISTANT", content: assistantContent, createdAt: new Date().toISOString() },
+              { id: crypto.randomUUID(), role: "USER", content: rawMessage, createdAt: nowIso, sources: [] },
+              {
+                id: crypto.randomUUID(),
+                role: "ASSISTANT",
+                content: assistantReply.content,
+                createdAt: new Date().toISOString(),
+                sources: assistantReply.sources,
+              },
             ],
             isDemo: true,
           };
@@ -383,7 +728,7 @@ async function handleChat(event) {
         const latestUserMessage = messages[messages.length - 1];
         const priorMessages = selectHistoryForAi(messages);
         
-        const assistantContent = await generateAssistantReply(
+        const assistantReply = await generateAssistantReply(
           client,
           payload.sub,
           conversationId,
@@ -395,13 +740,19 @@ async function handleChat(event) {
         const assistantId = crypto.randomUUID();
         const assistantCreatedAt = new Date().toISOString();
         await client.query(
-          `INSERT INTO chat_messages (id, conversation_id, user_id, role, content, created_at)
-           VALUES ($1, $2, current_setting('appsec.user_id', true)::uuid, 'ASSISTANT', $3, $4)`,
-          [assistantId, conversationId, assistantContent, assistantCreatedAt],
+          `INSERT INTO chat_messages (id, conversation_id, user_id, role, content, metadata_json, created_at)
+           VALUES ($1, $2, current_setting('appsec.user_id', true)::uuid, 'ASSISTANT', $3, $4, $5)`,
+          [assistantId, conversationId, assistantReply.content, serializeSources(assistantReply.sources), assistantCreatedAt],
         );
 
         const updatedMessages = messages.concat([
-          { id: assistantId, role: "ASSISTANT", content: assistantContent, createdAt: assistantCreatedAt },
+          {
+            id: assistantId,
+            role: "ASSISTANT",
+            content: assistantReply.content,
+            createdAt: assistantCreatedAt,
+            sources: assistantReply.sources,
+          },
         ]);
 
         return { conversationId, messages: updatedMessages };

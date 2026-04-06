@@ -23,33 +23,21 @@ if (typeof crypto.randomUUID !== "function") {
   };
 }
 
-// Import handlers
 const {
-  // Auth
   handleAuthToken,
   handleAuthCallback,
   handleDevAuthLogin,
   handleDevAuthLogout,
   handleDiagnosticsAuth,
-  // Plaid
-  handlePlaidLinkToken,
-  handlePlaidExchange,
-  handleDiagnosticsPlaidConfig,
-  // Analytics
-  handleAnalyticsSummary,
-  // Chat
-  handleChat,
-  // Transactions
-  handleTransactions,
-  handleTransactionsSync,
-  handleTransactionsReset,
-  handleAccounts,
-  // Diagnostics
+} = require("./handlers/auth");
+const { handleDiagnosticsPlaidConfig } = require("./handlers/plaid");
+const {
   handleDnsDiagnostics,
   handleDiagnosticsDbMaintenance,
   handleDiagnosticsPlaidItems,
   handleAdminEnsureConstraints,
-} = require("./handlers");
+} = require("./handlers/diagnostics");
+const { proxyLedgerRequest } = require("./handlers/proxy");
 
 // Import utils
 const { respond } = require("./utils/response");
@@ -103,38 +91,50 @@ exports.handler = async (event) => {
       return await handleDevAuthLogout(event);
     }
 
-    // === Chat routes (all methods) ===
+    // === Java-backed domain routes via proxy ===
     if (path === "/chat" || path === "/api/chat" || path === "/ai/chat") {
-      return await handleChat(event);
+      return await proxyLedgerRequest(event, path);
     }
 
-    // === Analytics routes ===
     if (method === "GET" && path === "/analytics/summary") {
-      return await handleAnalyticsSummary(event);
+      return await proxyLedgerRequest(event, path);
     }
 
-    // === Transaction routes ===
-    if ((method === "GET" || method === "PATCH") && path === "/transactions") {
-      return await handleTransactions(event);
+    if (method === "GET" && path === "/transactions") {
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "PATCH" && path === "/transactions") {
+      return await proxyLedgerRequest(event, path, { compatibilityMode: "transaction-patch" });
+    }
+    if (method === "PATCH" && /^\/transactions\/[0-9a-fA-F-]{36}$/.test(path)) {
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/transactions/sync") {
-      return await handleTransactionsSync(event);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/transactions/reset") {
-      return await handleTransactionsReset(event);
+      return await proxyLedgerRequest(event, path);
     }
 
-    // === Account routes ===
     if (method === "GET" && path === "/accounts") {
-      return await handleAccounts(event);
+      return await proxyLedgerRequest(event, path);
     }
 
-    // === Plaid routes ===
     if (method === "POST" && path === "/plaid/link-token") {
-      return await handlePlaidLinkToken(event);
+      return await proxyLedgerRequest(event, path);
     }
     if (method === "POST" && path === "/plaid/exchange") {
-      return await handlePlaidExchange(event);
+      return await proxyLedgerRequest(event, path);
+    }
+
+    if (method === "POST" && path === "/rag/search") {
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "GET" && path === "/rag/summaries") {
+      return await proxyLedgerRequest(event, path);
+    }
+    if (method === "POST" && path === "/rag/aggregate") {
+      return await proxyLedgerRequest(event, path);
     }
 
     // === Diagnostics routes ===

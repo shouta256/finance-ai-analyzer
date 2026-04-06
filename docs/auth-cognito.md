@@ -1,6 +1,6 @@
 # Cognito Authentication Flow
 
-Safepocket uses Amazon Cognito (Authorization Code flow) for production authentication. The Next.js BFF orchestrates the browser experience, and native clients interact with the ledger service or Lambda facade to exchange authorization codes for tokens.
+Safepocket uses Amazon Cognito (Authorization Code flow) for production authentication. The Next.js BFF orchestrates the browser experience, and native clients interact with the public auth endpoint to exchange authorization codes for tokens. Domain APIs remain owned by the Spring Boot ledger service, with Lambda acting only as a thin facade where a public/serverless entrypoint is needed.
 
 ## Configuration Reference
 
@@ -33,7 +33,7 @@ For native clients the Lambda function reads secrets from AWS Secrets Manager. C
 
 1. User hits `/login`. If Cognito is enabled and `NEXT_PUBLIC_ENABLE_DEV_LOGIN` is not set, the page immediately redirects to the Hosted UI authorize endpoint.
 2. After consent, Cognito redirects to `/auth/callback?code=...&state=...`.
-3. Next.js calls the upstream `auth/callback` endpoint (ledger service or Lambda) to exchange the code for tokens.
+3. Next.js calls the upstream `auth/callback` endpoint to exchange the code for tokens.
 4. Response tokens are stored as httpOnly cookies:
    - `sp_token` – ID token if present, otherwise access token.
    - `sp_at` – access token for API calls via the middleware.

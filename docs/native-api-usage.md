@@ -7,7 +7,7 @@ This guide summarises how iOS/Android clients (or partner integrations) should t
 - **Production:** `https://api.safepocket.app`
 - **Development:** `http://localhost:8081` (when running the ledger service locally)
 
-The web BFF exposes `/api/*` routes that proxy to the same paths without the prefix. Native clients should call the ledger service (or Lambda facade) directly.
+The web BFF exposes `/api/*` routes that proxy to the same paths without the prefix. Native clients should call the public API facade directly. In production, that facade may be Lambda-backed, but domain endpoints are forwarded to the Spring Boot ledger service so chat, analytics, Plaid, and RAG behaviour stays consistent with the web app.
 
 ## Authentication
 

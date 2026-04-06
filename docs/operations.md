@@ -94,6 +94,16 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
 - **Dev fallback** – omit Cognito variables and configure `SAFEPOCKET_DEV_JWT_SECRET` (>=32 chars). The backend enables an HMAC decoder for local testing; do **not** use this in production.
 - Frontend mirrors the backend configuration via `NEXT_PUBLIC_COGNITO_*`. Keep `NEXT_PUBLIC_ENABLE_DEV_LOGIN` disabled outside local environments.
 
+## Upstream Routing
+
+- `next-web` should treat `ledger-svc` as the single upstream for domain APIs. Set:
+  - `LEDGER_SERVICE_URL` to the Java ledger service URL.
+  - `LEDGER_SERVICE_INTERNAL_URL` when the public URL resolves back to the frontend host and an internal service URL is needed.
+  - `LEDGER_SERVICE_PATH_PREFIX` only when the upstream is mounted behind an additional path segment.
+- Lambda should remain thin:
+  - Keep first-party implementations for `/auth/token`, `/auth/callback`, and maintenance/admin routes.
+  - Forward domain routes such as `/accounts`, `/transactions*`, `/plaid/*`, `/analytics/summary`, `/ai/chat`, and `/rag/*` to `ledger-svc`.
+
 ## AI & Chat Configuration
 
 | Variable | Notes |

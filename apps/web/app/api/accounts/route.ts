@@ -5,12 +5,23 @@ import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 
 const authErrorBody = { error: { code: "UNAUTHENTICATED", message: "Missing authorization" } } as const;
 
+function normalizeBearer(value: string): string {
+  return value.startsWith("Bearer ") ? value : `Bearer ${value}`;
+}
+
 function requireAuthorization(request: NextRequest): string | NextResponse {
   const authorization = request.headers.get("authorization");
+  if (authorization && authorization.trim()) {
+    return normalizeBearer(authorization.trim());
+  }
+  const cookieToken = request.cookies.get("sp_token")?.value;
+  if (cookieToken && cookieToken.trim()) {
+    return normalizeBearer(cookieToken.trim());
+  }
   if (!authorization) {
     return NextResponse.json(authErrorBody, { status: 401 });
   }
-  return authorization;
+  return NextResponse.json(authErrorBody, { status: 401 });
 }
 
 function mapError(error: unknown): NextResponse {

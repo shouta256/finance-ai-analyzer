@@ -92,34 +92,16 @@ export async function GET(request: NextRequest) {
     const query = chatQuerySchema.parse({
       conversationId: searchParams.get("conversationId") ?? undefined,
     });
-    const buildPath = (p: string) => {
-      const u = new URL(p, "http://localhost");
-      if (query.conversationId) u.searchParams.set("conversationId", query.conversationId);
-      return u.pathname + u.search;
-    };
-    const candidates = ["/ai/chat", "/api/chat", "/chat"]; // fallback for older BE deployments
-    let lastErr: unknown;
-    for (const p of candidates) {
-      try {
-        const result = await ledgerFetch(buildPath(p), {
-          method: "GET",
-          headers: { authorization },
-          baseUrlOverride,
-        });
-        const body = chatResponseSchema.parse(result);
-        return NextResponse.json(body);
-      } catch (e) {
-        lastErr = e;
-        // Retry only on 404 or INTERNAL_ERROR "No static resource" shaped errors
-        const status = (e as { status?: number }).status;
-        const payload = (e as { payload?: any }).payload;
-        const reason = payload?.error?.message || payload?.error?.reason || payload?.reason;
-        if (status === 404 || (payload?.error?.code === "INTERNAL_ERROR" && typeof reason === "string" && reason.includes("No static resource"))) {
-          continue;
-        }
-      }
-    }
-    throw lastErr;
+    const path = query.conversationId
+      ? `/ai/chat?conversationId=${encodeURIComponent(query.conversationId)}`
+      : "/ai/chat";
+    const result = await ledgerFetch(path, {
+      method: "GET",
+      headers: { authorization },
+      baseUrlOverride,
+    });
+    const body = chatResponseSchema.parse(result);
+    return NextResponse.json(body);
   } catch (error) {
     return mapError(error);
   }
@@ -135,29 +117,14 @@ export async function POST(request: NextRequest) {
 
     const raw = await request.json();
     const body = chatRequestSchema.parse(raw);
-    const candidates = ["/ai/chat", "/api/chat", "/chat"]; // fallback for older BE deployments
-    let lastErr: unknown;
-    for (const p of candidates) {
-      try {
-        const result = await ledgerFetch(p, {
-          method: "POST",
-          headers: { authorization, "content-type": "application/json" },
-          body: JSON.stringify(body),
-          baseUrlOverride,
-        });
-        const response = chatResponseSchema.parse(result);
-        return NextResponse.json(response);
-      } catch (e) {
-        lastErr = e;
-        const status = (e as { status?: number }).status;
-        const payload = (e as { payload?: any }).payload;
-        const reason = payload?.error?.message || payload?.error?.reason || payload?.reason;
-        if (status === 404 || (payload?.error?.code === "INTERNAL_ERROR" && typeof reason === "string" && reason.includes("No static resource"))) {
-          continue;
-        }
-      }
-    }
-    throw lastErr;
+    const result = await ledgerFetch("/ai/chat", {
+      method: "POST",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      baseUrlOverride,
+    });
+    const response = chatResponseSchema.parse(result);
+    return NextResponse.json(response);
   } catch (error) {
     return mapError(error);
   }

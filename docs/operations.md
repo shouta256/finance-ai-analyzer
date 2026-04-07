@@ -138,7 +138,7 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
 - The dashboard settings page (`/settings`) drives operational calls:
   - **Sync now** – `POST /api/transactions/sync`
   - **Reset data** – `POST /api/transactions/reset` (optionally `{ "unlinkPlaid": true }`)
-  - **Clear chat** – `DELETE /api/chat` (alias for `/ai/chat`)
+- **Clear chat** – `DELETE /api/chat` via the web BFF, which forwards to canonical upstream `DELETE /ai/chat`
   - **Unlink/Re-link** – `POST /api/transactions/reset` with `unlinkPlaid` followed by the Plaid Link flow
 - Lambda exposes maintenance and diagnostics endpoints through the unified runtime in `infra/lambda/src/router.js`. Keep admin routes protected via IAM/headers (`ADMIN_SQL_TOKEN`) where applicable.
 

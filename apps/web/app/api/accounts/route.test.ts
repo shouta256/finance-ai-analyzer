@@ -15,10 +15,33 @@ describe("/api/accounts route", () => {
   });
 
   it("returns 401 without authorization header", async () => {
-    const req = { headers: new Headers(), url: "https://example.com/api/accounts" } as any;
+    const req = { headers: new Headers(), url: "https://example.com/api/accounts", cookies: { get: () => undefined } } as any;
     const res = await GET(req);
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: { code: "UNAUTHENTICATED", message: "Missing authorization" } });
+  });
+
+  it("accepts sp_token cookie when header missing", async () => {
+    const payload = {
+      currency: "USD",
+      totalBalance: 1000.0,
+      accounts: [],
+      traceId: "t",
+    };
+    mocked.mockResolvedValue(payload);
+
+    const req = {
+      headers: new Headers(),
+      url: "https://example.com/api/accounts",
+      cookies: {
+        get: (name: string) => (name === "sp_token" ? { value: "cookie-token" } : undefined),
+      },
+    } as any;
+
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    expect(mocked).toHaveBeenCalledWith("/accounts", { method: "GET", headers: { authorization: "Bearer cookie-token" } });
+    expect(await res.json()).toEqual(payload);
   });
 
   it("proxies GET to ledger /accounts", async () => {
@@ -30,7 +53,7 @@ describe("/api/accounts route", () => {
     };
     mocked.mockResolvedValue(payload);
 
-    const req = { headers: new Headers({ authorization: "Bearer token" }), url: "https://example.com/api/accounts" } as any;
+    const req = { headers: new Headers({ authorization: "Bearer token" }), url: "https://example.com/api/accounts", cookies: { get: () => undefined } } as any;
     const res = await GET(req);
     expect(res.status).toBe(200);
     expect(mocked).toHaveBeenCalledWith("/accounts", { method: "GET", headers: { authorization: "Bearer token" } });

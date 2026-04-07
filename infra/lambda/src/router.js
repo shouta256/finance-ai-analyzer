@@ -159,7 +159,7 @@ exports.handler = async (event) => {
     }
 
     // === Domain routes (proxy mode or standalone fallback) ===
-    if (path === "/chat" || path === "/api/chat" || path === "/ai/chat") {
+    if (path === "/ai/chat") {
       return await proxyOrFallback(event, path, () => handleChat(event));
     }
 

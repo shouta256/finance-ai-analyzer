@@ -526,9 +526,9 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     const checkSession = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch("/api/debug/token", { credentials: "include", cache: "no-store" });
-        // Redirect to login when the session is missing or unauthorized (unless we can recover demo mode)
-        if (!cancelled && (!res.ok || res.status === 401 || res.status === 403)) {
+        const res = await fetch("/api/accounts", { credentials: "include", cache: "no-store" });
+        // Redirect only when the session is missing or unauthorized.
+        if (!cancelled && (res.status === 401 || res.status === 403)) {
           if (isDemo) {
             // Attempt silent demo login and retry once before redirecting
             try {
@@ -545,11 +545,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
           window.location.href = login.toString();
         }
       } catch (_) {
-        if (!cancelled) {
-          const login = new URL("/login", window.location.origin);
-          login.searchParams.set("redirect", "/dashboard");
-          window.location.href = login.toString();
-        }
+        // Ignore transient session-check errors. The main data fetch path handles real auth failures.
       }
     };
     const handleVisibility = () => {

@@ -202,10 +202,7 @@ function parseAiHighlightResponse(raw, fallback) {
 async function generateAiHighlight(summary, transactions, traceId) {
   const fallback = buildDeterministicHighlight(summary?.totals, summary?.byCategory, summary?.topMerchants);
   const provider = (process.env.SAFEPOCKET_AI_PROVIDER || "gemini").toLowerCase();
-  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-3-flash-preview" : "gpt-4.1-mini");
-  const fallbackModel = provider === "gemini"
-    ? (process.env.SAFEPOCKET_AI_FALLBACK_MODEL || "gemini-2.5-flash")
-    : null;
+  const model = process.env.SAFEPOCKET_AI_MODEL || (provider === "gemini" ? "gemini-2.5-flash" : "gpt-4.1-mini");
   const prompt = buildHighlightPrompt(summary, transactions);
 
   try {
@@ -216,10 +213,6 @@ async function generateAiHighlight(summary, transactions, traceId) {
         return fallback;
       }
       raw = await callGeminiHighlight(model, prompt, HIGHLIGHT_MAX_TOKENS, traceId);
-      if (!raw && fallbackModel && fallbackModel !== model) {
-        console.warn("[analytics] Falling back to Gemini backup model", { primaryModel: model, fallbackModel, traceId });
-        raw = await callGeminiHighlight(fallbackModel, prompt, HIGHLIGHT_MAX_TOKENS, traceId);
-      }
     } else {
       if (!hasOpenAiCredentials()) {
         console.warn("[analytics] OpenAI highlight requested but no API key configured");

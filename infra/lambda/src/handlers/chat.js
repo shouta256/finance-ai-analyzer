@@ -83,6 +83,10 @@ const TRANSACTION_PATTERNS = [
   "how much did i spend on",
   "how much did i spend for",
   "how much have i spent on",
+  "how did i spend on",
+  "how did i spend for",
+  "how much on",
+  "spending on",
   "where did i spend",
   "which transactions",
   "show transactions",
@@ -257,6 +261,10 @@ function classifyIntent(rawQuestion) {
   }
   if (containsAnyPattern(normalized, SUMMARY_PATTERNS)) return "SUMMARY_ONLY";
   return "SUMMARY_ONLY";
+}
+
+function formatCurrencyFromCents(amountCents) {
+  return `$${(Math.abs(Number(amountCents) || 0) / 100).toFixed(2)}`;
 }
 
 function extractQueryTerms(text) {
@@ -550,6 +558,25 @@ async function gatherChatContext(client, userId, userMessage) {
  * Build fallback reply when AI is unavailable
  */
 function buildFallbackReply(context) {
+  if (context?.intent === "TRANSACTION_LOOKUP") {
+    const references = Array.isArray(context?.retrievedReferences) ? context.retrievedReferences : [];
+    if (references.length > 0) {
+      const totalCents = references.reduce((sum, reference) => sum + Math.abs(Number(reference.amountCents) || 0), 0);
+      const lines = [
+        `You spent a total of ${formatCurrencyFromCents(totalCents)} based on the matching transactions I found:`,
+      ];
+      references.slice(0, 3).forEach((reference) => {
+        lines.push(
+          `• ${formatCurrencyFromCents(reference.amountCents)} at ${reference.merchant} on ${reference.occurredOn}.`,
+        );
+      });
+      if (references.length > 3) {
+        lines.push(`• ${references.length - 3} more matching transactions were also found.`);
+      }
+      return lines.join(" ");
+    }
+    return "I could not find matching transactions for that request in your recent history.";
+  }
   if (!context || !context.summary) {
     return "I couldn't retrieve enough data to answer right now. Please try again in a moment.";
   }
@@ -588,7 +615,11 @@ async function generateAssistantReply(client, userId, conversationId, userMessag
       sources: filterSourcesForReply(aiReply, context.retrievedReferences || [], context.intent),
     };
   }
-  return { content: buildFallbackReply(context), sources: [] };
+  const fallbackReply = buildFallbackReply(context);
+  return {
+    content: fallbackReply,
+    sources: filterSourcesForReply(fallbackReply, context.retrievedReferences || [], context.intent),
+  };
 }
 
 /**
@@ -796,4 +827,9 @@ async function handleChat(event) {
 
 module.exports = {
   handleChat,
+  __test__: {
+    buildFallbackReply,
+    buildRetrievedSources,
+    classifyIntent,
+  },
 };

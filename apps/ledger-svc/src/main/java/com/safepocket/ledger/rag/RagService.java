@@ -142,7 +142,10 @@ public class RagService {
                     Math.max(limit, properties.rag().maxRows() * 2)
             );
             if (!candidates.isEmpty()) {
-                transactionEmbeddingService.upsertEmbeddings(userId, candidates.stream().map(RagRepository.TransactionSlice::transactionId).toList());
+                transactionEmbeddingService.upsertMissingEmbeddings(
+                        userId,
+                        candidates.stream().map(RagRepository.TransactionSlice::transactionId).toList()
+                );
                 matches = txEmbeddingRepository.findNearest(
                         userId,
                         queryVector,

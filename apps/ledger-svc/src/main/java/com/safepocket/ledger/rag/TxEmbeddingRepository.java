@@ -5,7 +5,9 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -160,6 +162,35 @@ public class TxEmbeddingRepository {
             if (isMissingEmbeddingsTable(ex)) {
                 warnMissingTableOnce(ex);
                 return 0L;
+            }
+            throw ex;
+        }
+    }
+
+    public Set<UUID> findTransactionIdsWithEmbeddings(UUID userId, List<UUID> txIds) {
+        if (txIds == null || txIds.isEmpty() || !embeddingsTableExists()) {
+            return Set.of();
+        }
+        try {
+            List<UUID> results = jdbcTemplate.query(
+                    """
+                    SELECT tx_id
+                    FROM tx_embeddings
+                    WHERE user_id = :userId
+                      AND tx_id IN (:txIds)
+                      AND jsonb_typeof(embedding) = 'array'
+                      AND embedding <> '[]'::jsonb
+                    """,
+                    new MapSqlParameterSource()
+                            .addValue("userId", userId)
+                            .addValue("txIds", txIds),
+                    (rs, rowNum) -> rs.getObject("tx_id", UUID.class)
+            );
+            return new LinkedHashSet<>(results);
+        } catch (DataAccessException ex) {
+            if (isMissingEmbeddingsTable(ex)) {
+                warnMissingTableOnce(ex);
+                return Set.of();
             }
             throw ex;
         }

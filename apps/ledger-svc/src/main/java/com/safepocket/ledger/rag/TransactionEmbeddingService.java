@@ -2,8 +2,11 @@ package com.safepocket.ledger.rag;
 
 import com.safepocket.ledger.security.RlsGuard;
 import java.time.YearMonth;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -40,14 +43,38 @@ public class TransactionEmbeddingService {
         if (transactionIds == null || transactionIds.isEmpty()) {
             return;
         }
-        rlsGuard.setAppsecUser(userId);
-        List<RagRepository.TransactionSlice> slices = ragRepository.fetchTransactions(userId, transactionIds);
-        if (slices.isEmpty()) {
+        if (!txEmbeddingRepository.embeddingsTableExists()) {
             return;
         }
+        rlsGuard.setAppsecUser(userId);
+        List<RagRepository.TransactionSlice> slices = ragRepository.fetchTransactions(userId, transactionIds);
+        upsertEmbeddingsFromSlices(userId, slices);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public long upsertMissingEmbeddings(UUID userId, List<UUID> transactionIds) {
+        if (transactionIds == null || transactionIds.isEmpty()) {
+            return 0L;
+        }
+        if (!txEmbeddingRepository.embeddingsTableExists()) {
+            return 0L;
+        }
+        rlsGuard.setAppsecUser(userId);
+        List<RagRepository.TransactionSlice> slices = ragRepository.fetchTransactions(userId, transactionIds);
+        return upsertEmbeddingsFromSlices(userId, filterSlicesNeedingEmbeddings(userId, slices));
+    }
+
+    private long upsertEmbeddingsFromSlices(UUID userId, List<RagRepository.TransactionSlice> slices) {
+        if (slices == null || slices.isEmpty()) {
+            return 0L;
+        }
         List<TxEmbeddingRepository.EmbeddingRecord> records = toEmbeddingRecords(userId, slices);
+        if (records.isEmpty()) {
+            return 0L;
+        }
         txEmbeddingRepository.upsertBatch(records);
         log.debug("Upserted {} embeddings for user {}", records.size(), userId);
+        return records.size();
     }
 
     @Transactional(readOnly = true)
@@ -73,6 +100,7 @@ public class TransactionEmbeddingService {
             return 0L;
         }
 
+        rlsGuard.setAppsecUser(userId);
         long upserted = 0L;
         for (int offset = 0; ; offset += BACKFILL_BATCH_SIZE) {
             List<RagRepository.TransactionSlice> slices = ragRepository.findTransactionsForEmbedding(
@@ -88,9 +116,7 @@ public class TransactionEmbeddingService {
             if (slices.isEmpty()) {
                 break;
             }
-            List<TxEmbeddingRepository.EmbeddingRecord> records = toEmbeddingRecords(userId, slices);
-            txEmbeddingRepository.upsertBatch(records);
-            upserted += records.size();
+            upserted += upsertEmbeddingsFromSlices(userId, filterSlicesNeedingEmbeddings(userId, slices));
             if (slices.size() < BACKFILL_BATCH_SIZE) {
                 break;
             }
@@ -99,11 +125,32 @@ public class TransactionEmbeddingService {
         return upserted;
     }
 
+    private List<RagRepository.TransactionSlice> filterSlicesNeedingEmbeddings(
+            UUID userId,
+            List<RagRepository.TransactionSlice> slices
+    ) {
+        if (slices == null || slices.isEmpty()) {
+            return List.of();
+        }
+        Set<UUID> existingIds = txEmbeddingRepository.findTransactionIdsWithEmbeddings(
+                userId,
+                slices.stream().map(RagRepository.TransactionSlice::transactionId).toList()
+        );
+        if (existingIds.isEmpty()) {
+            return slices;
+        }
+        return slices.stream()
+                .filter(slice -> !existingIds.contains(slice.transactionId()))
+                .toList();
+    }
+
     private List<TxEmbeddingRepository.EmbeddingRecord> toEmbeddingRecords(UUID userId, List<RagRepository.TransactionSlice> slices) {
+        Map<String, float[]> embeddingsByText = new HashMap<>();
         return slices.stream()
                 .map(slice -> {
                     YearMonth month = YearMonth.from(slice.occurredOn());
-                    float[] embedding = embeddingService.embed(buildText(slice));
+                    String text = buildText(slice);
+                    float[] embedding = embeddingsByText.computeIfAbsent(text, embeddingService::embed);
                     return new TxEmbeddingRepository.EmbeddingRecord(
                             slice.transactionId(),
                             userId,

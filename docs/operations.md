@@ -120,8 +120,7 @@ Do **not** commit these values to `.env`; use IaC or the AWS console to manage t
 | Variable | Notes |
 |----------|-------|
 | `SAFEPOCKET_AI_PROVIDER` | `gemini` (default) or `openai`. Determines which credential is required. |
-| `SAFEPOCKET_AI_MODEL` | Primary model alias. Recommended Gemini setup is `gemini-3-flash-preview`. |
-| `SAFEPOCKET_AI_FALLBACK_MODEL` | Backup model used when the primary Gemini model is unavailable. Recommended value: `gemini-2.5-flash`. |
+| `SAFEPOCKET_AI_MODEL` | AI model alias. Recommended Gemini setup is `gemini-2.5-flash`. |
 | `SAFEPOCKET_AI_MODEL_SNAPSHOT` | Optional snapshot ID when the provider requires a dated variant. |
 | `SAFEPOCKET_AI_ENDPOINT` | Override the Responses endpoint (only needed for private gateways). |
 | `GEMINI_API_KEY` / `OPENAI_API_KEY` / `SAFEPOCKET_AI_KEY` | Supply the credential for the chosen provider to enable live summaries/chat. |

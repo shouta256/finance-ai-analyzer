@@ -2,6 +2,7 @@ package com.safepocket.ledger.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -130,5 +131,59 @@ class ChatContextServiceTest {
         assertThat(bundle.contextJson()).contains("references");
         verify(ragService).summaries(any());
         verify(ragService).search(any(), any());
+    }
+
+    @Test
+    void naturalSpendQuestionStillUsesTransactionLookup() {
+        UUID txId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+        when(ragService.summaries(any())).thenReturn(new RagService.SummariesResponse(
+                "2026-04",
+                new RagService.Totals(840625, -1257723, -417098),
+                List.of(),
+                List.of(),
+                "trace-1"
+        ));
+        when(ragService.search(any(), any())).thenReturn(new RagService.SearchResponse(
+                "t33333333,260401,m1,-875,di",
+                Map.of("merchants", Map.of("m1", "Starbucks"), "categories", Map.of("di", "Dining")),
+                new RagService.Stats(1, -875, -875),
+                List.of(new RagService.SearchReference(
+                        "t33333333",
+                        txId,
+                        LocalDate.of(2026, 4, 1),
+                        "Starbucks",
+                        -875,
+                        "Dining",
+                        0.81,
+                        List.of("coffee"),
+                        List.of("matched terms: coffee", "semantic similarity")
+                )),
+                "trace-2",
+                "chat-1"
+        ));
+
+        ChatContextService.ChatContextBundle bundle = chatContextService.buildContextBundle(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "how did i spend on coffee"
+        );
+
+        assertThat(bundle.sources()).hasSize(1);
+        assertThat(bundle.contextJson()).contains("TRANSACTION_LOOKUP");
+        verify(ragService).search(any(), any());
+    }
+
+    @Test
+    void assertRagReadyRepairsMissingEmbeddingsBeforeFailing() {
+        UUID userId = UUID.randomUUID();
+        doReturn(
+                new TransactionEmbeddingService.RagReadiness(true, 10, 0),
+                new TransactionEmbeddingService.RagReadiness(true, 10, 10)
+        ).when(transactionEmbeddingService).readinessForUser(userId);
+        when(transactionEmbeddingService.backfillMissingEmbeddings(userId)).thenReturn(10L);
+
+        chatContextService.assertRagReady(userId);
+
+        verify(transactionEmbeddingService).backfillMissingEmbeddings(userId);
     }
 }

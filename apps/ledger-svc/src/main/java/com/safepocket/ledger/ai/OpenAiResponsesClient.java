@@ -83,7 +83,7 @@ public class OpenAiResponsesClient {
             String model,
             boolean allowFallback) {
         return switch (provider) {
-            case GEMINI -> generateGemini(inputMessages, maxOutputTokens, model, allowFallback);
+            case GEMINI -> generateGemini(inputMessages, maxOutputTokens, model);
             case OPENAI -> generateOpenAi(inputMessages, maxOutputTokens, model, allowFallback);
         };
     }
@@ -137,46 +137,27 @@ public class OpenAiResponsesClient {
     private Optional<String> generateGemini(
             List<Message> inputMessages,
             Integer maxOutputTokens,
-            String model,
-            boolean allowFallback) {
+            String model) {
         Optional<String> apiKey = resolveApiKey(Provider.GEMINI);
         if (apiKey.isEmpty()) {
             return Optional.empty();
         }
 
         int sanitizedTokens = sanitizePositive(maxOutputTokens, GEMINI_DEFAULT_MAX_TOKENS, GEMINI_MAX_TOKENS);
-        List<String> candidates = geminiModelCandidates(model, allowFallback);
-        for (int i = 0; i < candidates.size(); i++) {
-            String candidateModel = candidates.get(i);
-            GeminiRequestContext context = new GeminiRequestContext(
-                    inputMessages,
-                    collectSystemInstruction(inputMessages),
-                    geminiEndpoint(candidateModel),
-                    apiKey.get(),
-                    candidateModel
-            );
-            Optional<String> result = generateGemini(context, sanitizedTokens, true);
-            if (result.isPresent()) {
-                if (i > 0) {
-                    log.warn("Gemini fallback model '{}' used after primary model '{}' returned no usable response.",
-                            candidateModel, model);
-                }
-                return result;
-            }
-        }
-        return Optional.empty();
+        GeminiRequestContext context = new GeminiRequestContext(
+                inputMessages,
+                collectSystemInstruction(inputMessages),
+                geminiEndpoint(model),
+                apiKey.get(),
+                model
+        );
+        return generateGemini(context, sanitizedTokens, true);
     }
 
-    List<String> geminiModelCandidates(String requestedModel, boolean allowFallback) {
-        List<String> candidates = new ArrayList<>();
+    List<String> geminiModelCandidates(String requestedModel) {
+        List<String> candidates = new ArrayList<>(1);
         if (requestedModel != null && !requestedModel.isBlank()) {
             candidates.add(requestedModel);
-        }
-        if (allowFallback) {
-            String fallbackModel = properties.ai().fallbackModelOrNull();
-            if (fallbackModel != null && !fallbackModel.isBlank() && candidates.stream().noneMatch(fallbackModel::equals)) {
-                candidates.add(fallbackModel);
-            }
         }
         return candidates;
     }

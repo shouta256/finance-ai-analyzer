@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,7 +59,7 @@ class RagServiceTest {
         SafepocketProperties props = new SafepocketProperties(
                 new SafepocketProperties.Cognito("https://example.com", "aud", false, "cognito.example.com", "aud", null, null, null, null),
                 new SafepocketProperties.Plaid("id", "sec", "redir", "base", "env", null, null),
-                new SafepocketProperties.Ai("openai", "model", "https://api.example.com", null, null, null),
+                new SafepocketProperties.Ai("openai", "model", "https://api.example.com", null, null),
                 new SafepocketProperties.Security("12345678901234567890123456789012", null),
                 new SafepocketProperties.Rag("pgvector", "text-embedding-3-small", 20, 8, false)
         );
@@ -126,6 +127,7 @@ class RagServiceTest {
         assertThat(response.dict().get("merchants")).isEmpty();
         assertThat(response.references()).isEmpty();
         assertThat(response.chatId()).isEqualTo("chat-3");
+        verify(transactionEmbeddingService, never()).upsertMissingEmbeddings(any(), any());
     }
 
     @Test
@@ -161,6 +163,35 @@ class RagServiceTest {
 
         assertThat(response.references()).hasSize(1);
         assertThat(response.references().getFirst().matchedTerms()).containsAnyOf("coffee", "latte");
+    }
+
+    @Test
+    void searchRepairsOnlyMissingEmbeddingsWhenVectorStoreIsEmpty() {
+        RagRepository.TransactionSlice slice = new RagRepository.TransactionSlice(
+                transactionId,
+                LocalDate.of(2025, 9, 15),
+                -1250,
+                "Dining",
+                "Coffee",
+                merchantId,
+                "Blue Bottle Coffee"
+        );
+        YearMonth month = YearMonth.of(2025, 9);
+        when(txEmbeddingRepository.findNearest(eq(userId), any(), any(), any(), any(), any(), any(), anyInt()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(new TxEmbeddingRepository.EmbeddingMatch(transactionId, merchantId, embeddingService.embed("Blue Bottle Coffee"), month, -1250, "Dining")));
+        when(ragRepository.findTransactionsForEmbedding(eq(userId), any(), any(), any(), any(), any(), anyInt()))
+                .thenReturn(List.of(slice));
+        when(ragRepository.fetchTransactions(eq(userId), any()))
+                .thenReturn(List.of(slice));
+
+        RagService.SearchResponse response = service.search(
+                new RagService.SearchRequest("coffee", null, null, null, null, null, 10, false),
+                "chat-repair"
+        );
+
+        assertThat(response.references()).hasSize(1);
+        verify(transactionEmbeddingService).upsertMissingEmbeddings(eq(userId), eq(List.of(transactionId)));
     }
 
     @Test

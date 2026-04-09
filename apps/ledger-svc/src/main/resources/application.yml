@@ -72,9 +72,8 @@ safepocket:
     webhook-secret: ${PLAID_WEBHOOK_SECRET:}
   ai:
     provider: ${SAFEPOCKET_AI_PROVIDER:gemini}
-    model: ${SAFEPOCKET_AI_MODEL:gemini-3-flash-preview}
+    model: ${SAFEPOCKET_AI_MODEL:gemini-2.5-flash}
     snapshot: ${SAFEPOCKET_AI_MODEL_SNAPSHOT:}
-    fallback-model: ${SAFEPOCKET_AI_FALLBACK_MODEL:gemini-2.5-flash}
     endpoint: ${SAFEPOCKET_AI_ENDPOINT:https://api.openai.com/v1/responses}
     api-key: ${SAFEPOCKET_AI_KEY:}
   chat:

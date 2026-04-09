@@ -41,6 +41,7 @@ public class ChatContextService {
     );
     private static final List<String> TRANSACTION_PATTERNS = List.of(
             "how much did i spend on", "how much did i spend for", "how much have i spent on",
+            "how did i spend on", "how did i spend for", "how much on", "spending on",
             "where did i spend", "which transactions", "show transactions", "list transactions",
             "what did i spend on", "merchant", "category"
     );
@@ -147,6 +148,23 @@ public class ChatContextService {
         TransactionEmbeddingService.RagReadiness readiness = transactionEmbeddingService.readinessForUser(userId);
         if (!readiness.tableReady()) {
             throw RagNotReadyException.infrastructureMissing();
+        }
+        if (readiness.transactionCount() > 0 && readiness.embeddingCount() < readiness.transactionCount()) {
+            long missingBeforeRepair = readiness.transactionCount() - readiness.embeddingCount();
+            try {
+                long repaired = transactionEmbeddingService.backfillMissingEmbeddings(userId);
+                if (repaired > 0) {
+                    log.info(
+                            "Chat RAG readiness repaired missing embeddings for user {}: missingBefore={}, repaired={}",
+                            userId,
+                            missingBeforeRepair,
+                            repaired
+                    );
+                }
+            } catch (Exception ex) {
+                log.warn("Chat RAG readiness repair failed for user {}: {}", userId, ex.toString());
+            }
+            readiness = transactionEmbeddingService.readinessForUser(userId);
         }
         if (readiness.transactionCount() > 0 && readiness.embeddingCount() < readiness.transactionCount()) {
             throw RagNotReadyException.embeddingsMissing(readiness.transactionCount(), readiness.embeddingCount());

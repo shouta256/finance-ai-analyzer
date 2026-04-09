@@ -6,8 +6,11 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Locale;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -22,10 +25,13 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 public class EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingService.class);
+    private static final Duration DEFAULT_THROTTLE_DURATION = Duration.ofSeconds(45);
+    private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("\"retryDelay\"\\s*:\\s*\"(\\d+)s\"");
 
     private final SafepocketProperties properties;
     private final MessageDigest digest;
     private final WebClient http;
+    private volatile Instant geminiThrottleUntil = Instant.EPOCH;
 
     public EmbeddingService(SafepocketProperties properties) {
         this.properties = properties;
@@ -75,6 +81,9 @@ public class EmbeddingService {
     }
 
     private boolean shouldUseGemini() {
+        if (Instant.now().isBefore(geminiThrottleUntil)) {
+            return false;
+        }
         String model = properties.rag().embeddingModel();
         // Heuristic: use Gemini if embedding model looks like Gemini's or AI provider is gemini
         boolean modelSuggestsGemini = model != null && model.toLowerCase(Locale.ROOT).contains("text-embedding-004");
@@ -132,9 +141,32 @@ public class EmbeddingService {
             }
             return new float[0];
         } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 429) {
+                Duration throttle = parseRetryDelay(e.getResponseBodyAsString());
+                geminiThrottleUntil = Instant.now().plus(throttle);
+                log.warn(
+                        "Gemini embed rate-limited; using deterministic embeddings until {}",
+                        geminiThrottleUntil
+                );
+                return new float[0];
+            }
             log.warn("Gemini embed HTTP {}: {}", e.getStatusCode().value(), e.getResponseBodyAsString());
             return new float[0];
         }
+    }
+
+    private Duration parseRetryDelay(String responseBody) {
+        if (responseBody != null && !responseBody.isBlank()) {
+            Matcher matcher = RETRY_DELAY_PATTERN.matcher(responseBody);
+            if (matcher.find()) {
+                try {
+                    return Duration.ofSeconds(Long.parseLong(matcher.group(1)));
+                } catch (NumberFormatException ignored) {
+                    // fall through to default
+                }
+            }
+        }
+        return DEFAULT_THROTTLE_DURATION;
     }
 
     private float[] reshapeToDimension(float[] source, int targetDim) {

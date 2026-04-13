@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { ledgerFetch, LedgerApiError } from "@/src/lib/api-client";
+import { ledgerFetch } from "@/src/lib/api-client";
 import { chatResponseSchema } from "@/src/lib/schemas";
 import { resolveLedgerBaseOverride } from "@/src/lib/ledger-routing";
 

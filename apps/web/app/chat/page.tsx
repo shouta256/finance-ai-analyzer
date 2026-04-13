@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { fetchChatConversation, sendChatMessage } from "@/src/lib/api-client";
+import { fetchChatConversation, sendChatMessage } from "@/src/lib/chat-api";
 import { ChatMessage } from "@/src/lib/schemas";
 import Link from "next/link";
 import { Copy, Pencil } from "lucide-react";

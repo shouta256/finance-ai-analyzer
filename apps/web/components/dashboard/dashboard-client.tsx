@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Chart, ChartData, ChartOptions } from "chart.js";
 import { formatCurrency, formatDateTime, formatPercent } from "@/src/lib/date";
 import type { AnalyticsSummary, TransactionsList } from "@/src/lib/dashboard-data";
@@ -109,6 +109,11 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
   const demoSeedAttemptedRef = useRef<boolean>(false);
   const demoSessionEnsuredRef = useRef<boolean>(false);
   const demoAuthRetryRef = useRef<boolean>(false);
+  const totalTransactions = state.transactions.total ?? state.transactions.transactions.length;
+  const currentSummaryMonth = state.summary.month ?? focusMonth ?? month;
+  const generateAiDisabled = generatingAi || syncing || linking || sandboxLoading;
+  const openPeriodModal = useCallback(() => setPeriodOpen(true), []);
+  const openActionsModal = useCallback(() => setActionsOpen(true), []);
 
   useEffect(() => {
     const handleOpenModal = () => setActionsOpen(true);
@@ -821,7 +826,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     }
   }
 
-  async function handleGenerateAi() {
+  const handleGenerateAi = useCallback(() => {
     if (generatingAi || syncing || linking || sandboxLoading) return;
     setGeneratingAi(true);
     setMessage("Generating AI summary…");
@@ -838,7 +843,7 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         setGeneratingAi(false);
       }
     });
-  }
+  }, [focusMonth, generatingAi, linking, month, sandboxLoading, startTransition, syncing]);
 
   function handleSandboxDemo() {
     loadDemoData({ auto: false });
@@ -880,16 +885,15 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     startTransition(() => refreshData({ rangeMode: "month", customFrom: "", customTo: "", page: 0 }));
   };
 
-  const handlePageChange = (nextPage: number) => {
+  const handlePageChange = useCallback((nextPage: number) => {
     const safePage = Math.max(nextPage, 0);
-    const total = state.transactions.total ?? state.transactions.transactions.length;
-    const maxPage = total > 0 ? Math.max(Math.ceil(total / pageSize) - 1, 0) : undefined;
+    const maxPage = totalTransactions > 0 ? Math.max(Math.ceil(totalTransactions / pageSize) - 1, 0) : undefined;
     if (maxPage !== undefined && safePage > maxPage) {
       return;
     }
     setPage(safePage);
     startTransition(() => refreshData({ page: safePage }));
-  };
+  }, [pageSize, refreshData, startTransition, totalTransactions]);
 
   return (
     <div className="flex flex-col gap-8 text-slate-900">
@@ -911,60 +915,37 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
         />
       ) : null}
 
-      <section className="flex flex-col gap-6">
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-          <TotalsGrid totals={viewTotals} />
-        </div>
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
-          <DashboardViewPeriod
-            rangeMode={rangeMode}
-            focusMonth={focusMonth}
-            defaultMonth={month}
-            rangeDescription={rangeDescription}
-            onOpenPeriod={() => setPeriodOpen(true)}
-            onOpenActions={() => setActionsOpen(true)}
-          />
-        </div>
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
-          <ChartsSection
-            categoryData={categoryChartData}
-            categoryOptions={categoryChartOptions}
-            trendData={trendChartData}
-            trendOptions={trendChartOptions}
-            spendingScore={spendingScore}
-            scoreLabel={scoreLabel}
-          />
-        </div>
-      </section>
-
-      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
-          <AiHighlightCard
-            analyticsLabel={analyticsLabel}
-            highlightSnapshot={state.summary.latestHighlight}
-            currentMonth={state.summary.month ?? focusMonth ?? month}
-            netValue={formatCurrency(net)}
-            anomalyCount={anomalies.length}
-            topCategory={topCategory}
-            topMerchant={topMerchant}
-            onGenerate={handleGenerateAi}
-            generateDisabled={generatingAi || syncing || linking || sandboxLoading}
-            isGenerating={generatingAi}
-          />
-      </div>
-
-      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-500">
-        <AnomaliesTable anomalies={anomalies} />
-      </div>
-
-      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-600">
-        <TransactionsTable
-          transactions={state.transactions.transactions}
-          page={page}
-          pageSize={pageSize}
-          total={state.transactions.total ?? state.transactions.transactions.length}
-          onPageChange={handlePageChange}
-        />
-      </div>
+      <DashboardSections
+        viewTotals={viewTotals}
+        rangeMode={rangeMode}
+        focusMonth={focusMonth}
+        defaultMonth={month}
+        rangeDescription={rangeDescription}
+        onOpenPeriod={openPeriodModal}
+        onOpenActions={openActionsModal}
+        categoryData={categoryChartData}
+        categoryOptions={categoryChartOptions}
+        trendData={trendChartData}
+        trendOptions={trendChartOptions}
+        spendingScore={spendingScore}
+        scoreLabel={scoreLabel}
+        analyticsLabel={analyticsLabel}
+        highlightSnapshot={state.summary.latestHighlight}
+        currentMonth={currentSummaryMonth}
+        netValue={formatCurrency(net)}
+        anomalyCount={anomalies.length}
+        topCategory={topCategory}
+        topMerchant={topMerchant}
+        onGenerateAi={handleGenerateAi}
+        generateDisabled={generateAiDisabled}
+        isGenerating={generatingAi}
+        anomalies={anomalies}
+        transactions={state.transactions.transactions}
+        page={page}
+        pageSize={pageSize}
+        total={totalTransactions}
+        onPageChange={handlePageChange}
+      />
 
       <DashboardActionsModal
         open={actionsOpen}
@@ -1026,6 +1007,131 @@ export function DashboardClient({ month, initialSummary, initialTransactions }: 
     </div>
   );
 }
+
+interface DashboardSectionsProps {
+  viewTotals: TotalsSummary;
+  rangeMode: RangeMode;
+  focusMonth: string;
+  defaultMonth: string;
+  rangeDescription: string;
+  onOpenPeriod: () => void;
+  onOpenActions: () => void;
+  categoryData: ChartData<"doughnut"> | null;
+  categoryOptions: ChartOptions<"doughnut">;
+  trendData: ChartData<"line"> | null;
+  trendOptions: ChartOptions<"line">;
+  spendingScore: number;
+  scoreLabel: string;
+  analyticsLabel: string;
+  highlightSnapshot: AnalyticsSummary["latestHighlight"];
+  currentMonth: string;
+  netValue: string;
+  anomalyCount: number;
+  topCategory?: AnalyticsSummary["byCategory"][number];
+  topMerchant?: AnalyticsSummary["topMerchants"][number];
+  onGenerateAi: () => void;
+  generateDisabled: boolean;
+  isGenerating: boolean;
+  anomalies: AnalyticsSummary["anomalies"];
+  transactions: TransactionsList["transactions"];
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}
+
+const DashboardSections = memo(function DashboardSections({
+  viewTotals,
+  rangeMode,
+  focusMonth,
+  defaultMonth,
+  rangeDescription,
+  onOpenPeriod,
+  onOpenActions,
+  categoryData,
+  categoryOptions,
+  trendData,
+  trendOptions,
+  spendingScore,
+  scoreLabel,
+  analyticsLabel,
+  highlightSnapshot,
+  currentMonth,
+  netValue,
+  anomalyCount,
+  topCategory,
+  topMerchant,
+  onGenerateAi,
+  generateDisabled,
+  isGenerating,
+  anomalies,
+  transactions,
+  page,
+  pageSize,
+  total,
+  onPageChange,
+}: DashboardSectionsProps) {
+  return (
+    <>
+      <section className="flex flex-col gap-6">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
+          <TotalsGrid totals={viewTotals} />
+        </div>
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
+          <DashboardViewPeriod
+            rangeMode={rangeMode}
+            focusMonth={focusMonth}
+            defaultMonth={defaultMonth}
+            rangeDescription={rangeDescription}
+            onOpenPeriod={onOpenPeriod}
+            onOpenActions={onOpenActions}
+          />
+        </div>
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+          <ChartsSection
+            categoryData={categoryData}
+            categoryOptions={categoryOptions}
+            trendData={trendData}
+            trendOptions={trendOptions}
+            spendingScore={spendingScore}
+            scoreLabel={scoreLabel}
+          />
+        </div>
+      </section>
+
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-400">
+        <AiHighlightCard
+          analyticsLabel={analyticsLabel}
+          highlightSnapshot={highlightSnapshot}
+          currentMonth={currentMonth}
+          netValue={netValue}
+          anomalyCount={anomalyCount}
+          topCategory={topCategory}
+          topMerchant={topMerchant}
+          onGenerate={onGenerateAi}
+          generateDisabled={generateDisabled}
+          isGenerating={isGenerating}
+        />
+      </div>
+
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-500">
+        <AnomaliesTable anomalies={anomalies} />
+      </div>
+
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-600">
+        <TransactionsTable
+          transactions={transactions}
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={onPageChange}
+        />
+      </div>
+    </>
+  );
+});
+
+DashboardSections.displayName = "DashboardSections";
 
 function friendlyTitle(code: string): string {
   switch (code) {

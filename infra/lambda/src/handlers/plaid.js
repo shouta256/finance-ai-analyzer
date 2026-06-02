@@ -22,7 +22,7 @@ const {
   isAuthOptional,
 } = require("../utils/helpers");
 const { withUserClient } = require("../db/pool");
-const { ANON_USER_ID } = require("../utils/constants");
+const { ANON_USER_ID, DAY_MS } = require("../utils/constants");
 
 /**
  * Handle POST /plaid/link-token

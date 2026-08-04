@@ -48,3 +48,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local-only AWS recovery runbook (contains operational infrastructure details)
+docs/aws-suspension-2026-08-04.md

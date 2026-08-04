@@ -1,5 +1,10 @@
 # Safepocket – AI-Powered Personal Finance Dashboard
 
+> [!IMPORTANT]
+> The AWS production environment is currently suspended to eliminate running
+> costs. If you would like to view the live production environment, please
+> contact me and I can temporarily restore it for a demo.
+
 Safepocket is a smart personal finance application. It connects to your bank accounts, analyzes your spending, and gives you insights using AI.
 
 I built this project to demonstrate my skills in full-stack development, cloud security, and AI integration.
